@@ -402,15 +402,143 @@ void exec_destroy(exec_t **executor);
 // but not RC files. Those are handled specially by the setup functions,
 // because they require a mostly initialized top-level frame to be sourced.
 
+/**
+ * Getters and setters for the initial state of the executor. These are used to configure the
+ * executor before execution begins, and they may only be called before the top frame is
+ * initialized. After execution begins, these setter functions will return false to indicate that the state
+ * cannot be modified.
+ * 
+ * When RC parsing is allowed, the values set by these functions may be overridden.
+ */
+
+bool exec_is_args_set(const exec_t *executor);
+char *const *exec_get_args(const exec_t *executor, int *argc_out);
+bool exec_set_args(exec_t *executor, int argc, char *const *argv);
+
+bool exec_is_envp_set(const exec_t *executor);
+char *const *exec_get_envp(const exec_t *executor);
+bool exec_set_envp(exec_t *executor,
+                   char *const *envp); // NULL-terminated list of "VAR=VALUE" strings
+
+bool exec_is_shell_name_set(const exec_t *executor);
+const char *exec_get_shell_name(const exec_t *executor);
+bool exec_set_shell_name(
+    exec_t *executor,
+    const char *shell_name); // Sets the shell name (used for $0 and in error messages). This is
+                             // usually derived from argv[0], but this allows the shell to override
+                             // it if needed (e.g., for login shells or when argv[0] is not
+                             // meaningful).
+
+bool exec_get_flag_allexport(const exec_t *executor);
+bool exec_set_flag_allexport(exec_t *executor, bool value);
+
+bool exec_get_flag_errexit(const exec_t *executor);
+bool exec_set_flag_errexit(exec_t *executor, bool value);
+
+bool exec_get_flag_ignoreeof(const exec_t *executor);
+bool exec_set_flag_ignoreeof(exec_t *executor, bool value);
+
+bool exec_get_flag_noclobber(const exec_t *executor);
+bool exec_set_flag_noclobber(exec_t *executor, bool value);
+
+bool exec_get_flag_noglob(const exec_t *executor);
+bool exec_set_flag_noglob(exec_t *executor, bool value);
+
+bool exec_get_flag_noexec(const exec_t *executor);
+bool exec_set_flag_noexec(exec_t *executor, bool value);
+
+bool exec_get_flag_nounset(const exec_t *executor);
+bool exec_set_flag_nounset(exec_t *executor, bool value);
+
+bool exec_get_flag_pipefail(const exec_t *executor);
+bool exec_set_flag_pipefail(exec_t *executor, bool value);
+
+bool exec_get_flag_verbose(const exec_t *executor);
+bool exec_set_flag_verbose(exec_t *executor, bool value);
+
+bool exec_get_flag_vi(const exec_t *executor);
+bool exec_set_flag_vi(exec_t *executor, bool value);
+
+bool exec_get_flag_xtrace(const exec_t *executor);
+bool exec_set_flag_xtrace(exec_t *executor, bool value);
+
+// RC files will normally be sourced during setup for interactive shells and login shells,
+// and will be inhibited for non-interactive non-login shells, but the shell can override this if
+// needed using these getters/setters.
+bool exec_get_inhibit_rc_files(const exec_t *executor);
+bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
+
+bool exec_is_system_rc_filename_set(const exec_t *executor);
+const char *exec_get_system_rc_filename(const exec_t *executor);
+// It is unspecified what occurs if this is not a absolute path.
+bool exec_set_system_rc_filename(exec_t *executor, const char *filename);
+
+bool exec_is_user_rc_filename_set(const exec_t *executor);
+const char *exec_get_user_rc_filename(const exec_t *executor);
+// May be absolute, relative (which means relative to the CWD),
+// begin with a ~ to indicate relative to the home directory,
+// or be a simple filename that is looked up in the CWD.
+// In ISO C mode, the tilde will be treated as a literal character.
+bool exec_set_user_rc_filename(exec_t *executor, const char *filename);
+
+bool exec_get_is_login_shell(const exec_t *executor);
+bool exec_set_is_login_shell(
+    exec_t *executor, bool is_login_shell); // Sets whether the shell is a login shell. This is
+                                            // usually determined at startup based on argv[0], but
+                                            // this allows the shell to override it if needed.
+
+bool exec_get_job_control_enabled(const exec_t *executor);
+bool exec_set_job_control_enabled(exec_t *executor, bool job_control_enabled);
+
+bool exec_is_working_directory_set(const exec_t *executor);
+const char *exec_get_working_directory(const exec_t *executor);
+bool exec_set_working_directory(exec_t *executor, const char *working_directory);
+
+bool exec_is_umask_set(const exec_t *executor);
+int exec_get_umask(const exec_t *executor);
+bool exec_set_umask(exec_t *executor, int umask);
+#ifdef POSIX_API
+#define exec_is_umask_posix_set(ex) exec_is_umask_set(x)
+mode_t exec_get_umask_posix(const exec_t *executor);
+bool exec_set_umask_posix(exec_t *executor, mode_t umask);
+
+bool exec_is_file_size_limit_set(const exec_t *executor);
+rlim_t exec_get_file_size_limit(exec_t *executor);
+bool exec_set_file_size_limit(exec_t *executor, rlim_t file_size_limit);
+#endif
+bool exec_is_process_group_set(const exec_t *executor);
+int exec_get_process_group(const exec_t *executor);
+bool exec_set_process_group(exec_t *executor, int pgid);
+
+bool exec_is_shell_pid_set(const exec_t *executor);
+int exec_get_shell_pid(const exec_t *executor);
+bool exec_set_shell_pid(exec_t *executor, int shell_pid);
+
+bool exec_is_shell_ppid_set(const exec_t *executor);
+// Returns -1 if not set or invalid. Note that a valid shell PPID may also be -1 if the shell is PID
+// 1 or if the parent process has exited, so the caller should check exec_is_shell_ppid_set() before
+// relying on the value returned by this function.
+int exec_get_shell_ppid(const exec_t *executor);
+bool exec_set_shell_ppid(exec_t *executor, int shell_ppid);
+
+
 // TODO: we need a getter that indicates if the exec_t has been initialized
 // with the top frame yet by checking the `top_frame_initialized` flag.
 // This is important because some of the state in exec_t is only used for
 // initializing the top frame, and once the top frame is initialized, that state is no longer
 // relevant and the config setters will have no effect.
+bool exec_is_top_frame_initialized(const exec_t *executor);
 
 // TODO: we a getter for getting the current frame.
+frame_t *exec_get_current_frame(const exec_t *executor);
 
 // TODO: make getters / setters for pipe statuses, which are global state.
+// No setter since the shell shouldn't be modifying these directly, but the executor needs to be
+// able to update them after executing pipelines, and the shell needs to be able to read them for
+// PIPESTATUS and for implementing `set -o pipefail`.
+int exec_get_pipe_status_count(const exec_t *executor);
+const int *exec_get_pipe_statuses(const exec_t *executor);
+void exec_reset_pipe_statuses(exec_t *executor);
 
 /* ============================================================================
  * Execution Functions
@@ -418,7 +546,7 @@ void exec_destroy(exec_t **executor);
 
 /**
  * Setup the executor for interactive execution, including sourcing rc files.
- * This should be called before exec_execute_stream() if the shell is running in interactive mode.
+ * This should be called before calling an executor like exec_execute_stream() if the shell is running in interactive mode.
  * This will perform tasks such as installing signal handlers, sourcing the system and user rc
  * files.
  * If the top-frame has not been initialized yet, this function will initialize it with the
@@ -434,7 +562,7 @@ void exec_destroy(exec_t **executor);
 exec_status_t exec_setup_interactive_execute(exec_t *executor);
 
 /**
- * Setup the executor for non-interactive execution, including sourcing rc files if it's a
+ * Setup the executor for non-interactive execution, including sourcing the system rc file if it's a
  * login shell. This should be called before exec_execute_stream() if the shell is running in
  * non-interactive mode.
  *
@@ -468,6 +596,16 @@ exec_status_t exec_setup_non_interactive_execute(exec_t *executor);
  */
 exec_status_t exec_execute_stream(exec_t *executor, FILE *fp);
 
+/* Like exec_execute_stream(), but allows specifying a filename for error reporting.
+ * This is intended for non-interactive use cases where the input is coming from a file or string
+ * rather than a terminal, so the filename can be used in error messages instead of "stdin".
+ * 
+ * Calling this function for an interactive or login session will work, but may create
+ * confusion since the prompts and error messages will refer to the specified filename rather than
+ * "stdin".
+ */
+void exec_execute_stream_with_filename(exec_t *executor, FILE *fp, const char *filename);
+
 /**
  * Status returned by a line-editor callback.
  * Negative values are fatal (EOF or unrecoverable error → usually stop REPL)
@@ -479,6 +617,9 @@ typedef enum
     LINE_EDIT_EOF = -1,          /* EOF / ctrl-D / closed input */
     LINE_EDIT_ERROR = -2,        /* fatal I/O or allocation error */
     LINE_EDIT_INTERRUPT = -3,    /* SIGINT received → usually SIGINT handling in shell */
+    LINE_EDIT_PREVIOUS = -4,     /* user requested previous history entry (e.g., up arrow) */
+    LINE_EDIT_NEXT = -5,         /* user requested next history entry (e.g., down arrow) */
+    LINE_EDIT_CURRENT = -6,      /* user requested current history entry (e.g., right arrow on empty line) */
     LINE_EDIT_HISTORY_IDX = 1000 /* values >= 1000 may be used for history event numbers */
     /* caller can do: if (ret >= LINE_EDIT_HISTORY_IDX) history_event = ret - LINE_EDIT_HISTORY_IDX;
      */
@@ -502,6 +643,9 @@ typedef enum
  *                      LINE_EDIT_EOF (-1) on clean EOF
  *                      LINE_EDIT_ERROR (-2) on fatal error
  *                      LINE_EDIT_INTERRUPT (-3) on SIGINT / user cancel
+ *                      LINE_EDIT_PREVIOUS (-4) on user request for previous history entry
+ *                      LINE_EDIT_NEXT (-5) on user request for next history entry
+ *                      LINE_EDIT_CURRENT (-6) on user request for current history entry
  *                      positive value >= LINE_EDIT_HISTORY_IDX when the returned line comes
  *                      from history (allows shell to perform history expansion correctly)
  */
@@ -545,14 +689,37 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
  * It does not print errors to the output; instead, it returns an error status and sets the
  * executor's error message.
  *
- * @param frame The execution frame to use
  * @param command The complete command string to execute
  * @return exec_result_t with execution status and exit code
  */
 // TODO: disambiguate this from the frame-level command execution function.
 // Clarify that this is *only* for executing complete command strings at top-level,
 // and is not the correct API for executing strings generally.
-exec_result_t exec_execute_command_string(exec_t *frame, const char *command);
+exec_result_t exec_execute_command_string(exec_t *executor, const char *command);
+
+// If a user of the shell library wants to implement their own repl, we'll
+// need a command that can handle incomplete input to return a state that indicates that more
+// input is needed, and that also allows the caller to provide a filename and line number
+// for the current string.
+// The caller can memset the partial state to zero to clear it.
+typedef struct exec_partial_state_t exec_partial_state_t;
+// Caller provides a pointer to the opaque partial state struct, and this function
+// will fill it with information about the state of the execution after an attempt to execute
+// the command string
+// If it was incomplete, the partial state will be populated with information about what
+// was parsed successfully for the caller to use in the next call to continue execution.
+//
+// A line_number of less than 1 indicates that no line information is provided.
+// If the line_number is >= 1, then line_number (and, if non-NULL, the filename) will
+// be used in error messages and
+// for $LINENO. If a filename is provided but the line_number < 1, the filename will be ignored.
+// Once a filename and line number has been provided, they will be stored in the partial
+// state and used for subsequent calls until the partial state is memset to zero or
+// the filename/line number is updated by the caller.
+//
+exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *command,
+                                                  const char *filename, size_t line_number,
+                                                  exec_partial_state_t *partial_state_out);
 
 /**
  * Execute a simple command.
@@ -562,7 +729,7 @@ exec_result_t exec_execute_command_string(exec_t *frame, const char *command);
 // would be if we want to preserve the ability to execute a pre-parsed AST node for a simple
 // command, but that seems like an internal API that the shell should not be using directly, and we
 // can always add an internal helper function
-exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t *node);
+// exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t *node);
 
 /**
  * Check if any background jobs have completed, and if so mark them done
@@ -576,6 +743,90 @@ void exec_reap_background_jobs(exec_t *executor, bool notify);
 // TODO: add a full set of background jobs APIs here, such as listing jobs, bringing jobs to
 // foreground/background, sending signals to jobs, etc. The job store should be encapsulated behind
 // these APIs so that the shell doesn't need to access it directly.
+// The builtins will need an API for 'bg', 'fg', 'jobs', and 'kill' builtins, and the shell will
+// need an API for printing job status in the prompt and for implementing `set -o notify`.
+// 
+// size_t job_store_count(const job_store_t *store);
+size_t exec_get_job_count(const exec_t *executor);
+// int job_store_get_job_ids(const job_store_t *store, int *job_ids, size_t max_jobs);
+
+// Remember
+// job_id: an integer that represents a job that can have multiple processes (e.g., a pipeline).
+// This is what the shell uses to refer to jobs in job control commands like `fg %1` or `kill %2`.
+// pid: the actual process ID of a single process. A job can have multiple pids if it has multiple
+// processes.
+// (UCRT ONLY) handle: a Windows HANDLE that represents a process. This is used in UCRT mode instead
+// of pid for job control, since Windows doesn't have real PIDs or process groups. Since we
+// use _spawnvpe to launch processes in UCRT mode, no job_id will have more than one PID or HANDLE.
+// (ISO_C ONLY) since we only use `system()` to execute command, which runs synchronously and doesn't
+// give any job control capabilities, in ISO_C there will never be any job_ids, and exec_get_job_count()
+// will always return zero.
+
+
+
+// =====================
+// Public Job API for shell builtins (bg, fg, jobs, kill)
+// =====================
+#ifdef POSIX_API
+#include <sys/types.h>
+#endif
+
+// Job state (mirrors job_state_t)
+typedef enum exec_job_state_t {
+    EXEC_JOB_RUNNING,
+    EXEC_JOB_STOPPED,
+    EXEC_JOB_DONE,
+    EXEC_JOB_TERMINATED
+} exec_job_state_t;
+
+// Get the number of jobs
+size_t exec_get_job_count(const exec_t *executor);
+
+// Get a list of active job IDs (returns number written)
+size_t exec_get_job_ids(const exec_t *executor, int *job_ids, size_t max_jobs);
+
+// Get the current (%%) and previous (%-) job IDs
+int exec_get_current_job_id(const exec_t *executor);
+int exec_get_previous_job_id(const exec_t *executor);
+
+// Get job state, command line, and background/foreground status
+exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id);
+const char *exec_job_get_command(const exec_t *executor, int job_id);
+bool exec_job_is_background(const exec_t *executor, int job_id);
+
+// Get job's process group ID (for fg/bg/kill)
+#ifdef POSIX_API
+pid_t exec_job_get_pgid(const exec_t *executor, int job_id);
+#else
+int exec_job_get_pgid(const exec_t *executor, int job_id);
+#endif
+
+
+// Iterate over processes in a job
+size_t exec_job_get_process_count(const exec_t *executor, int job_id);
+#ifdef POSIX_API
+pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index);
+#elif defined(UCRT_API)
+int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index);
+uintptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t index);
+#else
+int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index);
+#endif
+exec_job_state_t exec_job_get_process_state(const exec_t *executor, int job_id, size_t index);
+int exec_job_get_process_exit_status(const exec_t *executor, int job_id, size_t index);
+
+// Bring a job to the foreground/background
+bool exec_job_foreground(exec_t *executor, int job_id, bool cont);
+bool exec_job_background(exec_t *executor, int job_id, bool cont);
+
+// Send a signal to a job (all processes in the job)
+bool exec_job_kill(exec_t *executor, int job_id, int sig);
+
+// Print jobs status (for 'jobs' builtin)
+void exec_print_jobs(const exec_t *executor, FILE *output);
+
+
+
 
 /* ============================================================================
  * Visitor Pattern Support
@@ -636,6 +887,9 @@ void exec_clear_error(exec_t *executor);
 
 /**
  * Get the PS1 prompt string.
+ * 
+ * If a client is implementing their own REPL using the shell library,
+ * they can use this function to get the PS1 prompt string from the variable store.
  * Returns the value of the PS1 variable from the variable store,
  * or a default prompt if PS1 is not set. Caller frees the returned string.
  *
@@ -657,6 +911,7 @@ char *exec_get_rendered_ps1(const exec_t *executor);
  * Get the PS2 prompt string.
  * Returns the value of the PS2 variable from the variable store,
  * or a default prompt if PS2 is not set. Caller frees the returned string.
+ * Note that PS2 is never rendered with expansions.
  *
  * @param executor The executor context
  * @return The PS2 prompt string (never NULL)
