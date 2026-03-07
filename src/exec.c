@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "exec.h"
+#include "exec_internal.h"
 
 #include "alias_store.h"
 #include "ast.h"
@@ -35,7 +36,7 @@
 #include "positional_params.h"
 #include "sig_act.h"
 #include "string_list.h"
-#include "string_t.h"
+#include "string_t.""
 #include "token.h"
 #include "tokenizer.h"
 #include "trap_store.h"
@@ -120,103 +121,948 @@ static void source_rc_files(struct exec_t *e)
 }
 
 
-void exec_cfg_set_from_shell_options(exec_cfg_t *cfg, int argc, char *const *argv, char *const *envp,
-                                       const char *shell_name, string_list_t *shell_args,
-                                       string_list_t *env_vars, const exec_opt_flags_t *opt_flags,
-                                       bool is_interactive, bool is_login_shell,
-                                       bool job_control_enabled)
-{
-    Expects_not_null(cfg);
-
-    if (argc >= 0 && argv)
-    {
-        cfg->argv_set = true;
-        cfg->argc = argc;
-        cfg->argv = argv;
-    }
-    else
-    {
-        cfg->argv_set = false;
-    }
-    if (envp)
-    {
-        cfg->envp_set = true;
-        cfg->envp = envp;
-    }
-    else
-    {
-        cfg->envp_set = false;
-    }
-    if (shell_name)
-    {
-        cfg->shell_name_set = true;
-        cfg->shell_name = shell_name;
-    }
-    else
-    {
-        cfg->shell_name_set = false;
-    }
-    if (shell_args)
-    {
-        cfg->shell_args_set = true;
-        cfg->shell_args = string_list_create_from(shell_args);
-    }
-    else
-    {
-        cfg->shell_args_set = false;
-    }
-    if (env_vars)
-    {
-        cfg->env_vars_set = true;
-        cfg->env_vars = string_list_create_from(env_vars);
-    }
-    else
-    {
-        cfg->env_vars_set = false;
-    }
-    if (opt_flags)
-    {
-        cfg->opt_flags_set = true;
-        cfg->opt = *opt_flags;
-    }
-    else
-    {
-        cfg->opt_flags_set = false;
-    }
-    cfg->is_interactive_set = true;
-    cfg->is_interactive = is_interactive;
-    cfg->is_login_shell_set = true;
-    cfg->is_login_shell = is_login_shell;
-    cfg->job_control_enabled_set = true;
-    cfg->job_control_enabled = job_control_enabled;
-}
-
-/*
- * Destroy an exec_cfg_t and free any heap-allocated members.
- */
-void exec_cfg_destroy(exec_cfg_t *cfg)
-{
-    if (!cfg)
-        return;
-    if (cfg->shell_args_set && cfg->shell_args)
-    {
-        string_list_destroy(&cfg->shell_args);
-        cfg->shell_args_set = false;
-        cfg->shell_args = NULL;
-    }
-    if (cfg->env_vars_set && cfg->env_vars)
-    {
-        string_list_destroy(&cfg->env_vars);
-        cfg->env_vars_set = false;
-        cfg->env_vars = NULL;
-    }
-}
-
-
 /* ============================================================================
  * Executor Lifecycle
  * ============================================================================ */
 
+struct exec_t *exec_create(void)
+{
+    return xcalloc(1, sizeof(struct exec_t));
+}
+
+void exec_destroy(exec_t **executor_ptr)
+{
+    if (!executor_ptr || !*executor_ptr)
+        return;
+
+    exec_t *e = *executor_ptr;
+
+    /* Pop all frames */
+    while (e->current_frame)
+    {
+        exec_frame_pop(&e->current_frame);
+    }
+
+    /* Clean up executor-owned resources */
+    if (e->working_directory)
+        string_destroy(&e->working_directory);
+    string_destroy(&e->shell_name);
+    string_destroy(&e->error_msg);
+
+    if (e->last_argument)
+        string_destroy(&e->last_argument);
+
+    /* If no frames were created, these may still be owned by the executor. */
+    if (e->variables)
+        variable_store_destroy(&e->variables);
+    if (e->local_variables)
+        variable_store_destroy(&e->local_variables);
+    if (e->positional_params)
+        positional_params_destroy(&e->positional_params);
+    if (e->functions)
+        func_store_destroy(&e->functions);
+    if (e->aliases)
+        alias_store_destroy(&e->aliases);
+    if (e->tokenizer)
+        tokenizer_destroy(&e->tokenizer);
+    if (e->traps)
+        trap_store_destroy(&e->traps);
+    if (e->original_signals)
+        sig_act_store_destroy(&e->original_signals);
+
+    job_store_destroy(&e->jobs);
+
+#if defined(POSIX_API) || defined(UCRT_API)
+    if (e->open_fds)
+        fd_table_destroy(&e->open_fds);
+#endif
+
+    if (e->pipe_statuses)
+        xfree(e->pipe_statuses);
+
+    xfree(e);
+    *executor_ptr = NULL;
+}
+
+
+/* ============================================================================
+ * Pre-Execution Configuration
+ * ============================================================================
+ *
+ * These setters configure the executor before execution begins.  They may only
+ * be called before the top frame is initialised.  After that point the setters
+ * return false to indicate that the value was not applied.
+ *
+ * When RC parsing is enabled, values set here may be overridden by the RC
+ * files.
+ */
+
+/* ── Startup environment ─────────────────────────────────────────────────── */
+
+bool exec_is_args_set(const exec_t *executor)
+{
+    return executor->argc > 0 && executor->argv != NULL;
+}
+
+char* const* exec_get_args(const exec_t* executor, int* argc_out)
+{
+    Expects_not_null(executor);
+
+    if (!exec_is_args_set(executor))
+        return NULL;
+    if (argc_out)
+        *argc_out = executor->argc;
+    return executor->argv;
+}
+
+bool exec_set_args(exec_t* executor, int argc, char* const* argv)
+{
+    Expects_not_null(executor);
+
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (argc < 0 || (argc > 0 && argv == NULL))
+        return false;
+
+    executor->argc = argc;
+    executor->argv = argv;
+    return true;
+}
+
+bool exec_is_envp_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+
+    return executor->envp != NULL;
+}
+
+char* const* exec_get_envp(const exec_t* executor)
+{
+    Expects_not_null(executor);
+
+    return executor->envp;
+}
+
+bool exec_set_envp(exec_t* executor, char* const* envp)
+{
+    Expects_not_null(executor);
+
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->envp = envp;
+    return true;
+}
+
+/* ── Shell identity ──────────────────────────────────────────────────────── */
+
+bool exec_is_shell_name_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+
+    return executor->shell_name != NULL;
+}
+
+const char *exec_get_shell_name(const exec_t *executor)
+{
+    Expects_not_null(executor);
+
+    if (!executor->shell_name)
+        return NULL;
+    return string_cstr(executor->shell_name);
+}
+
+bool exec_set_shell_name(exec_t* executor, const char* shell_name)
+{
+    Expects_not_null(executor);
+
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+
+    if (!shell_name && executor->shell_name)
+        string_destroy(&executor->shell_name);
+    else if (shell_name && !executor->shell_name)
+        executor->shell_name = string_create_from_cstr(shell_name);
+    else if (shell_name && executor->shell_name)
+        string_set_cstr(executor->shell_name, shell_name);
+
+    return true;
+}
+
+/* ── Shell option flags ──────────────────────────────────────────────────── */
+
+bool exec_get_flag_allexport(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.allexport;
+}
+
+bool exec_set_flag_allexport(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.allexport = value;
+    return true;
+}
+
+bool exec_get_flag_errexit(const exec_t *executor);
+{
+    Expects_not_null(executor);
+    return executor->opt.errexit;
+}
+
+bool exec_set_flag_errexit(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.errexit = value;
+    return true;
+}
+
+bool exec_get_flag_ignoreeof(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.ignoreeof;
+}
+
+bool exec_set_flag_ignoreeof(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.ignoreeof = value;
+    return true;
+}
+
+bool exec_get_flag_noclobber(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.noclobber;
+}
+
+bool exec_set_flag_noclobber(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.noclobber = value;
+    return true;
+}
+
+bool exec_get_flag_noglob(const exec_t *executor);
+{
+    Expects_not_null(executor);
+    return executor->opt.noglob;
+}
+
+bool exec_set_flag_noglob(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.noglob = value;
+    return true;
+}
+
+bool exec_get_flag_noexec(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.noexec;
+}
+
+bool exec_set_flag_noexec(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.noexec = value;
+    return true;
+}
+
+bool exec_get_flag_nounset(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.nounset;
+}
+
+bool exec_set_flag_nounset(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.nounset = value;
+    return true;
+}
+
+bool exec_get_flag_pipefail(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.pipefail;
+}
+
+bool exec_set_flag_pipefail(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.pipefail = value;
+    return true;
+}
+
+bool exec_get_flag_verbose(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.verbose;
+}
+
+bool exec_set_flag_verbose(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.verbose = value;
+    return true;
+}
+
+bool exec_get_flag_vi(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.vi;
+}
+
+bool exec_set_flag_vi(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.vi = value;
+    return true;
+}
+
+bool exec_get_flag_xtrace(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->opt.xtrace;
+}
+
+bool exec_set_flag_xtrace(exec_t* executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->opt.xtrace = value;
+    return true;
+}
+
+/* ── Interactive / login mode ────────────────────────────────────────────── */
+
+bool exec_get_is_interactive(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->is_interactive;
+}
+
+bool exec_set_is_interactive(exec_t* executor, bool is_interactive)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->is_interactive = is_interactive;
+    return true;
+}
+
+bool exec_get_is_login_shell(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->is_login_shell;
+}
+
+bool exec_set_is_login_shell(exec_t* executor, bool is_login_shell)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->is_login_shell = is_login_shell;
+    return true;
+}
+
+/* ── Job control ─────────────────────────────────────────────────────────── */
+
+bool exec_get_job_control_disabled(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->job_control_disabled;
+}
+
+bool exec_set_job_control_disabled(exec_t* executor, bool disabled)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->job_control_disabled = disabled;
+    return true;
+}
+
+/* ── Working directory ───────────────────────────────────────────────────── */
+
+bool exec_is_working_directory_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->working_directory != NULL;
+}
+
+const char* exec_get_working_directory(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->working_directory)
+        return NULL;
+    return string_cstr(executor->working_directory);
+}
+
+bool exec_set_working_directory(exec_t* executor, const char* path)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (!path && executor->working_directory)
+        string_destroy(&executor->working_directory);
+    else if (path && !executor->working_directory)
+        executor->working_directory = string_create_from_cstr(path);
+    else if (path && executor->working_directory)
+        string_set_cstr(executor->working_directory, path);
+    return true;
+}
+
+/* ── File permissions ────────────────────────────────────────────────────── */
+
+bool exec_is_umask_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->umask != 0;
+}
+
+int exec_get_umask(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->umask;
+}
+
+bool exec_set_umask(exec_t* executor, int mask)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->umask = mask;
+    return true;
+}
+
+#ifdef POSIX_API
+mode_t exec_get_umask_posix(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->umask;
+}
+
+bool exec_set_umask_posix(exec_t* executor, mode_t mask)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->umask = mask;
+    return true;
+}
+
+bool exec_is_file_size_limit_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->file_size_limit != 0;
+}
+
+rlim_t exec_get_file_size_limit(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->file_size_limit;
+}
+
+bool exec_set_file_size_limit(exec_t* executor, rlim_t limit)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->file_size_limit = limit;
+    return true;
+}
+#endif
+
+/* ── Process identity ────────────────────────────────────────────────────── */
+
+bool exec_is_process_group_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->pgid_valid;
+}
+
+int exec_get_process_group(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->pgid_valid)
+        return -1;
+    return executor->pgid;
+}
+
+bool exec_set_process_group(exec_t *executor, int pgid)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->pgid = pgid;
+    executor->pgid_valid = true;
+    return true;
+}
+
+bool exec_is_shell_pid_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->shell_pid_valid;
+}
+
+int exec_get_shell_pid(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->shell_pid_valid)
+        return -1;
+    return executor->shell_pid;
+}
+
+bool exec_set_shell_pid(exec_t* executor, int pid)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->shell_pid = pid;
+    executor->shell_pid_valid = true;
+    return true;
+}
+
+bool exec_is_shell_ppid_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->shell_ppid_valid;
+}
+
+int exec_get_shell_ppid(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->shell_ppid_valid)
+        return -1;
+    return executor->shell_ppid;
+}
+
+bool exec_set_shell_ppid(exec_t* executor, int ppid)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->shell_ppid = ppid;
+    executor->shell_ppid_valid = true;
+    return true;
+}
+
+/* ── RC file control ─────────────────────────────────────────────────────── */
+
+bool exec_get_inhibit_rc_files(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    return executor->inhibit_rc_files;
+}
+
+bool exec_set_inhibit_rc_files(exec_t* executor, bool inhibit)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->inhibit_rc_files = inhibit;
+    return true;
+}
+
+bool exec_is_system_rc_filename_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->system_rc_filename != NULL;
+}
+
+const char* exec_get_system_rc_filename(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->system_rc_filename)
+        return NULL;
+    return string_cstr(executor->system_rc_filename);
+}
+
+bool exec_set_system_rc_filename(exec_t* executor, const char* filename)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (!filename && executor->system_rc_filename)
+        string_destroy(&executor->system_rc_filename);
+    else if (filename && !executor->system_rc_filename)
+        executor->system_rc_filename = string_create_from_cstr(filename);
+    else if (filename && executor->system_rc_filename)
+        string_set_cstr(executor->system_rc_filename, filename);
+    return true;
+}
+
+bool exec_is_user_rc_filename_set(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->user_rc_filename != NULL;
+}
+
+const char* exec_get_user_rc_filename(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->user_rc_filename)
+        return NULL;
+    return string_cstr(executor->user_rc_filename);
+}
+
+bool exec_set_user_rc_filename(exec_t* executor, const char* filename)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (!filename && executor->user_rc_filename)
+        string_destroy(&executor->user_rc_filename);
+    else if (filename && !executor->user_rc_filename)
+        executor->user_rc_filename = string_create_from_cstr(filename);
+    else if (filename && executor->user_rc_filename)
+        string_set_cstr(executor->user_rc_filename, filename);
+    return true;
+}
+
+/* ── Special parameters ──────────────────────────────────────────────────── */
+
+int exec_get_last_exit_status(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    if (!executor->last_exit_status_set)
+        return -1;
+    return executor->last_exit_status;
+}
+
+bool exec_set_last_exit_status(exec_t* executor, int status)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->last_exit_status = status;
+    executor->last_exit_status_set = true;
+    return true;
+}
+
+int exec_get_last_background_pid(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->last_background_pid_set)
+        return -1;
+    return executor->last_background_pid;
+}
+
+bool exec_set_last_background_pid(exec_t* executor, int pid)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->last_background_pid = pid;
+    executor->last_background_pid_set = true;
+    return true;
+}
+
+const char* exec_get_last_argument(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    if (!executor->last_argument_set)
+        return NULL;
+    return string_cstr(executor->last_argument);
+}
+
+bool exec_set_last_argument(exec_t* executor, const char* arg)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (!arg && executor->last_argument)
+        string_destroy(&executor->last_argument);
+    else if (arg && !executor->last_argument)
+        executor->last_argument = string_create_from_cstr(arg);
+    else if (arg && executor->last_argument)
+        string_set_cstr(executor->last_argument, arg);
+    executor->last_argument_set = true;
+    return true;
+}
+
+/* ============================================================================
+ * Frame Access
+ * ============================================================================ */
+
+bool exec_is_top_frame_initialized(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->top_frame_initialized;
+}
+
+exec_frame_t* exec_get_current_frame(const exec_t* executor)
+{
+    Expects_not_null(executor);
+    return executor->current_frame;
+}
+
+/* ============================================================================
+ * Builtin Registration
+ * ============================================================================ */
+
+bool exec_register_builtin(exec_t *executor, const char *name, exec_builtin_fn_t fn);
+bool exec_unregister_builtin(exec_t *executor, const char *name);
+bool exec_has_builtin(const exec_t *executor, const char *name);
+exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const char *name);
+
+/* ============================================================================
+ * Execution Setup
+ * ============================================================================ */
+
+static exec_status_t exec_setup_core(exec_t* e, bool interactive)
+{
+    Expects_not_null(e);
+
+    if (e->top_frame_initialized)
+        return EXEC_ERROR;
+
+    // Finish initializing the top-level parameters that weren't explicitly set by the caller.
+    // Override all the frame parameters with the executor's pre-configured values.
+#ifdef POSIX_API
+    pid_t default_pid = getpid();
+    pid_t default_ppid = getppid();
+    bool default_pid_valid = true;
+    bool default_ppid_valid = true;
+#elifdef UCRT_API
+    int default_pid = _getpid();
+    int default_ppid = 0; /* No getppid in UCRT */
+    bool default_pid_valid = true;
+    bool default_ppid_valid = false;
+#else
+    int default_pid = 0;
+    int default_ppid = 0;
+    bool default_pid_valid = false;
+    bool default_ppid_valid = false;
+#endif
+    
+    if (!e->shell_pid_valid && default_pid_valid)
+    {
+        e->shell_pid = default_pid;
+        e->shell_pid_valid = true;
+    }
+    if (!e->shell_ppid_valid && default_ppid_valid)
+    {
+        e->shell_ppid = default_ppid;
+        e->shell_ppid_valid = true;
+    }
+
+    e->is_interactive = interactive;
+
+    // If the caller didn't explicitly set login shell status, guess based on if
+    // argv[0] starts with a '-', which is a Unix convention.
+    if (!e->is_login_shell)
+    {
+        bool default_is_login_shell = (e->argc > 0 && e->argv && e->argv[0] && e->argv[0][0] == '-');
+        e->is_login_shell = default_is_login_shell;
+    }
+
+    /* Install default signal handlers for interactive mode */
+    if (!executor->signals_installed)
+    {
+        sig_act_store_t *original_signals = sig_act_store_create();
+        sig_act_store_install_default_signal_handlers(original_signals);
+        executor->original_signals = original_signals;
+        executor->signals_installed = true;
+    }
+
+    e->sigint_received = false;
+    e->sigchld_received = false;
+    memset((void *)e->trap_pending, 0, sizeof(e->trap_pending));
+
+    if (!e->job_control_disabled)
+    {
+        if (e->is_interactive)
+            e->jobs = job_store_create();
+        else
+            e->job_control_disabled = true;
+    }
+
+#ifdef POSIX_API
+    if (!e->pgid_valid)
+    {
+        pid_t pgid = getpgrp();
+        if (pgid != -1)
+        {
+            e->pgid = pgid;
+            e->pgid_valid = true;
+        }
+    }
+#elifdef UCRT_API
+    e->pgid_valid = false; /* No getpgrp in UCRT, and we don't want to assume pgid == pid */
+    e->pgid = -1;
+#else
+    e->pgid_valid = false;
+    e->pgid = -1;
+#endif
+
+    /* Pipeline status (pipefail / PIPESTATUS) */
+    e->pipe_statuses = NULL;
+    e->pipe_status_count = 0;
+    e->pipe_status_capacity = 0;
+
+    /* Error state */
+    if (e->error_msg)
+        string_destroy(&e->error_msg);
+
+    /* Exit request (set by exec_request_exit, checked by the main loop) */
+    e->exit_requested = false;
+
+    /* Builtin registry. Builtins are singleton, not frame-specific, and they can be registered
+     * at any time: before or after when the top frame is initialized.
+     */
+    if (!e->builtins)
+    {
+        e->builtins = builtin_store_create();
+    }
+
+    // e->env_vars is only used for debugging and for keeping a permanent record of the
+    // initial environment variables.
+    // e->envp is the source of the initial environment variables for the top frame when the
+    // top frame is initialized.  It is not used after the top frame is initialized.
+    // 
+    // N.B. If e->variables is set, e->variables, rather than e->envp, becomes the source of the initial
+    // environment variables for the top frame when the top frame is initialized.
+    if (e->envp)
+        e->env_vars = string_list_create_from_cstr_array((const char **)cfg->envp, -1);
+    else
+        e->env_vars = string_list_create_from_system_env();
+
+    if (!executor->top_frame)`
+    {
+        // This initialization is very involved. Lots of things happen in exec_frame_create_top_level()
+        // 
+        // STEP 1: Populates the frame with default stores and parameters
+        // - e->envp is used to populate the variable store
+        // - e->shell_name, e->argc, and e->argv are used to populate the positional parameters
+        // - an empty file descriptor table is created for the frame
+        // - an empty trap store is created for the frame
+        // - an empty options set is created for the frame: err_exit is enabled, MUST BE POPULATED 
+        // - an empty CWD is created for the frame. Initialized to getcwd() if possible.
+        // - an empty umask is created for the frame. Initialized to the system umask if possible.
+        // - an empty function store is created for the frame
+        // - an empty alias store is created for the frame
+        // - the frame is set with RETURN and LOOP disallowed, since it's the top-level frame.
+        // - the frame is set where exiting terminates process
+        // - the frame is set as not a subshell and not a background job
+        // - the frame's last exit status and last BG PID are zero
+        //
+        // STEP 2: Overrides
+        // - if e->variables is already set, the variable store created in step 1 is discarded and
+        //   the frame points to e->variables instead. This allows the caller to pre-populate the
+        //   variable store with custom values before the top frame is initialized.
+        // - if e->positional_params is already set, the positional parameters created in step 1 are
+        //   discarded and the frame points to e->positional_params instead. This allows the caller to
+        //   pre-populate the positional parameters with custom values before the top frame is initialized.
+        // - similarly functions
+        // - similarly aliases
+        // - similarly traps
+        // - similarly open fds
+        // - similarly working directory
+        // - similarly umask
+        // - the options are *always* overridden with the executor's opt, since the executor's opt is
+        //   meant to be the pre-configured default options for the top frame.
+        // - last_exit_status, last background_pid, and last_argument are always overridden with the
+        //   executor's values, since they are meant to be the pre-configured default values for the
+        //   top frame.
+        // - the source line is set to 0
+        // - the frame is marked as the top-level frame, the current frame pointer is set to the new
+        //   frame, and the executor is marked as having an initialized top frame.
+
+        exec_frame_create_top_level(e);
+        log_debug("Top-level frame created and initialized.");
+    }
+
+    /* Source RC files */
+    if (!executor->inhibit_rc_files && (interactive || e->is_login_shell))
+    {
+        exec_status_t ret = source_rc_files(e, interactive);
+        e->rc_loaded = ret == EXEC_OK;
+        if (e->rc_loaded)
+            log_debug("RC files loaded successfully.");
+        else
+            log_debug("RC file loading failed.");
+        return ret;
+    }
+    else
+        log_debug("Skipped loading RC files");
+
+    return EXEC_OK
+}
+
+exec_status_t exec_setup_interactive(exec_t *executor)
+{
+    return exec_setup_core(executor, true);
+}
+
+exec_status_t exec_setup_noninteractive(exec_t *executor)
+{
+    return exec_setup_core(executor, false);
+}
+
+/**
+ * A fallback in case an integrator failed to call either
+ * exec_setup_interactive() or exec_setup_noninteractive().
+ * This function attempts to guess the mode based on the provided file pointer.
+ * @param executor The executor instance to set up.
+ * @param fp The file pointer to use for guessing interactivity.
+ * @return EXEC_OK if setup was successful, otherwise EXEC_ERROR.
+ */
+static exec_status_t exec_setup_lazy(exec_t* executor, FILE *fp)
+{
+    Expects_not_null(executor);
+    if (executor->top_frame_initialized)
+        return EXEC_ERROR;
+    // Don't know if this is interactive or not.
+    // Let's try to guess.
+
+    log_warn("Executor setup was not explicitly called. Attempting to guess interactive mode based "
+             "on file pointer.");
+    bool is_interactive;
+#ifdef POSIX_API
+    is_interactive = isatty(fileno(fp));
+#elifdef UCRT_API
+    is_interactive = _isatty(_fileno(fp));
+#else
+    is_interactive = false;
+#endif
+    if (is_interactive)
+    {
+        log_debug("Guessed interactive mode based on file pointer.");
+        return exec_setup_core(executor, true);
+    }
+    else
+    {
+        log_debug("Guessed non-interactive mode based on file pointer.");
+        return exec_setup_core(executor, false);
+    }
+    // Unreachable
+    return EXEC_ERROR;
+}
+
+#if 0
 struct exec_t *exec_create(const struct exec_cfg_t *cfg)
 {
     struct exec_t *e = xcalloc(1, sizeof(struct exec_t));
@@ -347,9 +1193,9 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
      * -------------------------------------------------------------------------
      */
     e->jobs = job_store_create();
-    e->job_control_enabled =
-        cfg->job_control_enabled_set ? cfg->job_control_enabled : e->is_interactive;
-
+    e->job_control_disabled =  !(
+        cfg->job_control_enabled_set ? cfg->job_control_enabled : e->is_interactive);
+    
 #ifdef POSIX_API
     if (cfg->pgid_set)
     {
@@ -498,60 +1344,8 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
 
     return e;
 }
-
-void exec_destroy(exec_t **executor_ptr)
-{
-    if (!executor_ptr || !*executor_ptr)
-        return;
-
-    exec_t *e = *executor_ptr;
-
-    /* Pop all frames */
-    while (e->current_frame)
-    {
-        exec_frame_pop(&e->current_frame);
-    }
-
-    /* Clean up executor-owned resources */
-    if (e->working_directory)
-        string_destroy(&e->working_directory);
-    string_destroy(&e->shell_name);
-    string_destroy(&e->error_msg);
-
-    if (e->last_argument)
-        string_destroy(&e->last_argument);
-
-    /* If no frames were created, these may still be owned by the executor. */
-    if (e->variables)
-        variable_store_destroy(&e->variables);
-    if (e->local_variables)
-        variable_store_destroy(&e->local_variables);
-    if (e->positional_params)
-        positional_params_destroy(&e->positional_params);
-    if (e->functions)
-        func_store_destroy(&e->functions);
-    if (e->aliases)
-        alias_store_destroy(&e->aliases);
-    if (e->tokenizer)
-        tokenizer_destroy(&e->tokenizer);
-    if (e->traps)
-        trap_store_destroy(&e->traps);
-    if (e->original_signals)
-        sig_act_store_destroy(&e->original_signals);
-
-    job_store_destroy(&e->jobs);
-
-#if defined(POSIX_API) || defined(UCRT_API)
-    if (e->open_fds)
-        fd_table_destroy(&e->open_fds);
 #endif
 
-    if (e->pipe_statuses)
-        xfree(e->pipe_statuses);
-
-    xfree(e);
-    *executor_ptr = NULL;
-}
 
 /* ============================================================================
  * Utility Functions
@@ -1406,6 +2200,423 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     exec_string_ctx_reset(ctx);
 
     return EXEC_STRING_OK;
+}
+
+/* extracts strings from an input stream to feed to exec_string_core */
+exec_status_t exec_stream_core_ex(exec_frame_t* frame, FILE* fp, tokenizer_t* tokenizer,
+    exec_string_ctx_t* ctx)
+{
+    Expects_not_null(frame);
+    Expects_not_null(fp);
+    Expects_not_null(tokenizer);
+    Expects_not_null(ctx);
+    Expects_not_null(ctx->lexer);
+    Expects_not_null(frame->executor);
+
+    exec_status_t final_status = FRAME_EXEC_OK;
+
+    /* Read a single logical line of any size, efficiently */
+#define LINE_CHUNK_SIZE 4096
+    char chunk[LINE_CHUNK_SIZE];
+    char *line_buf = NULL;
+    size_t line_buf_size = 0;
+    size_t line_len = 0;
+
+    while (fgets(chunk, sizeof(chunk), fp) != NULL)
+    {
+        size_t chunk_len = strlen(chunk);
+
+        if (chunk_len > 0 && chunk[chunk_len - 1] == '\n')
+        {
+            if (line_len == 0)
+            {
+                /* Fast path: entire line fits in chunk */
+                exec_string_status_t status = exec_string_core(frame, chunk, tokenizer, ctx);
+                if (ctx->line_num > 0)
+                    frame->source_line = ctx->line_num;
+
+                switch (status)
+                {
+                case EXEC_STRING_OK:
+                case EXEC_STRING_EMPTY:
+                    final_status = EXEC_OK;
+                    break;
+                case EXEC_STRING_INCOMPLETE:
+                    final_status = EXEC_INCOMPLETE;
+                    break;
+                case EXEC_STRING_ERROR:
+                    final_status = EXEC_ERROR;
+                    break;
+                }
+                return final_status;
+            }
+            else
+            {
+                /* Append final chunk to accumulated buffer */
+                if (line_len + chunk_len + 1 > line_buf_size)
+                {
+                    line_buf_size = (line_len + chunk_len + 1) * 2;
+                    line_buf = (char *)xrealloc(line_buf, line_buf_size);
+                }
+                memcpy(line_buf + line_len, chunk, chunk_len);
+                line_len += chunk_len;
+                line_buf[line_len] = '\0';
+                break; /* Line complete — fall through to process it */
+            }
+        }
+        else
+        {
+            /* No newline yet — accumulate */
+            if (line_buf == NULL)
+            {
+                line_buf_size = (chunk_len + 1) * 2;
+                line_buf = (char *)xmalloc(line_buf_size);
+                memcpy(line_buf, chunk, chunk_len);
+                line_len = chunk_len;
+                line_buf[line_len] = '\0';
+            }
+            else
+            {
+                if (line_len + chunk_len + 1 > line_buf_size)
+                {
+                    line_buf_size = (line_len + chunk_len + 1) * 2;
+                    line_buf = (char *)xrealloc(line_buf, line_buf_size);
+                }
+                memcpy(line_buf + line_len, chunk, chunk_len);
+                line_len += chunk_len;
+                line_buf[line_len] = '\0';
+            }
+        }
+    }
+
+    /* Process whatever we accumulated (may be empty on pure EOF) */
+    if (line_len > 0)
+    {
+        exec_string_status_t status = exec_string_core(frame, line_buf, tokenizer, ctx);
+        if (ctx->line_num > 0)
+            frame->source_line = ctx->line_num;
+
+        switch (status)
+        {
+        case EXEC_STRING_OK:
+        case EXEC_STRING_EMPTY:
+            final_status = EXEC_OK;
+            break;
+        case EXEC_STRING_INCOMPLETE:
+            final_status = EXEC_INCOMPLETE;
+            break;
+        case EXEC_STRING_ERROR:
+            final_status = EXEC_ERROR;
+            break;
+        }
+    }
+
+    if (line_buf)
+        xfree(line_buf);
+
+    return final_status;
+}
+
+exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interactive)
+{
+    Expects_not_null(executor);
+    Expects_not_null(fp);
+
+    /* ------------------------------------------------------------------
+     * Ensure the frame stack is initialized
+     * ------------------------------------------------------------------ */
+    if (!executor->top_frame_initialized)
+    {
+        exec_status_t status = exec_setup_lazy(executor, fp);
+        if (status != EXEC_OK)
+            log_warn("lazy setup failed with status %d", status);
+        // Not a fatal error
+    }
+    /* ------------------------------------------------------------------
+     * Create / reuse the persistent tokenizer
+     * ------------------------------------------------------------------ */
+    if (!executor->tokenizer)
+    {
+        executor->tokenizer = tokenizer_create(executor->aliases);
+        if (!executor->tokenizer)
+        {
+            exec_set_error(executor, "Failed to create tokenizer");
+            return EXEC_ERROR;
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * Create the persistent string-execution context.
+     * This is what survives across INCOMPLETE lines — it holds the lexer
+     * (with its quote/heredoc state) and any accumulated tokens from
+     * partial parses.
+     * ------------------------------------------------------------------ */
+    exec_string_ctx_t *ctx = exec_string_ctx_create();
+    if (!ctx || !ctx->lexer)
+    {
+        if (ctx)
+            exec_string_ctx_destroy(&ctx);
+        exec_set_error(executor, "Failed to create execution context");
+        return EXEC_ERROR;
+    }
+
+    /* ------------------------------------------------------------------
+     * REPL state
+     * ------------------------------------------------------------------ */
+#define IGNOREEOF_MAX 10
+    int consecutive_eof = 0;
+    bool need_continuation = false;
+    exec_status_t final_result = EXEC_OK;
+
+    /* ------------------------------------------------------------------
+     * Main loop — one physical line per iteration
+     * ------------------------------------------------------------------ */
+    for (;;)
+    {
+        /* ---- 1. Prompt ---- */
+        if (interactive)
+        {
+            if (need_continuation)
+            {
+                const char *ps2 = exec_get_ps2(executor);
+                fprintf(stderr, "%s", ps2);
+            }
+            else
+            {
+                char *ps1 = frame_render_ps1(executor->current_frame);
+                fprintf(stderr, "%s", ps1 ? ps1 : "$ ");
+                xfree(ps1);
+            }
+            fflush(stderr);
+        }
+
+        /* ---- 2. Read & execute one line ---- */
+        exec_status_t line_status =
+            exec_stream_core_ex(executor->current_frame, fp, executor->tokenizer, ctx);
+
+        /* ---- 3. EOF handling ---- */
+        if (feof(fp))
+        {
+            if (need_continuation)
+            {
+                /*
+                 * EOF inside a multi-line construct.  POSIX XCU 2.3:
+                 * "If the shell is not interactive, the shell need not
+                 *  perform this check." Either way, an unterminated
+                 *  construct is a syntax error.
+                 */
+                if (interactive)
+                    fprintf(stderr, "\n%s: syntax error: unexpected end of file\n",
+                            string_cstr(executor->shell_name));
+                final_result = EXEC_ERROR;
+                break;
+            }
+
+            if (interactive && executor->opt.ignoreeof)
+            {
+                consecutive_eof++;
+                if (consecutive_eof < IGNOREEOF_MAX)
+                {
+                    int remaining = IGNOREEOF_MAX - consecutive_eof;
+                    fprintf(stderr,
+                            "Use \"exit\" to leave the shell "
+                            "(or press Ctrl-D %d more time%s).\n",
+                            remaining, remaining == 1 ? "" : "s");
+                    clearerr(fp);
+                    continue;
+                }
+                /* Too many consecutive EOFs — fall through to exit */
+            }
+
+            /* Clean EOF */
+            final_result = EXEC_OK;
+            break;
+        }
+
+        /* Got input — reset consecutive-EOF counter */
+        consecutive_eof = 0;
+
+        /* ---- 4. Dispatch on line status ---- */
+        if (line_status == EXEC_INCOMPLETE)
+        {
+            /*
+             * The lexer or parser needs more input.  The ctx holds the
+             * incomplete lexer state and/or accumulated tokens; the
+             * tokenizer may also be buffering compound-command tokens.
+             * Loop back to read the next line (prompting with PS2).
+             */
+            need_continuation = true;
+            continue;
+        }
+
+        /* Command complete (OK, EMPTY, or ERROR) — reset continuation */
+        need_continuation = false;
+
+        /*
+         * The ctx was reset internally by exec_string_core on success
+         * (exec_string_ctx_reset clears the lexer and accumulated
+         * tokens).  On error the ctx may have stale state, so reset
+         * it explicitly to be safe.
+         */
+        if (line_status == EXEC_ERROR)
+        {
+            exec_string_ctx_reset(ctx);
+
+            if (interactive)
+            {
+                const char *err = exec_get_error(executor);
+                if (err)
+                {
+                    fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
+                    exec_clear_error(executor);
+                }
+                /* Interactive shells keep going after errors */
+            }
+            else
+            {
+                /* Non-interactive + errexit: abort on non-zero status */
+                if (executor->opt.errexit && executor->last_exit_status != 0)
+                {
+                    final_result = EXEC_ERROR;
+                    break;
+                }
+            }
+        }
+
+        /* ---- 5. Check for exit / top-level return ---- */
+        if (executor->current_frame &&
+            executor->current_frame->pending_control_flow == EXEC_FLOW_RETURN &&
+            executor->current_frame == executor->top_frame)
+        {
+            /* A top-level 'return' is equivalent to 'exit' */
+            final_result = EXEC_EXIT;
+            break;
+        }
+
+        /* ---- 6. Reap background jobs ---- */
+        exec_reap_background_jobs(executor, interactive);
+
+        /* ---- 7. Process pending traps ---- */
+        for (int signo = 1; signo < NSIG; signo++)
+        {
+            if (!executor->trap_pending[signo])
+                continue;
+
+            executor->trap_pending[signo] = 0;
+
+            const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
+            if (!trap_action || !trap_action->action)
+                continue;
+
+            /* POSIX: $? is preserved across trap execution */
+            int saved_exit_status = executor->last_exit_status;
+
+            exec_frame_t *trap_frame =
+                exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
+
+            exec_result_t trap_result =
+                exec_command_string(trap_frame, string_cstr(trap_action->action));
+
+            exec_frame_pop(&executor->current_frame);
+
+            executor->last_exit_status = saved_exit_status;
+
+            if (trap_result.status == EXEC_EXIT)
+            {
+                final_result = EXEC_EXIT;
+                goto done;
+            }
+
+            if (trap_result.status == EXEC_ERROR && interactive)
+            {
+                const char *err = exec_get_error(executor);
+                if (err)
+                {
+                    fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
+                            err);
+                    exec_clear_error(executor);
+                }
+            }
+        }
+
+        /* ---- 8. SIGINT handling ---- */
+        if (executor->sigint_received)
+        {
+            executor->sigint_received = 0;
+
+            if (interactive)
+            {
+                fprintf(stderr, "\n");
+                need_continuation = false;
+
+                /*
+                 * Discard all partial state: reset the ctx (lexer +
+                 * accumulated tokens) and recreate the tokenizer so
+                 * any buffered compound-command tokens are flushed.
+                 */
+                exec_string_ctx_reset(ctx);
+                tokenizer_destroy(&executor->tokenizer);
+                executor->tokenizer = tokenizer_create(executor->aliases);
+            }
+            else
+            {
+                executor->last_exit_status = 128 + SIGINT;
+                final_result = EXEC_ERROR;
+                break;
+            }
+        }
+    } /* for (;;) */
+
+done:
+    exec_string_ctx_destroy(&ctx);
+    return final_result;
+}
+
+exec_status_t exec_execute_stream(exec_t* executor, FILE* fp)
+{
+    return exec_execute_stream_repl(executor, fp, executor->is_interactive);
+}
+
+/* For non-interactive execution of a named script */
+exec_status_t exec_execute_stream_named(exec_t* executor, FILE* fp, const char* filename)
+{
+    Expects_not_null(executor);
+    Expects_not_null(fp);
+    Expects_not_null(filename);
+    /* Need to make sure a frame exists so set can set the filename */
+    if (!executor->top_frame_initialized)
+    {
+        exec_status_t status = exec_setup_lazy(executor, fp);
+        if (status != EXEC_OK)
+            log_warn("lazy setup failed with status %d", status);
+        // Not a fatal error
+    }
+    Expects_not_null(executor->current_frame);
+    /* Set the source name for error reporting */
+    if (executor->current_frame->source_name)
+        string_set_cstr(&executor->current_frame->source_name, filename);
+    else
+        executor->current_frame->source_name = string_create_from_cstr(filename);
+    executor->current_frame->source_line = 0;
+    exec_status_t status = exec_execute_stream_repl(executor, fp, false);
+    return status;
+}
+
+/* this version is for executing -c complete strings. Incomplete inputs are errors */
+exec_result_t exec_execute_command_string(exec_t* executor, const char* command)
+{
+    Expects_not_null(executor);
+    Expects_not_null(command);
+    if (!executor->top_frame_initialized)
+    {
+        exec_status_t status = exec_setup_lazy(executor, fp);
+        if (status != EXEC_OK)
+            log_warn("lazy setup failed with status %d", status);
+        // Not a fatal error
+    }
+    Expects_not_null(executor->current_frame);
+
+    // TO BE CONTINUED
 }
 
 /**
