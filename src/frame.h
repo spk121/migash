@@ -1,29 +1,12 @@
 #ifndef FRAME_H
 #define FRAME_H
 
-// TODO: this header needs to be reworked so that it only contains the public
-// API for the frame-level executor, and all internal definitions are moved to exec_internal.h or
-// similar.
-//
-// Also any top-level APIs in this header should be moved to exec.h, which is the public
-// API for the top-level executor. Together, exec.h and frame.h should be the only public headers
-// for the execution engine, and shell.c and builtins.c should only be using the public APIs defined
-// in those headers.
-//
-// Aside from string_t.h and string_list.h,
-// no other internal API should be exposed in this header.
-
 #include <stdio.h>
 
 #include "string_t.h"
 #include "string_list.h"
-#include "variable_store.h"
-#include "func_store.h"
 
 typedef struct exec_frame_t exec_frame_t;
-typedef struct trap_store_t trap_store_t;
-typedef struct word_token_t word_token_t;
-typedef struct ast_node_t ast_node_t;
 
 typedef enum frame_expand_flags_t
 {
@@ -83,6 +66,33 @@ typedef enum frame_control_flow_t
     FRAME_FLOW_CONTINUE /* 'continue' executed */
 } frame_control_flow_t;
 
+typedef enum frame_func_error_t
+{
+    FRAME_FUNC_ERROR_NONE = 0,       /* No error */
+    FRAME_FUNC_ERROR_NOT_FOUND,      /* Function not found */
+    FRAME_FUNC_ERROR_EMPTY_NAME,     /* Function name is empty */
+    FRAME_FUNC_ERROR_NAME_TOO_LONG,  /* Function name is too long */
+    FRAME_FUNC_ERROR_NAME_INVALID_CHARACTER, /* Function name contains invalid character */
+    FRAME_FUNC_ERROR_NAME_STARTS_WITH_DIGIT, /* Function name starts with a digit */
+    FRAME_FUNC_ERROR_PARSE_FAILURE,   /* Invalid function body */
+    FRAME_FUNC_ERROR_READONLY,       /* Function is readonly and cannot be modified */
+    FRAME_FUNC_ERROR_SYSTEM_ERROR    /* System error (e.g. memory allocation failure) */
+} frame_func_error_t;
+
+/**
+ * Error codes returned by variable store operations.
+ */
+typedef enum frame_var_error_t
+{
+    FRAME_VAR_ERROR_NONE = 0,               /**< Operation succeeded. */
+    FRAME_VAR_ERROR_NOT_FOUND,              /**< Variable does not exist. */
+    FRAME_VAR_ERROR_READ_ONLY,              /**< Variable is read-only. */
+    FRAME_VAR_ERROR_EMPTY_NAME,             /**< Variable name is empty. */
+    FRAME_VAR_ERROR_NAME_TOO_LONG,          /**< Variable name exceeds limits. */
+    FRAME_VAR_ERROR_NAME_STARTS_WITH_DIGIT, /**< Variable name begins with a digit. */
+    FRAME_VAR_ERROR_NAME_INVALID_CHARACTER, /**< Variable name contains invalid characters. */
+    FRAME_VAR_ERROR_VALUE_TOO_LONG          /**< Variable value exceeds limits. */
+} frame_var_error_t;
 
 // NEW API: error handling
 
@@ -156,9 +166,9 @@ string_t *frame_get_ps2(exec_frame_t *frame);
  * is read-only and the new value differs from the previous value, this will return an error code
  * and not update the variable. Returns VAR_STORE_ERROR_NONE on success, or error code on failure.
  */
-var_store_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
                                      const string_t *value);
-var_store_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value);
+frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value);
 
 
 /**
@@ -166,9 +176,9 @@ var_store_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
  * Even if the frame normally acts on a temporary variable store to execute a simple command,
  * this will add the variable as non-temporary.
  */
-var_store_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
                                                      const string_t *value);
-var_store_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
+frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
                                                      const char *value);
 
 /**
@@ -180,7 +190,7 @@ var_store_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const 
  * environment if supported by the OS. Read-only variables can still have their export status
  * changed. Returns VAR_STORE_ERROR_NONE on success, or error code on failure.
  */
-var_store_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
                                               bool exported);
 
 /**
@@ -202,7 +212,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
  * current frame. If the variable does not exist, this will return an error code. Returns
  * VAR_STORE_ERROR_NONE on success, or error code on failure.
  */
-var_store_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
                                               bool readonly);
 
 /**
@@ -212,8 +222,8 @@ var_store_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_
  * but is read-only, this will return an error code and not unset the variable. Returns
  * VAR_STORE_ERROR_NONE on success, or error code on failure.
  */
-var_store_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name);
-var_store_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name);
+frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name);
+frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name);
 
 /**
  * Prints all variables in the variable store associated with the current frame in a format
@@ -248,20 +258,6 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format);
  */
 string_t *frame_expand_string(exec_frame_t *frame, const string_t *text,
                               frame_expand_flags_t flags);
-
-/**
- * Expands the given word token into a list of words using the variable store and other context of
- * the current frame. This includes all expansions that apply to token parts, as well as field splitting
- * and globbing if applicable. The exact expansions performed depend on the token's flags
- * and flags of the word token's individual parts.
- * 
- * Expanding a word token may have side effects on the frame's variable store,
- * such as by parameter expansions that create new variables or update existing ones.
- * 
- * Returns a newly allocated list of strings with the expanded words. Caller is responsible for
- * freeing the returned string list.
- */
-string_list_t *frame_expand_word_token(exec_frame_t *frame, const token_t *tok);
 
 // NEW API: positional parameters
 
@@ -338,23 +334,19 @@ bool frame_set_named_option(exec_frame_t *frame, const string_t *option_name, bo
 bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, bool value,
                                  bool plus_prefix);
 
-// NEW API: functions
+// Shell functions
 
 bool frame_has_function(const exec_frame_t *frame, const string_t *name);
 
-string_t *frame_get_function(exec_frame_t *frame, const string_t *name);
-func_store_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, string_t **value);
-func_store_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
-                                      const ast_node_t *value);
-func_store_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
-                                           const char *value);
-func_store_error_t frame_unset_function(exec_frame_t *frame, const string_t *name);
-func_store_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name);
-
+frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name, string_t **out_body);
+frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body);
+frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name, const string_t *value);
+frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name, const char *value);
+frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *name);
+frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name);
 // Is this public API? Or is this only for the exec_execute_* function to call?
 frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
                                         const string_list_t *args);
-
 
 
 // NEW API: exit status
@@ -471,7 +463,7 @@ bool frame_trap_name_is_unsupported(const char *name);
  * run on exit are executed. The traps will be executed in the order they were added to the trap
  * store.
  */
-void frame_run_exit_traps(const trap_store_t *store, exec_frame_t *frame);
+void frame_run_exit_traps(exec_frame_t *frame);
 
 // NEW API: aliases
 
@@ -548,72 +540,6 @@ void frame_clear_all_aliases(exec_frame_t *frame);
  * @return True if the name is valid for use as an alias
  */
 bool frame_alias_name_is_valid(const char *name);
-
-// TODO: background jobs should be part of the exec.h API, not the frame API,
-// since they are more related to the executor than individual frames.
-bool frame_reap_background_jobs(exec_frame_t *frame, bool wait_for_completion);
-void frame_print_background_jobs(exec_frame_t *frame);
-
-/* ============================================================================
- * Job Control Functions
- * ============================================================================ */
-
-/**
- * Job output format for frame job printing functions.
- */
-typedef enum frame_jobs_format_t
-{
-    FRAME_JOBS_FORMAT_DEFAULT,   /* Default format: [job_id]± state command */
-    FRAME_JOBS_FORMAT_LONG,      /* Long format: includes PIDs */
-    FRAME_JOBS_FORMAT_PID_ONLY   /* PID only: just the process group leader PID */
-} frame_jobs_format_t;
-
-/**
- * Parse a job ID spec from a string.
- * Accepts: %n, %+, %%, %-, plain number n
- * 
- * @param frame   The execution frame
- * @param arg_str The string to parse
- * @return        Job ID on success, -1 on error
- */
-int frame_parse_job_id(const exec_frame_t* frame, const string_t* arg_str);
-
-/**
- * Print a specific job by ID.
- * 
- * @param frame   The execution frame
- * @param job_id  The job ID to print
- * @param format  The output format
- * @return        true if job was found and printed, false otherwise
- */
-bool frame_print_job_by_id(const exec_frame_t* frame, int job_id, frame_jobs_format_t format);
-
-/**
- * Print all jobs.
- * 
- * @param frame   The execution frame
- * @param format  The output format
- */
-void frame_print_all_jobs(const exec_frame_t* frame, frame_jobs_format_t format);
-
-/**
- * Check if the frame has any jobs.
- * 
- * @param frame  The execution frame
- * @return       true if there are jobs, false otherwise
- */
-bool frame_has_jobs(const exec_frame_t* frame);
-
-// NEW API: stream execution
-/**
- * Execute commands from a stream (file or stdin) in the context of the given frame.
- * Reads lines from the stream, parses them, and executes them in the frame.
- * 
- * @param frame The execution frame context
- * @param fp The file stream to read from
- * @return FRAME_EXEC_OK on success, FRAME_EXEC_ERROR on error
- */
-frame_exec_status_t frame_execute_stream(exec_frame_t *frame, FILE *fp);
 
 /**
  * Execute commands from a string in the context of the given frame.

@@ -268,7 +268,6 @@ bool exec_is_top_frame_initialized(const exec_t *executor);
  */
 exec_frame_t *exec_get_current_frame(const exec_t *executor);
 
-
 /* ============================================================================
  * Builtin Registration
  * ============================================================================
@@ -375,7 +374,6 @@ exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const char *name);
 bool exec_get_builtin_category(const exec_t *executor, const char *name,
                                exec_builtin_category_t *category_out);
 
-
 /* ============================================================================
  * Execution Setup
  * ============================================================================ */
@@ -458,6 +456,23 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
  * continuation state after each call.
  */
 typedef struct exec_partial_state_t exec_partial_state_t;
+
+/**
+ * Return the size of exec_partial_state_t so callers can allocate it
+ * without including exec_internal.h.
+ */
+size_t exec_partial_state_size(void);
+
+/**
+ * Release all resources held by a partial state.
+ *
+ * Call this when abandoning an incomplete parse, or after the final
+ * successful call.  After cleanup the struct is zeroed and may be
+ * reused for a new sequence of partial calls.
+ *
+ * Safe to call on an already-zeroed struct (no-op).
+ */
+void exec_partial_state_cleanup(exec_partial_state_t *state);
 
 /**
  * Execute a command string incrementally.
@@ -649,7 +664,7 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index);
  * Bring a job to the foreground.
  * If `cmd` is provided and if the function returns 'true' indicating
  * that a job was foregrounded, `cmd` will receive a newly allocated copy of
- * the command string of the 
+ * the command string of the
  * job that is being foregrounded. This necessary because foregrounded jobs
  * are removed from the job list, so their command strings are freed and no
  * longer accessible.

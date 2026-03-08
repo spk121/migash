@@ -22,9 +22,8 @@
 
 #define MGSH_PUBLIC_API
 
-#include "string.h"
+#include "string_t.h"
 #include "string_list.h"
-#include "getopt.h"
 #include "getopt_string.h"
 #include "exec.h"
 #include "frame.h"

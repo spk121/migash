@@ -60,8 +60,8 @@
 #endif
 #include <io.h>
 #include <process.h>
-#include <processthreadsapi.h>   // GetProcessId, OpenProcess, GetExitCodeProcess, etc.
-#include <synchapi.h>            // WaitForSingleObject
+#include <processthreadsapi.h> // GetProcessId, OpenProcess, GetExitCodeProcess, etc.
+#include <synchapi.h>          // WaitForSingleObject
 #endif
 
 /* ============================================================================
@@ -85,9 +85,11 @@ exec_result_t exec_case_clause(exec_frame_t *frame, ast_node_t *node);
  * Helper Functions
  * ============================================================================ */
 
-static void source_rc_files(struct exec_t *e)
+static exec_status_t source_rc_files(struct exec_t *e)
 {
     // FIXME
+    (void)e;
+    return EXEC_OK;
 #if 0
 #ifdef EXEC_SYSTEM_RC_PATH
     exec_load_config_file(e, EXEC_SYSTEM_RC_PATH, func_store, alias_store);
@@ -118,7 +120,6 @@ static void source_rc_files(struct exec_t *e)
 
 #endif
 }
-
 
 /* ============================================================================
  * Executor Lifecycle
@@ -183,7 +184,6 @@ void exec_destroy(exec_t **executor_ptr)
     *executor_ptr = NULL;
 }
 
-
 /* ============================================================================
  * Pre-Execution Configuration
  * ============================================================================
@@ -203,7 +203,7 @@ bool exec_is_args_set(const exec_t *executor)
     return executor->argc > 0 && executor->argv != NULL;
 }
 
-char* const* exec_get_args(const exec_t* executor, int* argc_out)
+char *const *exec_get_args(const exec_t *executor, int *argc_out)
 {
     Expects_not_null(executor);
 
@@ -214,7 +214,7 @@ char* const* exec_get_args(const exec_t* executor, int* argc_out)
     return executor->argv;
 }
 
-bool exec_set_args(exec_t* executor, int argc, char* const* argv)
+bool exec_set_args(exec_t *executor, int argc, char *const *argv)
 {
     Expects_not_null(executor);
 
@@ -228,21 +228,21 @@ bool exec_set_args(exec_t* executor, int argc, char* const* argv)
     return true;
 }
 
-bool exec_is_envp_set(const exec_t* executor)
+bool exec_is_envp_set(const exec_t *executor)
 {
     Expects_not_null(executor);
 
     return executor->envp != NULL;
 }
 
-char* const* exec_get_envp(const exec_t* executor)
+char *const *exec_get_envp(const exec_t *executor)
 {
     Expects_not_null(executor);
 
     return executor->envp;
 }
 
-bool exec_set_envp(exec_t* executor, char* const* envp)
+bool exec_set_envp(exec_t *executor, char *const *envp)
 {
     Expects_not_null(executor);
 
@@ -254,7 +254,7 @@ bool exec_set_envp(exec_t* executor, char* const* envp)
 
 /* ── Shell identity ──────────────────────────────────────────────────────── */
 
-bool exec_is_shell_name_set(const exec_t* executor)
+bool exec_is_shell_name_set(const exec_t *executor)
 {
     Expects_not_null(executor);
 
@@ -270,7 +270,7 @@ const char *exec_get_shell_name(const exec_t *executor)
     return string_cstr(executor->shell_name);
 }
 
-bool exec_set_shell_name(exec_t* executor, const char* shell_name)
+bool exec_set_shell_name(exec_t *executor, const char *shell_name)
 {
     Expects_not_null(executor);
 
@@ -289,13 +289,13 @@ bool exec_set_shell_name(exec_t* executor, const char* shell_name)
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
 
-bool exec_get_flag_allexport(const exec_t* executor)
+bool exec_get_flag_allexport(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.allexport;
 }
 
-bool exec_set_flag_allexport(exec_t* executor, bool value)
+bool exec_set_flag_allexport(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -310,7 +310,7 @@ bool exec_get_flag_errexit(const exec_t *executor)
     return executor->opt.errexit;
 }
 
-bool exec_set_flag_errexit(exec_t* executor, bool value)
+bool exec_set_flag_errexit(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -319,13 +319,13 @@ bool exec_set_flag_errexit(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_ignoreeof(const exec_t* executor)
+bool exec_get_flag_ignoreeof(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.ignoreeof;
 }
 
-bool exec_set_flag_ignoreeof(exec_t* executor, bool value)
+bool exec_set_flag_ignoreeof(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -334,13 +334,13 @@ bool exec_set_flag_ignoreeof(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_noclobber(const exec_t* executor)
+bool exec_get_flag_noclobber(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.noclobber;
 }
 
-bool exec_set_flag_noclobber(exec_t* executor, bool value)
+bool exec_set_flag_noclobber(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -355,7 +355,7 @@ bool exec_get_flag_noglob(const exec_t *executor)
     return executor->opt.noglob;
 }
 
-bool exec_set_flag_noglob(exec_t* executor, bool value)
+bool exec_set_flag_noglob(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -364,13 +364,13 @@ bool exec_set_flag_noglob(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_noexec(const exec_t* executor)
+bool exec_get_flag_noexec(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.noexec;
 }
 
-bool exec_set_flag_noexec(exec_t* executor, bool value)
+bool exec_set_flag_noexec(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -379,13 +379,13 @@ bool exec_set_flag_noexec(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_nounset(const exec_t* executor)
+bool exec_get_flag_nounset(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.nounset;
 }
 
-bool exec_set_flag_nounset(exec_t* executor, bool value)
+bool exec_set_flag_nounset(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -394,13 +394,13 @@ bool exec_set_flag_nounset(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_pipefail(const exec_t* executor)
+bool exec_get_flag_pipefail(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.pipefail;
 }
 
-bool exec_set_flag_pipefail(exec_t* executor, bool value)
+bool exec_set_flag_pipefail(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -409,13 +409,13 @@ bool exec_set_flag_pipefail(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_verbose(const exec_t* executor)
+bool exec_get_flag_verbose(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.verbose;
 }
 
-bool exec_set_flag_verbose(exec_t* executor, bool value)
+bool exec_set_flag_verbose(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -424,13 +424,13 @@ bool exec_set_flag_verbose(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_vi(const exec_t* executor)
+bool exec_get_flag_vi(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.vi;
 }
 
-bool exec_set_flag_vi(exec_t* executor, bool value)
+bool exec_set_flag_vi(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -439,13 +439,13 @@ bool exec_set_flag_vi(exec_t* executor, bool value)
     return true;
 }
 
-bool exec_get_flag_xtrace(const exec_t* executor)
+bool exec_get_flag_xtrace(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.xtrace;
 }
 
-bool exec_set_flag_xtrace(exec_t* executor, bool value)
+bool exec_set_flag_xtrace(exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -456,13 +456,13 @@ bool exec_set_flag_xtrace(exec_t* executor, bool value)
 
 /* ── Interactive / login mode ────────────────────────────────────────────── */
 
-bool exec_get_is_interactive(const exec_t* executor)
+bool exec_get_is_interactive(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_interactive;
 }
 
-bool exec_set_is_interactive(exec_t* executor, bool is_interactive)
+bool exec_set_is_interactive(exec_t *executor, bool is_interactive)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -471,13 +471,13 @@ bool exec_set_is_interactive(exec_t* executor, bool is_interactive)
     return true;
 }
 
-bool exec_get_is_login_shell(const exec_t* executor)
+bool exec_get_is_login_shell(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_login_shell;
 }
 
-bool exec_set_is_login_shell(exec_t* executor, bool is_login_shell)
+bool exec_set_is_login_shell(exec_t *executor, bool is_login_shell)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -488,13 +488,13 @@ bool exec_set_is_login_shell(exec_t* executor, bool is_login_shell)
 
 /* ── Job control ─────────────────────────────────────────────────────────── */
 
-bool exec_get_job_control_disabled(const exec_t* executor)
+bool exec_get_job_control_disabled(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->job_control_disabled;
 }
 
-bool exec_set_job_control_disabled(exec_t* executor, bool disabled)
+bool exec_set_job_control_disabled(exec_t *executor, bool disabled)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -505,13 +505,13 @@ bool exec_set_job_control_disabled(exec_t* executor, bool disabled)
 
 /* ── Working directory ───────────────────────────────────────────────────── */
 
-bool exec_is_working_directory_set(const exec_t* executor)
+bool exec_is_working_directory_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->working_directory != NULL;
 }
 
-const char* exec_get_working_directory(const exec_t* executor)
+const char *exec_get_working_directory(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->working_directory)
@@ -519,7 +519,7 @@ const char* exec_get_working_directory(const exec_t* executor)
     return string_cstr(executor->working_directory);
 }
 
-bool exec_set_working_directory(exec_t* executor, const char* path)
+bool exec_set_working_directory(exec_t *executor, const char *path)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -535,19 +535,19 @@ bool exec_set_working_directory(exec_t* executor, const char* path)
 
 /* ── File permissions ────────────────────────────────────────────────────── */
 
-bool exec_is_umask_set(const exec_t* executor)
+bool exec_is_umask_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask != 0;
 }
 
-int exec_get_umask(const exec_t* executor)
+int exec_get_umask(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask;
 }
 
-bool exec_set_umask(exec_t* executor, int mask)
+bool exec_set_umask(exec_t *executor, int mask)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -557,13 +557,13 @@ bool exec_set_umask(exec_t* executor, int mask)
 }
 
 #ifdef POSIX_API
-mode_t exec_get_umask_posix(const exec_t* executor)
+mode_t exec_get_umask_posix(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask;
 }
 
-bool exec_set_umask_posix(exec_t* executor, mode_t mask)
+bool exec_set_umask_posix(exec_t *executor, mode_t mask)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -572,19 +572,19 @@ bool exec_set_umask_posix(exec_t* executor, mode_t mask)
     return true;
 }
 
-bool exec_is_file_size_limit_set(const exec_t* executor)
+bool exec_is_file_size_limit_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->file_size_limit != 0;
 }
 
-rlim_t exec_get_file_size_limit(const exec_t* executor)
+rlim_t exec_get_file_size_limit(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->file_size_limit;
 }
 
-bool exec_set_file_size_limit(exec_t* executor, rlim_t limit)
+bool exec_set_file_size_limit(exec_t *executor, rlim_t limit)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -596,13 +596,13 @@ bool exec_set_file_size_limit(exec_t* executor, rlim_t limit)
 
 /* ── Process identity ────────────────────────────────────────────────────── */
 
-bool exec_is_process_group_set(const exec_t* executor)
+bool exec_is_process_group_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->pgid_valid;
 }
 
-int exec_get_process_group(const exec_t* executor)
+int exec_get_process_group(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->pgid_valid)
@@ -620,13 +620,13 @@ bool exec_set_process_group(exec_t *executor, int pgid)
     return true;
 }
 
-bool exec_is_shell_pid_set(const exec_t* executor)
+bool exec_is_shell_pid_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->shell_pid_valid;
 }
 
-int exec_get_shell_pid(const exec_t* executor)
+int exec_get_shell_pid(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->shell_pid_valid)
@@ -634,7 +634,7 @@ int exec_get_shell_pid(const exec_t* executor)
     return executor->shell_pid;
 }
 
-bool exec_set_shell_pid(exec_t* executor, int pid)
+bool exec_set_shell_pid(exec_t *executor, int pid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -644,13 +644,13 @@ bool exec_set_shell_pid(exec_t* executor, int pid)
     return true;
 }
 
-bool exec_is_shell_ppid_set(const exec_t* executor)
+bool exec_is_shell_ppid_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->shell_ppid_valid;
 }
 
-int exec_get_shell_ppid(const exec_t* executor)
+int exec_get_shell_ppid(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->shell_ppid_valid)
@@ -658,7 +658,7 @@ int exec_get_shell_ppid(const exec_t* executor)
     return executor->shell_ppid;
 }
 
-bool exec_set_shell_ppid(exec_t* executor, int ppid)
+bool exec_set_shell_ppid(exec_t *executor, int ppid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -676,7 +676,7 @@ bool exec_get_inhibit_rc_files(const exec_t *executor)
     return executor->inhibit_rc_files;
 }
 
-bool exec_set_inhibit_rc_files(exec_t* executor, bool inhibit)
+bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -685,13 +685,13 @@ bool exec_set_inhibit_rc_files(exec_t* executor, bool inhibit)
     return true;
 }
 
-bool exec_is_system_rc_filename_set(const exec_t* executor)
+bool exec_is_system_rc_filename_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->system_rc_filename != NULL;
 }
 
-const char* exec_get_system_rc_filename(const exec_t* executor)
+const char *exec_get_system_rc_filename(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->system_rc_filename)
@@ -699,7 +699,7 @@ const char* exec_get_system_rc_filename(const exec_t* executor)
     return string_cstr(executor->system_rc_filename);
 }
 
-bool exec_set_system_rc_filename(exec_t* executor, const char* filename)
+bool exec_set_system_rc_filename(exec_t *executor, const char *filename)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -713,13 +713,13 @@ bool exec_set_system_rc_filename(exec_t* executor, const char* filename)
     return true;
 }
 
-bool exec_is_user_rc_filename_set(const exec_t* executor)
+bool exec_is_user_rc_filename_set(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->user_rc_filename != NULL;
 }
 
-const char* exec_get_user_rc_filename(const exec_t* executor)
+const char *exec_get_user_rc_filename(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->user_rc_filename)
@@ -727,7 +727,7 @@ const char* exec_get_user_rc_filename(const exec_t* executor)
     return string_cstr(executor->user_rc_filename);
 }
 
-bool exec_set_user_rc_filename(exec_t* executor, const char* filename)
+bool exec_set_user_rc_filename(exec_t *executor, const char *filename)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -751,7 +751,7 @@ int exec_get_last_exit_status(const exec_t *executor)
     return executor->last_exit_status;
 }
 
-bool exec_set_last_exit_status(exec_t* executor, int status)
+bool exec_set_last_exit_status(exec_t *executor, int status)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -761,7 +761,7 @@ bool exec_set_last_exit_status(exec_t* executor, int status)
     return true;
 }
 
-int exec_get_last_background_pid(const exec_t* executor)
+int exec_get_last_background_pid(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->last_background_pid_set)
@@ -769,7 +769,7 @@ int exec_get_last_background_pid(const exec_t* executor)
     return executor->last_background_pid;
 }
 
-bool exec_set_last_background_pid(exec_t* executor, int pid)
+bool exec_set_last_background_pid(exec_t *executor, int pid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -779,7 +779,7 @@ bool exec_set_last_background_pid(exec_t* executor, int pid)
     return true;
 }
 
-const char* exec_get_last_argument(const exec_t* executor)
+const char *exec_get_last_argument(const exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->last_argument_set)
@@ -787,7 +787,7 @@ const char* exec_get_last_argument(const exec_t* executor)
     return string_cstr(executor->last_argument);
 }
 
-bool exec_set_last_argument(exec_t* executor, const char* arg)
+bool exec_set_last_argument(exec_t *executor, const char *arg)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -806,13 +806,13 @@ bool exec_set_last_argument(exec_t* executor, const char* arg)
  * Frame Access
  * ============================================================================ */
 
-bool exec_is_top_frame_initialized(const exec_t* executor)
+bool exec_is_top_frame_initialized(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->top_frame_initialized;
 }
 
-exec_frame_t* exec_get_current_frame(const exec_t* executor)
+exec_frame_t *exec_get_current_frame(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->current_frame;
@@ -901,7 +901,7 @@ bool exec_get_builtin_category(const exec_t *executor, const char *name,
  * Execution Setup
  * ============================================================================ */
 
-static exec_status_t exec_setup_core(exec_t* e, bool interactive)
+static exec_status_t exec_setup_core(exec_t *e, bool interactive)
 {
     Expects_not_null(e);
 
@@ -926,7 +926,7 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
     bool default_pid_valid = false;
     bool default_ppid_valid = false;
 #endif
-    
+
     if (!e->shell_pid_valid && default_pid_valid)
     {
         e->shell_pid = default_pid;
@@ -944,7 +944,8 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
     // argv[0] starts with a '-', which is a Unix convention.
     if (!e->is_login_shell)
     {
-        bool default_is_login_shell = (e->argc > 0 && e->argv && e->argv[0] && e->argv[0][0] == '-');
+        bool default_is_login_shell =
+            (e->argc > 0 && e->argv && e->argv[0] && e->argv[0][0] == '-');
         e->is_login_shell = default_is_login_shell;
     }
 
@@ -1011,9 +1012,9 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
     // initial environment variables.
     // e->envp is the source of the initial environment variables for the top frame when the
     // top frame is initialized.  It is not used after the top frame is initialized.
-    // 
-    // N.B. If e->variables is set, e->variables, rather than e->envp, becomes the source of the initial
-    // environment variables for the top frame when the top frame is initialized.
+    //
+    // N.B. If e->variables is set, e->variables, rather than e->envp, becomes the source of the
+    // initial environment variables for the top frame when the top frame is initialized.
     if (e->envp)
         e->env_vars = string_list_create_from_cstr_array((const char **)e->envp, -1);
     else
@@ -1021,14 +1022,15 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
 
     if (!e->top_frame)
     {
-        // This initialization is very involved. Lots of things happen in exec_frame_create_top_level()
-        // 
+        // This initialization is very involved. Lots of things happen in
+        // exec_frame_create_top_level()
+        //
         // STEP 1: Populates the frame with default stores and parameters
         // - e->envp is used to populate the variable store
         // - e->shell_name, e->argc, and e->argv are used to populate the positional parameters
         // - an empty file descriptor table is created for the frame
         // - an empty trap store is created for the frame
-        // - an empty options set is created for the frame: err_exit is enabled, MUST BE POPULATED 
+        // - an empty options set is created for the frame: err_exit is enabled, MUST BE POPULATED
         // - an empty CWD is created for the frame. Initialized to getcwd() if possible.
         // - an empty umask is created for the frame. Initialized to the system umask if possible.
         // - an empty function store is created for the frame
@@ -1043,15 +1045,17 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
         //   the frame points to e->variables instead. This allows the caller to pre-populate the
         //   variable store with custom values before the top frame is initialized.
         // - if e->positional_params is already set, the positional parameters created in step 1 are
-        //   discarded and the frame points to e->positional_params instead. This allows the caller to
-        //   pre-populate the positional parameters with custom values before the top frame is initialized.
+        //   discarded and the frame points to e->positional_params instead. This allows the caller
+        //   to pre-populate the positional parameters with custom values before the top frame is
+        //   initialized.
         // - similarly functions
         // - similarly aliases
         // - similarly traps
         // - similarly open fds
         // - similarly working directory
         // - similarly umask
-        // - the options are *always* overridden with the executor's opt, since the executor's opt is
+        // - the options are *always* overridden with the executor's opt, since the executor's opt
+        // is
         //   meant to be the pre-configured default options for the top frame.
         // - last_exit_status, last background_pid, and last_argument are always overridden with the
         //   executor's values, since they are meant to be the pre-configured default values for the
@@ -1067,7 +1071,7 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
     /* Source RC files */
     if (!e->inhibit_rc_files && (interactive || e->is_login_shell))
     {
-        exec_status_t ret = source_rc_files(e, interactive);
+        exec_status_t ret = source_rc_files(e);
         e->rc_loaded = ret == EXEC_OK;
         if (e->rc_loaded)
             log_debug("RC files loaded successfully.");
@@ -1078,7 +1082,7 @@ static exec_status_t exec_setup_core(exec_t* e, bool interactive)
     else
         log_debug("Skipped loading RC files");
 
-    return EXEC_OK
+    return EXEC_OK;
 }
 
 exec_status_t exec_setup_interactive(exec_t *executor)
@@ -1099,7 +1103,7 @@ exec_status_t exec_setup_noninteractive(exec_t *executor)
  * @param fp The file pointer to use for guessing interactivity.
  * @return EXEC_OK if setup was successful, otherwise EXEC_ERROR.
  */
-static exec_status_t exec_setup_lazy(exec_t* executor, FILE *fp)
+static exec_status_t exec_setup_lazy(exec_t *executor, FILE *fp)
 {
     Expects_not_null(executor);
     if (executor->top_frame_initialized)
@@ -1264,7 +1268,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     e->jobs = job_store_create();
     e->job_control_disabled =  !(
         cfg->job_control_enabled_set ? cfg->job_control_enabled : e->is_interactive);
-    
+
 #ifdef POSIX_API
     if (cfg->pgid_set)
     {
@@ -1415,54 +1419,13 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
 }
 #endif
 
-
 /* ============================================================================
  * Utility Functions
  * ============================================================================ */
 
-int exec_get_exit_status(const exec_t *executor)
-{
-    Expects_not_null(executor);
-    return executor->last_exit_status;
-}
-
-void exec_set_exit_status(exec_t *executor, int status)
-{
-    Expects_not_null(executor);
-    executor->last_exit_status = status;
-    executor->last_exit_status_set = true;
-}
-
-const char *exec_get_error(const exec_t *executor)
-{
-    Expects_not_null(executor);
-    if (string_length(executor->error_msg) == 0)
-        return NULL;
-    return string_data(executor->error_msg);
-}
-
-void exec_set_error(exec_t *executor, const char *format, ...)
-{
-    Expects_not_null(executor);
-    Expects_not_null(format);
-
-    va_list args;
-    va_start(args, format);
-
-    char buffer[EXECUTOR_ERROR_BUFFER_SIZE];
-    vsnprintf(buffer, sizeof(buffer), format, args);
-
-    va_end(args);
-
-    string_clear(executor->error_msg);
-    string_append_cstr(executor->error_msg, buffer);
-}
-
-void exec_clear_error(exec_t *executor)
-{
-    Expects_not_null(executor);
-    string_clear(executor->error_msg);
-}
+/* exec_get_exit_status, exec_set_exit_status, exec_get_error,
+ * exec_set_error, and exec_clear_error are defined in the
+ * "Global State Queries" section below. */
 
 const char *exec_get_ps1(const exec_t *executor)
 {
@@ -1471,16 +1434,14 @@ const char *exec_get_ps1(const exec_t *executor)
      * if called too early, there may only be a variable store
      * at top-level, or perhaps not at all */
     if (executor->current_frame && executor->current_frame->variables)
-        {
-        const char *ps1 =
-            variable_store_get_value_cstr(executor->current_frame->variables, "PS1");
+    {
+        const char *ps1 = variable_store_get_value_cstr(executor->current_frame->variables, "PS1");
         if (ps1 && *ps1)
             return ps1;
     }
     else if (executor->variables)
     {
-        const char *ps1 =
-            variable_store_get_value_cstr(executor->variables, "PS1");
+        const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
         if (ps1 && *ps1)
             return ps1;
     }
@@ -1952,7 +1913,8 @@ exec_result_t exec_execute_dispatch(exec_frame_t *frame, const ast_node_t *node)
         break;
 
     default:
-        exec_set_error(frame->executor, "Unsupported AST node type: %d %s", node->type, ast_node_type_to_string(node->type));
+        exec_set_error(frame->executor, "Unsupported AST node type: %d %s", node->type,
+                       ast_node_type_to_string(node->type));
         result.status = EXEC_NOT_IMPL;
         return result;
     }
@@ -2088,7 +2050,9 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
             if (tok_status == TOK_INCOMPLETE)
             {
-                log_debug("exec_string_core: Tokenizer incomplete (compound command) during lexer incomplete at line %d", ctx->line_num);
+                log_debug("exec_string_core: Tokenizer incomplete (compound command) during lexer "
+                          "incomplete at line %d",
+                          ctx->line_num);
                 /* Tokens are buffered in tokenizer, continue to next line */
                 token_list_destroy(&processed_tokens);
                 return EXEC_STRING_INCOMPLETE;
@@ -2133,7 +2097,9 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (tok_status == TOK_INCOMPLETE)
     {
-        log_debug("exec_string_core: Tokenizer incomplete (compound command) at line %d, tokens buffered", ctx->line_num);
+        log_debug(
+            "exec_string_core: Tokenizer incomplete (compound command) at line %d, tokens buffered",
+            ctx->line_num);
         /* Tokenizer is buffering tokens for an incomplete compound command.
          * The processed_tokens list will be empty - tokens are held in the tokenizer's buffer.
          * Continue reading more input. */
@@ -2199,21 +2165,19 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
             {
                 string_t *tok_str = token_to_string(curr_tok);
                 log_debug("exec_string_core: Current token: type=%d, line=%d, col=%d, text='%s'",
-                          token_get_type(curr_tok),
-                          token_get_first_line(curr_tok),
-                          token_get_first_column(curr_tok),
-                          string_cstr(tok_str));
+                          token_get_type(curr_tok), token_get_first_line(curr_tok),
+                          token_get_first_column(curr_tok), string_cstr(tok_str));
                 frame_set_error_printf(frame, "Parse error at line %d, column %d near '%s'",
                                        token_get_first_line(curr_tok),
-                                       token_get_first_column(curr_tok),
-                                       string_cstr(tok_str));
+                                       token_get_first_column(curr_tok), string_cstr(tok_str));
                 string_destroy(&tok_str);
                 token_destroy(&curr_tok);
             }
             else
             {
                 log_debug("exec_string_core: No current token available");
-                frame_set_error_printf(frame, "Parse error at line %d: no error details available", ctx->line_num);
+                frame_set_error_printf(frame, "Parse error at line %d: no error details available",
+                                       ctx->line_num);
             }
         }
         parser_destroy(&parser);
@@ -2222,7 +2186,8 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (parse_status == PARSE_INCOMPLETE)
     {
-        log_debug("exec_string_core: Parse incomplete at line %d, accumulating tokens", ctx->line_num);
+        log_debug("exec_string_core: Parse incomplete at line %d, accumulating tokens",
+                  ctx->line_num);
         if (gnode)
             g_node_destroy(&gnode);
         /* Clone token list from parser - respect silo boundary */
@@ -2272,8 +2237,8 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 }
 
 /* extracts strings from an input stream to feed to exec_string_core */
-exec_status_t exec_stream_core_ex(exec_frame_t* frame, FILE* fp, tokenizer_t* tokenizer,
-    exec_string_ctx_t* ctx)
+exec_status_t exec_stream_core_ex(exec_frame_t *frame, FILE *fp, tokenizer_t *tokenizer,
+                                  exec_string_ctx_t *ctx)
 {
     Expects_not_null(frame);
     Expects_not_null(fp);
@@ -2282,7 +2247,7 @@ exec_status_t exec_stream_core_ex(exec_frame_t* frame, FILE* fp, tokenizer_t* to
     Expects_not_null(ctx->lexer);
     Expects_not_null(frame->executor);
 
-    exec_status_t final_status = FRAME_EXEC_OK;
+    exec_status_t final_status = EXEC_OK;
 
     /* Read a single logical line of any size, efficiently */
 #define LINE_CHUNK_SIZE 4096
@@ -2311,7 +2276,7 @@ exec_status_t exec_stream_core_ex(exec_frame_t* frame, FILE* fp, tokenizer_t* to
                     final_status = EXEC_OK;
                     break;
                 case EXEC_STRING_INCOMPLETE:
-                    final_status = EXEC_INCOMPLETE;
+                    final_status = EXEC_INCOMPLETE_INPUT;
                     break;
                 case EXEC_STRING_ERROR:
                     final_status = EXEC_ERROR;
@@ -2372,7 +2337,7 @@ exec_status_t exec_stream_core_ex(exec_frame_t* frame, FILE* fp, tokenizer_t* to
             final_status = EXEC_OK;
             break;
         case EXEC_STRING_INCOMPLETE:
-            final_status = EXEC_INCOMPLETE;
+            final_status = EXEC_INCOMPLETE_INPUT;
             break;
         case EXEC_STRING_ERROR:
             final_status = EXEC_ERROR;
@@ -2506,7 +2471,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         consecutive_eof = 0;
 
         /* ---- 4. Dispatch on line status ---- */
-        if (line_status == EXEC_INCOMPLETE)
+        if (line_status == EXEC_INCOMPLETE_INPUT)
         {
             /*
              * The lexer or parser needs more input.  The ctx holds the
@@ -2554,7 +2519,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
-            executor->current_frame->pending_control_flow == EXEC_FLOW_RETURN &&
+            executor->current_frame->pending_control_flow == FRAME_FLOW_RETURN &&
             executor->current_frame == executor->top_frame)
         {
             /* A top-level 'return' is equivalent to 'exit' */
@@ -2641,13 +2606,13 @@ done:
     return final_result;
 }
 
-exec_status_t exec_execute_stream(exec_t* executor, FILE* fp)
+exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
 {
     return exec_execute_stream_repl(executor, fp, executor->is_interactive);
 }
 
 /* For non-interactive execution of a named script */
-exec_status_t exec_execute_stream_named(exec_t* executor, FILE* fp, const char* filename)
+exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp, const char *filename)
 {
     Expects_not_null(executor);
     Expects_not_null(fp);
@@ -2663,7 +2628,7 @@ exec_status_t exec_execute_stream_named(exec_t* executor, FILE* fp, const char* 
     Expects_not_null(executor->current_frame);
     /* Set the source name for error reporting */
     if (executor->current_frame->source_name)
-        string_set_cstr(&executor->current_frame->source_name, filename);
+        string_set_cstr(executor->current_frame->source_name, filename);
     else
         executor->current_frame->source_name = string_create_from_cstr(filename);
     executor->current_frame->source_line = 0;
@@ -3353,14 +3318,14 @@ void exec_set_exit_status(exec_t *executor, int status)
     executor->last_exit_status = status;
 }
 
-void exec_request_exit(exec_t *executor, int status);
+void exec_request_exit(exec_t *executor, int status)
 {
     Expects_not_null(executor);
     executor->exit_requested = true;
     executor->last_exit_status = status;
 }
 
-bool exec_is_exit_requested(const exec_t* executor)
+bool exec_is_exit_requested(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->exit_requested;
@@ -3368,26 +3333,39 @@ bool exec_is_exit_requested(const exec_t* executor)
 
 /* ── Error message ───────────────────────────────────────────────────────── */
 
-const char *exec_get_error(const exec_t *executor)\
+const char *exec_get_error(const exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->error_message ? string_cstr(executor->error_message) : NULL;
+    return executor->error_msg ? string_cstr(executor->error_msg) : NULL;
 }
 
-void exec_set_error(exec_t* executor, const char* format, ...)
+void exec_set_error(exec_t *executor, const char *format, ...)
 {
     Expects_not_null(executor);
+    Expects_not_null(format);
+
     va_list args;
     va_start(args, format);
-    string_set_vprintf(&executor->error_message, format, args);
+
+    char buffer[EXECUTOR_ERROR_BUFFER_SIZE];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+
     va_end(args);
+
+    if (!executor->error_msg)
+        executor->error_msg = string_create_from_cstr(buffer);
+    else
+    {
+        string_clear(executor->error_msg);
+        string_append_cstr(executor->error_msg, buffer);
+    }
 }
 
 void exec_clear_error(exec_t *executor)
 {
     Expects_not_null(executor);
-    if (executor->error_message)
-        string_destroy(&executor->error_message);
+    if (executor->error_msg)
+        string_clear(executor->error_msg);
 }
 
 /* ── Pipe statuses (PIPESTATUS / pipefail) ───────────────────────────────── */
@@ -3417,16 +3395,23 @@ char *exec_get_ps1(const exec_t *executor)
     Expects_not_null(executor);
     // FIXME: first check for a PS1 in the current frame's variable store, then fall back to the
     // global store
-    const char *ps1 = var_store_get(executor->variables, "PS1");
+    const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
     return ps1 ? xstrdup(ps1) : NULL;
 }
 
-char *exec_get_rendered_ps1(const exec_t *executor);
+char *exec_get_rendered_ps1(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    if (executor->current_frame)
+        return frame_render_ps1(executor->current_frame);
+    /* Fallback if no frame yet */
+    return xstrdup("$ ");
+}
 
 char *exec_get_ps2(const exec_t *executor)
 {
     Expects_not_null(executor);
-    const char *ps2 = var_store_get(executor->variables, "PS2");
+    const char *ps2 = variable_store_get_value_cstr(executor->variables, "PS2");
     return ps2 ? xstrdup(ps2) : NULL;
 }
 
@@ -3434,26 +3419,17 @@ char *exec_get_ps2(const exec_t *executor)
  * Job Control
  * ============================================================================ */
 
-/**
- * Job state as visible through the public API.
+/* exec_job_state_t is defined in exec.h.
+ * We use EXEC_JOB_RUNNING as a fallback for unknown internal states.
  */
-typedef enum exec_job_state_t
-{
-    EXEC_JOB_UNKNOWN = 0, // No such job
-    EXEC_JOB_RUNNING,
-    EXEC_JOB_STOPPED,
-    EXEC_JOB_DONE,
-    EXEC_JOB_TERMINATED,
-    EXEC_JOB_UNSPECIFIED // Job exists but state is not specified
-} exec_job_state_t;
 
 /* ── Reaping ─────────────────────────────────────────────────────────────── */
 
-void exec_reap_background_jobs(exec_t* executor, bool notify)
+void exec_reap_background_jobs(exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
 
-    bool any_completed = job_store_update_status(executor->jobs, wait_for_completion);
+    bool any_completed = job_store_update_status(executor->jobs, false);
     if (notify && any_completed)
     {
         job_store_print_completed_jobs(executor->jobs, stdout);
@@ -3468,14 +3444,14 @@ size_t exec_get_job_count(const exec_t *executor)
     return job_store_count(executor->jobs);
 }
 
-int exec_get_job_ids(const exec_t* executor, int* job_ids, size_t max_jobs)
+size_t exec_get_job_ids(const exec_t *executor, int *job_ids, size_t max_jobs)
 {
     Expects_not_null(executor);
     Expects_not_null(job_ids);
     return job_store_get_job_ids(executor->jobs, job_ids, max_jobs);
 }
 
-int exec_get_current_job_id(const exec_t* executor)
+int exec_get_current_job_id(const exec_t *executor)
 {
     Expects_not_null(executor);
     // job_t *job_store_get_current(const job_store_t *store);
@@ -3483,7 +3459,7 @@ int exec_get_current_job_id(const exec_t* executor)
     return current_job ? current_job->job_id : -1;
 }
 
-int exec_get_previous_job_id(const exec_t* executor)
+int exec_get_previous_job_id(const exec_t *executor)
 {
     Expects_not_null(executor);
     job_t *previous_job = job_store_get_previous(executor->jobs);
@@ -3497,7 +3473,7 @@ exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id)
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
-        return EXEC_JOB_UNKNOWN;
+        return EXEC_JOB_DONE; /* no such job */
     switch (job->state)
     {
     case JOB_RUNNING:
@@ -3509,18 +3485,18 @@ exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id)
     case JOB_TERMINATED:
         return EXEC_JOB_TERMINATED;
     default:
-        return EXEC_JOB_UNSPECIFIED;
+        return EXEC_JOB_RUNNING; /* unrecognized internal state */
     }
 }
 
-const char* exec_job_get_command(const exec_t* executor, int job_id)
+const char *exec_job_get_command(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     return job ? string_cstr(job->command) : NULL;
 }
 
-bool exec_job_is_background(const exec_t* executor, int job_id)
+bool exec_job_is_background(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3535,7 +3511,7 @@ pid_t exec_job_get_pgid(const exec_t *executor, int job_id)
     return job ? job->pgid : -1;
 }
 #else
-int exec_job_get_pgid(const exec_t* executor, int job_id)
+int exec_job_get_pgid(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3545,7 +3521,7 @@ int exec_job_get_pgid(const exec_t* executor, int job_id)
 
 /* ── Per-process queries within a job ────────────────────────────────────── */
 
-size_t exec_job_get_process_count(const exec_t* executor, int job_id)
+size_t exec_job_get_process_count(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3559,9 +3535,9 @@ exec_job_state_t exec_job_get_process_state(const exec_t *executor, int job_id, 
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
-        return EXEC_JOB_UNKNOWN;
-    if (index < 0 || index >= job_process_count(job))
-        return EXEC_JOB_UNKNOWN;
+        return EXEC_JOB_DONE; /* no such job */
+    if (index >= job_process_count(job))
+        return EXEC_JOB_DONE; /* no such job */
     intptr_t pid = job_get_process_pid(job, index);
     job_state_t proc_state = job_get_process_state(job, index);
 
@@ -3576,17 +3552,17 @@ exec_job_state_t exec_job_get_process_state(const exec_t *executor, int job_id, 
     case JOB_TERMINATED:
         return EXEC_JOB_TERMINATED;
     default:
-        return EXEC_JOB_UNSPECIFIED;
+        return EXEC_JOB_RUNNING; /* unrecognized internal state */
     }
 }
 
-int exec_job_get_process_exit_status(const exec_t* executor, int job_id, size_t index)
+int exec_job_get_process_exit_status(const exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
         return -1;
-    if (index < 0 || index >= job_process_count(job))
+    if (index >= job_process_count(job))
         return -1;
     return job_get_process_exit_status(job, index);
 }
@@ -3598,7 +3574,7 @@ pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
         return -1;
-    if (index < 0 || index >= job_process_count(job))
+    if (index >= job_process_count(job))
         return -1;
     return job_get_process_pid(job, index);
 }
@@ -3609,18 +3585,18 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
         return -1;
-    if (index < 0 || index >= job_process_count(job))
+    if (index >= job_process_count(job))
         return -1;
     return (int)job_get_process_pid(job, index);
 }
 
-intptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t index)
+uintptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
         return (uintptr_t)-1;
-    if (index < 0 || index >= job_process_count(job))
+    if (index >= job_process_count(job))
         return (uintptr_t)-1;
 #ifdef UCRT_API
     return job_get_process_handle(job, index);
@@ -3629,13 +3605,13 @@ intptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t 
 #endif
 }
 #else
-int exec_job_get_process_pid(const exec_t* executor, int job_id, size_t index)
+int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
         return -1;
-    if (index < 0 || index >= job_process_count(job))
+    if (index >= job_process_count(job))
         return -1;
     return (int)job_get_process_pid(job, index);
 }
@@ -3643,11 +3619,9 @@ int exec_job_get_process_pid(const exec_t* executor, int job_id, size_t index)
 
 /* ── Job actions ─────────────────────────────────────────────────────────── */
 
-bool exec_job_foreground(exec_t *executor, int job_id, char **cmd)
+bool exec_job_foreground(exec_t *executor, int job_id, bool cont)
 {
     Expects_not_null(executor);
-    if (cmd)
-        *cmd = NULL;
 
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
@@ -3656,7 +3630,7 @@ bool exec_job_foreground(exec_t *executor, int job_id, char **cmd)
         return false;
     }
 
-    if (job->state == JOB_STOPPED)
+    if (cont && job->state == JOB_STOPPED)
     {
 #ifdef POSIX_API
         if (kill(-job->pgid, SIGCONT) < 0)
@@ -3678,12 +3652,7 @@ bool exec_job_foreground(exec_t *executor, int job_id, char **cmd)
         return false;
     }
 
-    job->is_background = false; // optional but nice for consistency
-
-    if (cmd)
-    {
-        *cmd = xstrdup(string_cstr(job->command));
-    }
+    job->is_background = false;
 
     job_store_remove(executor->jobs, job_id);
     return true;
@@ -3691,6 +3660,36 @@ bool exec_job_foreground(exec_t *executor, int job_id, char **cmd)
     exec_set_error(executor, "fg: foreground job control not supported on this platform");
     return false;
 #endif
+}
+
+bool exec_job_background(exec_t *executor, int job_id, bool cont)
+{
+    Expects_not_null(executor);
+
+    job_t *job = job_store_find(executor->jobs, job_id);
+    if (!job)
+    {
+        exec_set_error(executor, "bg: no such job");
+        return false;
+    }
+
+    if (cont && job->state == JOB_STOPPED)
+    {
+#ifdef POSIX_API
+        if (kill(-job->pgid, SIGCONT) < 0)
+        {
+            exec_set_error(executor, "bg: cannot resume job: %s", strerror(errno));
+            return false;
+        }
+        job_store_set_state(executor->jobs, job_id, JOB_RUNNING);
+#else
+        exec_set_error(executor, "bg: cannot resume suspended jobs on this platform");
+        return false;
+#endif
+    }
+
+    job->is_background = true;
+    return true;
 }
 
 bool exec_job_kill(exec_t *executor, int job_id, int sig)
@@ -3781,7 +3780,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
 #endif
 }
 
-void exec_print_jobs(const exec_t* executor, FILE* output)
+void exec_print_jobs(const exec_t *executor, FILE *output)
 {
     // void job_store_print_jobs(const job_store_t *store, FILE *output)
     Expects_not_null(executor);
@@ -3789,15 +3788,7 @@ void exec_print_jobs(const exec_t* executor, FILE* output)
     job_store_print_jobs(executor->jobs, output);
 }
 
-/**
- * Job output format for printing.
- */
-typedef enum exec_jobs_format_t
-{
-    EXEC_JOBS_FORMAT_DEFAULT, /**< [job_id] state command  */
-    EXEC_JOBS_FORMAT_LONG,    /**< includes PIDs           */
-    EXEC_JOBS_FORMAT_PID_ONLY /**< process group leader PID only */
-} exec_jobs_format_t;
+/* exec_jobs_format_t is defined in exec.h */
 
 /**
  * Parse a job-ID specifier from a string.
@@ -3805,7 +3796,7 @@ typedef enum exec_jobs_format_t
  *
  * @return Job ID on success, -1 on error.
  */
-int exec_parse_job_id(const exec_t* executor, const char* spec)
+int exec_parse_job_id(const exec_t *executor, const char *spec)
 {
     Expects_not_null(executor);
     Expects_not_null(spec);
@@ -3826,7 +3817,7 @@ int exec_parse_job_id(const exec_t* executor, const char* spec)
             long id = strtol(spec + 1, &endptr, 10);
             if (*endptr != '\0' || id <= 0)
             {
-                exec_set_error(executor, "Invalid job specifier: %s", spec);
+                exec_set_error((exec_t *)executor, "Invalid job specifier: %s", spec);
                 return -1;
             }
             return (int)id;
@@ -3839,7 +3830,7 @@ int exec_parse_job_id(const exec_t* executor, const char* spec)
         long id = strtol(spec, &endptr, 10);
         if (*endptr != '\0' || id <= 0)
         {
-            exec_set_error(executor, "Invalid job ID: %s", spec);
+            exec_set_error((exec_t *)executor, "Invalid job ID: %s", spec);
             return -1;
         }
         return (int)id;
@@ -3861,7 +3852,7 @@ bool exec_print_job_by_id(const exec_t *executor, int job_id, exec_jobs_format_t
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
     {
-        exec_set_error(executor, "No such job: %d", job_id);
+        exec_set_error((exec_t *)executor, "No such job: %d", job_id);
         return false;
     }
     fprintf(output, "[%d] ", job->job_id);
@@ -3889,7 +3880,7 @@ bool exec_print_job_by_id(const exec_t *executor, int job_id, exec_jobs_format_t
 /**
  * Print all jobs.
  */
-void exec_print_all_jobs(const exec_t* executor, exec_jobs_format_t format, FILE* output)
+void exec_print_all_jobs(const exec_t *executor, exec_jobs_format_t format, FILE *output)
 {
     Expects_not_null(executor);
     Expects_not_null(output);
@@ -3919,18 +3910,16 @@ void exec_print_all_jobs(const exec_t* executor, exec_jobs_format_t format, FILE
     }
 }
 
-
 /**
  * Check whether any jobs exist.
  */
-bool exec_has_jobs(const exec_t* executor)
+bool exec_has_jobs(const exec_t *executor)
 {
     Expects_not_null(executor);
     return job_store_count(executor->jobs) > 0;
 }
 
 #ifdef KEEP_JUNK
-
 
 /**
  * Execute a complete command string.
@@ -3954,13 +3943,11 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
 
-    exec_result_t result = {
-        .status = EXEC_OK,
-        .has_exit_status = true,
-        .exit_status = 0,
-        .flow = EXEC_FLOW_NORMAL,
-        .flow_depth = 0
-    };
+    exec_result_t result = {.status = EXEC_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
 
     /* Handle empty or NULL command */
     if (!command || !*command)
@@ -4002,8 +3989,8 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     }
 
     /* Execute the command string */
-    exec_string_status_t status = exec_string_core(frame, string_cstr(cmd_with_newline),
-                                                   tokenizer, ctx);
+    exec_string_status_t status =
+        exec_string_core(frame, string_cstr(cmd_with_newline), tokenizer, ctx);
 
     string_destroy(&cmd_with_newline);
 
@@ -4050,13 +4037,11 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     Expects_not_null(frame);
     Expects_not_null(out_ast);
 
-    exec_result_t result = {
-        .status = EXEC_OK,
-        .has_exit_status = true,
-        .exit_status = 0,
-        .flow = EXEC_FLOW_NORMAL,
-        .flow_depth = 0
-    };
+    exec_result_t result = {.status = EXEC_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
 
     *out_ast = NULL;
 
@@ -4243,11 +4228,7 @@ exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
         }
     }
 
-    frame_exec_status_t status = exec_stream_core(
-        executor->current_frame,
-        fp,
-        executor->tokenizer
-    );
+    frame_exec_status_t status = exec_stream_core(executor->current_frame, fp, executor->tokenizer);
 
     if (status == FRAME_EXEC_OK)
     {
@@ -4270,8 +4251,8 @@ exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
                 exec_frame_t *trap_frame =
                     exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
-                exec_result_t trap_result = exec_command_string(trap_frame,
-                                                                string_cstr(trap_action->action));
+                exec_result_t trap_result =
+                    exec_command_string(trap_frame, string_cstr(trap_action->action));
 
                 exec_frame_pop(&executor->current_frame);
 
@@ -4314,7 +4295,7 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
     pid_t pid;
     bool any_reaped = false;
 
-    /* -1 and WNOHANG mean we return the PID of any completed child process or -1 
+    /* -1 and WNOHANG mean we return the PID of any completed child process or -1
      * if no child process has recently completed */
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
     {
@@ -4514,19 +4495,20 @@ bool ast_traverse(const ast_node_t *root, ast_visitor_fn visitor, void *user_dat
     return ast_traverse_helper(root, visitor, user_data);
 }
 
-exec_result_t exec_compound_list(exec_frame_t* frame, const ast_node_t* list)
+exec_result_t exec_compound_list(exec_frame_t *frame, const ast_node_t *list)
 {
     Expects_not_null(frame);
     Expects_not_null(list);
     Expects(list->type == AST_COMMAND_LIST);
 
-    exec_result_t result = { .status = EXEC_OK, .has_exit_status = false, .exit_status = 0 };
+    exec_result_t result = {.status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
 
     // Access the command list data
     ast_node_list_t *items = list->data.command_list.items;
     cmd_separator_list_t *separators = list->data.command_list.separators;
 
-    if (!items || items->size == 0) {
+    if (!items || items->size == 0)
+    {
         // Empty list: no commands to execute, exit status 0
         result.has_exit_status = true;
         result.exit_status = 0;
@@ -4534,10 +4516,11 @@ exec_result_t exec_compound_list(exec_frame_t* frame, const ast_node_t* list)
     }
 
     // Iterate through each command in the list
-    for (int i = 0; i < items->size; i++) {
+    for (int i = 0; i < items->size; i++)
+    {
         ast_node_t *cmd = items->nodes[i];
         if (!cmd)
-            continue;  // Skip null commands (shouldn't happen, but defensive)
+            continue; // Skip null commands (shouldn't happen, but defensive)
 
         /* Update LINENO before executing this command */
         exec_update_lineno(frame, cmd);
@@ -4562,62 +4545,67 @@ exec_result_t exec_compound_list(exec_frame_t* frame, const ast_node_t* list)
 
         // Execute the command based on its type
         exec_result_t cmd_result;
-        switch (cmd->type) {
-            case AST_PIPELINE:
-                cmd_result = exec_pipeline(frame, cmd);
-                break;
-            case AST_AND_OR_LIST:
-                cmd_result = exec_and_or_list(frame, cmd);
-                break;
-            case AST_COMMAND_LIST:
-                cmd_result = exec_compound_list(frame, cmd);
-                break;
-            case AST_SIMPLE_COMMAND:
-                cmd_result = exec_simple_command(frame, cmd);
-                break;
-            case AST_BRACE_GROUP:
-                cmd_result = exec_brace_group(frame, cmd->data.compound.body, NULL);
-                break;
-            case AST_SUBSHELL:
-                cmd_result = exec_subshell(frame, cmd->data.compound.body);
-                break;
-            case AST_IF_CLAUSE:
-                cmd_result = exec_if_clause(frame, cmd);
-                break;
-            case AST_WHILE_CLAUSE:
-            case AST_UNTIL_CLAUSE:
-                cmd_result = exec_while_clause(frame, cmd);
-                break;
-            case AST_FOR_CLAUSE:
-                cmd_result = exec_for_clause(frame, cmd);
-                break;
-            case AST_CASE_CLAUSE:
-                cmd_result = exec_case_clause(frame, cmd);
-                break;
-            case AST_REDIRECTED_COMMAND:
-                cmd_result = exec_redirected_command(frame, cmd);
-                break;
-            case AST_FUNCTION_DEF:
-                cmd_result = exec_function_def_clause(frame, cmd);
-                break;
-            default:
-                exec_set_error(frame->executor, "Unsupported command type in compound list: %d (%s)", cmd->type, ast_node_type_to_string(cmd->type));
-                result.status = EXEC_NOT_IMPL;
-                return result;
+        switch (cmd->type)
+        {
+        case AST_PIPELINE:
+            cmd_result = exec_pipeline(frame, cmd);
+            break;
+        case AST_AND_OR_LIST:
+            cmd_result = exec_and_or_list(frame, cmd);
+            break;
+        case AST_COMMAND_LIST:
+            cmd_result = exec_compound_list(frame, cmd);
+            break;
+        case AST_SIMPLE_COMMAND:
+            cmd_result = exec_simple_command(frame, cmd);
+            break;
+        case AST_BRACE_GROUP:
+            cmd_result = exec_brace_group(frame, cmd->data.compound.body, NULL);
+            break;
+        case AST_SUBSHELL:
+            cmd_result = exec_subshell(frame, cmd->data.compound.body);
+            break;
+        case AST_IF_CLAUSE:
+            cmd_result = exec_if_clause(frame, cmd);
+            break;
+        case AST_WHILE_CLAUSE:
+        case AST_UNTIL_CLAUSE:
+            cmd_result = exec_while_clause(frame, cmd);
+            break;
+        case AST_FOR_CLAUSE:
+            cmd_result = exec_for_clause(frame, cmd);
+            break;
+        case AST_CASE_CLAUSE:
+            cmd_result = exec_case_clause(frame, cmd);
+            break;
+        case AST_REDIRECTED_COMMAND:
+            cmd_result = exec_redirected_command(frame, cmd);
+            break;
+        case AST_FUNCTION_DEF:
+            cmd_result = exec_function_def_clause(frame, cmd);
+            break;
+        default:
+            exec_set_error(frame->executor, "Unsupported command type in compound list: %d (%s)",
+                           cmd->type, ast_node_type_to_string(cmd->type));
+            result.status = EXEC_NOT_IMPL;
+            return result;
         }
 
         // Propagate errors from command execution
-        if (cmd_result.status != EXEC_OK) {
+        if (cmd_result.status != EXEC_OK)
+        {
             result.status = cmd_result.status;
-            if (cmd_result.has_exit_status) {
+            if (cmd_result.has_exit_status)
+            {
                 result.has_exit_status = true;
                 result.exit_status = cmd_result.exit_status;
             }
-            return result;  // Stop on error (unless background)
+            return result; // Stop on error (unless background)
         }
 
         // Update the frame's exit status from the command
-        if (cmd_result.has_exit_status) {
+        if (cmd_result.has_exit_status)
+        {
             frame->last_exit_status = cmd_result.exit_status;
             result.has_exit_status = true;
             result.exit_status = cmd_result.exit_status;
@@ -4625,7 +4613,8 @@ exec_result_t exec_compound_list(exec_frame_t* frame, const ast_node_t* list)
 
         // Handle the separator after this command
         // cmd_separator_t sep = ast_node_command_list_get_separator(list, i);
-        if (sep == CMD_EXEC_BACKGROUND) {
+        if (sep == CMD_EXEC_BACKGROUND)
+        {
             // Run in background: Add to job store and continue without waiting
             // Note: This assumes the command spawned processes; integrate with job control
             // For simplicity, assume exec_pipeline/exec_and_or_list handle process creation
@@ -4633,7 +4622,9 @@ exec_result_t exec_compound_list(exec_frame_t* frame, const ast_node_t* list)
             // Example: job_store_add(frame->executor->jobs, command_line, true);
             // For now, just log or skip detailed job management
             // TODO: Implement full background job tracking
-        } else if (sep == CMD_EXEC_SEQUENTIAL) {
+        }
+        else if (sep == CMD_EXEC_SEQUENTIAL)
+        {
             // Wait for completion (already done above), then proceed to next
         }
         else if (sep == CMD_EXEC_END)
@@ -4653,7 +4644,7 @@ exec_result_t exec_and_or_list(exec_frame_t *frame, ast_node_t *list)
     Expects_not_null(list);
     Expects(list->type == AST_AND_OR_LIST);
 
-    exec_result_t result = { .status = EXEC_OK, .has_exit_status = false, .exit_status = 0 };
+    exec_result_t result = {.status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
 
     ast_node_t *left = list->data.andor_list.left;
     ast_node_t *right = list->data.andor_list.right;
@@ -4664,74 +4655,87 @@ exec_result_t exec_and_or_list(exec_frame_t *frame, ast_node_t *list)
 
     // Execute left command
     exec_result_t left_result;
-    switch (left->type) {
-        case AST_COMMAND_LIST:
-            left_result = exec_compound_list(frame, left);
-            break;
-        case AST_AND_OR_LIST:
-            left_result = exec_and_or_list(frame, left);
-            break;
-        case AST_PIPELINE:
-            left_result = exec_pipeline(frame, left);
-            break;
-        case AST_SIMPLE_COMMAND:
-            left_result = exec_simple_command(frame, left);
-            break;
-        default:
-            exec_set_error(frame->executor, "Unsupported AST node type in and_or_list: %d", left->type);
-            result.status = EXEC_NOT_IMPL;
-            return result;
+    switch (left->type)
+    {
+    case AST_COMMAND_LIST:
+        left_result = exec_compound_list(frame, left);
+        break;
+    case AST_AND_OR_LIST:
+        left_result = exec_and_or_list(frame, left);
+        break;
+    case AST_PIPELINE:
+        left_result = exec_pipeline(frame, left);
+        break;
+    case AST_SIMPLE_COMMAND:
+        left_result = exec_simple_command(frame, left);
+        break;
+    default:
+        exec_set_error(frame->executor, "Unsupported AST node type in and_or_list: %d", left->type);
+        result.status = EXEC_NOT_IMPL;
+        return result;
     }
 
-    if (left_result.status != EXEC_OK) {
+    if (left_result.status != EXEC_OK)
+    {
         result = left_result;
         return result;
     }
 
     // Determine if right command should be executed
     bool execute_right = false;
-    if (op == ANDOR_OP_AND) {
-        if (left_result.exit_status == 0) {
+    if (op == ANDOR_OP_AND)
+    {
+        if (left_result.exit_status == 0)
+        {
             execute_right = true;
         }
-    } else if (op == ANDOR_OP_OR) {
-        if (left_result.exit_status != 0) {
+    }
+    else if (op == ANDOR_OP_OR)
+    {
+        if (left_result.exit_status != 0)
+        {
             execute_right = true;
         }
     }
 
-    if (execute_right) {
+    if (execute_right)
+    {
         /* Update LINENO for right side (only if we're going to execute it) */
         exec_update_lineno(frame, right);
 
         // Execute right command
         exec_result_t right_result;
-        switch (right->type) {
-            case AST_COMMAND_LIST:
-                right_result = exec_compound_list(frame, right);
-                break;
-            case AST_AND_OR_LIST:
-                right_result = exec_and_or_list(frame, right);
-                break;
-            case AST_PIPELINE:
-                right_result = exec_pipeline(frame, right);
-                break;
-            case AST_SIMPLE_COMMAND:
-                right_result = exec_simple_command(frame, right);
-                break;
-            default:
-                exec_set_error(frame->executor, "Unsupported AST node type in and_or_list: %d", right->type);
-                result.status = EXEC_NOT_IMPL;
-                return result;
+        switch (right->type)
+        {
+        case AST_COMMAND_LIST:
+            right_result = exec_compound_list(frame, right);
+            break;
+        case AST_AND_OR_LIST:
+            right_result = exec_and_or_list(frame, right);
+            break;
+        case AST_PIPELINE:
+            right_result = exec_pipeline(frame, right);
+            break;
+        case AST_SIMPLE_COMMAND:
+            right_result = exec_simple_command(frame, right);
+            break;
+        default:
+            exec_set_error(frame->executor, "Unsupported AST node type in and_or_list: %d",
+                           right->type);
+            result.status = EXEC_NOT_IMPL;
+            return result;
         }
 
-        if (right_result.status != EXEC_OK) {
+        if (right_result.status != EXEC_OK)
+        {
             result = right_result;
             return result;
         }
 
         result = right_result;
-    } else {
+    }
+    else
+    {
         result = left_result;
     }
 
@@ -4792,19 +4796,22 @@ exec_result_t exec_if_clause(exec_frame_t *frame, ast_node_t *node)
     Expects_not_null(node);
     Expects(node->type == AST_IF_CLAUSE);
 
-    exec_result_t result = { .status = EXEC_OK, .has_exit_status = false, .exit_status = 0 };
+    exec_result_t result = {.status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
 
     // Execute the main condition
     exec_result_t cond_result = exec_execute_dispatch(frame, node->data.if_clause.condition);
-    if (cond_result.status != EXEC_OK) {
+    if (cond_result.status != EXEC_OK)
+    {
         result = cond_result;
         return result;
     }
 
     // If condition succeeds (exit status 0), execute then_body
-    if (cond_result.has_exit_status && cond_result.exit_status == 0) {
+    if (cond_result.has_exit_status && cond_result.exit_status == 0)
+    {
         exec_result_t then_result = exec_execute_dispatch(frame, node->data.if_clause.then_body);
-        if (then_result.status != EXEC_OK) {
+        if (then_result.status != EXEC_OK)
+        {
             result = then_result;
             return result;
         }
@@ -4813,21 +4820,29 @@ exec_result_t exec_if_clause(exec_frame_t *frame, ast_node_t *node)
     }
 
     // Check elif clauses
-    if (node->data.if_clause.elif_list) {
-        for (int i = 0; i < node->data.if_clause.elif_list->size; i++) {
+    if (node->data.if_clause.elif_list)
+    {
+        for (int i = 0; i < node->data.if_clause.elif_list->size; i++)
+        {
             ast_node_t *elif_node = node->data.if_clause.elif_list->nodes[i];
-            if (!elif_node || elif_node->type != AST_IF_CLAUSE) {
+            if (!elif_node || elif_node->type != AST_IF_CLAUSE)
+            {
                 // Assuming elif is also AST_IF_CLAUSE with condition and then_body
                 continue;
             }
-            exec_result_t elif_cond_result = exec_execute_dispatch(frame, elif_node->data.if_clause.condition);
-            if (elif_cond_result.status != EXEC_OK) {
+            exec_result_t elif_cond_result =
+                exec_execute_dispatch(frame, elif_node->data.if_clause.condition);
+            if (elif_cond_result.status != EXEC_OK)
+            {
                 result = elif_cond_result;
                 return result;
             }
-            if (elif_cond_result.has_exit_status && elif_cond_result.exit_status == 0) {
-                exec_result_t elif_then_result = exec_execute_dispatch(frame, elif_node->data.if_clause.then_body);
-                if (elif_then_result.status != EXEC_OK) {
+            if (elif_cond_result.has_exit_status && elif_cond_result.exit_status == 0)
+            {
+                exec_result_t elif_then_result =
+                    exec_execute_dispatch(frame, elif_node->data.if_clause.then_body);
+                if (elif_then_result.status != EXEC_OK)
+                {
                     result = elif_then_result;
                     return result;
                 }
@@ -4838,14 +4853,18 @@ exec_result_t exec_if_clause(exec_frame_t *frame, ast_node_t *node)
     }
 
     // Execute else_body if present
-    if (node->data.if_clause.else_body) {
+    if (node->data.if_clause.else_body)
+    {
         exec_result_t else_result = exec_execute_dispatch(frame, node->data.if_clause.else_body);
-        if (else_result.status != EXEC_OK) {
+        if (else_result.status != EXEC_OK)
+        {
             result = else_result;
             return result;
         }
         result = else_result;
-    } else {
+    }
+    else
+    {
         // No else, exit status 0
         result.has_exit_status = true;
         result.exit_status = 0;
@@ -4942,7 +4961,7 @@ exec_result_t exec_function_def_clause(exec_frame_t *frame, ast_node_t *node)
     func_store_t *func_store = frame->functions;
     func_store_insert_result_t ret = func_store_add_ex(func_store, name, body, redirections);
 
-        if (ret.error != FUNC_STORE_ERROR_NONE)
+    if (ret.error != FUNC_STORE_ERROR_NONE)
     {
         exec_set_error(frame->executor, "Failed to define function '%s'", string_cstr(name));
         // Clean up redirections on failure
@@ -5097,7 +5116,6 @@ exec_result_t exec_condition_loop(exec_frame_t *frame, exec_params_t *params)
 
     return result;
 }
-
 
 /**
  * Execute a for loop from within an EXEC_FRAME_LOOP frame.
