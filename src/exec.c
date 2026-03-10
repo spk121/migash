@@ -12,30 +12,34 @@
 #include <ctype.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "exec.h"
-#include "exec_types_internal.h"
 
 #include "alias_store.h"
 #include "ast.h"
-#include "exec_expander.h"
+#include "builtin_store.h"
 #include "exec_frame.h"
-#include "exec_redirect.h"
+#include "exec_frame_policy.h"
+#include "exec_parse_session.h"
+#include "exec_types_internal.h"
+#include "exec_types_public.h"
 #include "fd_table.h"
 #include "frame.h"
 #include "func_store.h"
-#include "glob_util.h"
 #include "gnode.h"
 #include "job_store.h"
 #include "lexer.h"
+#include "lexer_t.h"
 #include "logging.h"
 #include "lower.h"
 #include "parser.h"
 #include "positional_params.h"
 #include "sig_act.h"
 #include "string_list.h"
+#include "string_t.h"
 #include "token.h"
 #include "tokenizer.h"
 #include "trap_store.h"
@@ -61,7 +65,6 @@
 #include <io.h>
 #include <process.h>
 #include <processthreadsapi.h> // GetProcessId, OpenProcess, GetExitCodeProcess, etc.
-#include <synchapi.h>          // WaitForSingleObject
 #endif
 
 /* ============================================================================
@@ -75,11 +78,6 @@
  * ============================================================================ */
 
 exec_result_t exec_execute_dispatch(exec_frame_t *frame, const ast_node_t *node);
-exec_result_t exec_while_clause(exec_frame_t *frame, ast_node_t *node);
-exec_result_t exec_for_clause(exec_frame_t *frame, ast_node_t *node);
-exec_result_t exec_function_def_clause(exec_frame_t *frame, ast_node_t *node);
-exec_result_t exec_redirected_command(exec_frame_t *frame, ast_node_t *node);
-exec_result_t exec_case_clause(exec_frame_t *frame, ast_node_t *node);
 
 /* ============================================================================
  * Helper Functions
@@ -163,8 +161,8 @@ void exec_destroy(exec_t **executor_ptr)
         func_store_destroy(&e->functions);
     if (e->aliases)
         alias_store_destroy(&e->aliases);
-    if (e->tokenizer)
-        tokenizer_destroy(&e->tokenizer);
+    if (e->session)
+        exec_parse_session_destroy(&e->session);
     if (e->traps)
         trap_store_destroy(&e->traps);
     if (e->original_signals)
@@ -823,7 +821,7 @@ exec_frame_t *exec_get_current_frame(const exec_t *executor)
  * ============================================================================ */
 
 bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin_fn_t fn,
-                           exec_builtin_category_t category)
+                                exec_builtin_category_t category)
 {
     Expects_not_null(executor);
 
@@ -879,7 +877,7 @@ exec_builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name
 }
 
 bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
-                               exec_builtin_category_t *category_out)
+                                    exec_builtin_category_t *category_out)
 {
     Expects_not_null(executor);
 
@@ -1396,10 +1394,10 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
 #endif
 
     /* -------------------------------------------------------------------------
-     * Tokenizer (created lazily on first use)
+     * Parse session (created lazily on first use)
      * -------------------------------------------------------------------------
      */
-    e->tokenizer = NULL;
+    e->session = NULL;
 
     /* -------------------------------------------------------------------------
      * Frame Stack (lazily initialized on first execution)
@@ -1854,18 +1852,18 @@ static void exec_update_lineno(exec_frame_t *frame, const ast_node_t *node)
 
 exec_result_t exec_execute_dispatch(exec_frame_t *frame, const ast_node_t *node)
 {
-    exec_frame_execute_result_t res =  exec_frame_execute_dispatch(frame, node);
+    exec_frame_execute_result_t res = exec_frame_execute_dispatch(frame, node);
     exec_result_t result;
     result.exit_code = res.exit_status;
-    switch(res.exit_status)
+    switch (res.exit_status)
     {
-        case EXEC_FRAME_EXECUTE_STATUS_OK:
-            result.status = EXEC_OK;
-            break;
-        case EXEC_FRAME_EXECUTE_STATUS_ERROR:
-        default:
-            result.status = EXEC_ERROR;
-            break;
+    case EXEC_FRAME_EXECUTE_STATUS_OK:
+        result.status = EXEC_OK;
+        break;
+    case EXEC_FRAME_EXECUTE_STATUS_ERROR:
+    default:
+        result.status = EXEC_ERROR;
+        break;
     }
     return result;
 }
@@ -1877,76 +1875,37 @@ exec_result_t exec_execute_dispatch(exec_frame_t *frame, const ast_node_t *node)
 /**
  * Initialize the string execution context.
  */
-exec_string_ctx_t *exec_string_ctx_create(void)
-{
-    exec_string_ctx_t *ctx = xcalloc(1, sizeof(exec_string_ctx_t));
-    ctx->lexer = lexer_create();
-    ctx->accumulated_tokens = NULL;
-    ctx->line_num = 0;
-    return ctx;
-}
-
-/**
- * Destroy the string execution context.
- */
-void exec_string_ctx_destroy(exec_string_ctx_t **ctx_ptr)
-{
-    if (!ctx_ptr || !*ctx_ptr)
-        return;
-
-    exec_string_ctx_t *ctx = *ctx_ptr;
-
-    if (ctx->lexer)
-        lexer_destroy(&ctx->lexer);
-    if (ctx->accumulated_tokens)
-        token_list_destroy(&ctx->accumulated_tokens);
-
-    xfree(ctx);
-    *ctx_ptr = NULL;
-}
-
-/**
- * Reset the context after successful execution.
- */
-void exec_string_ctx_reset(exec_string_ctx_t *ctx)
-{
-    if (ctx->lexer)
-        lexer_reset(ctx->lexer);
-    if (ctx->accumulated_tokens)
-    {
-        token_list_destroy(&ctx->accumulated_tokens);
-        ctx->accumulated_tokens = NULL;
-    }
-}
+/* exec_string_ctx_t lifecycle functions have been replaced by
+ * exec_parse_session_t — see exec_parse_session.c */
 
 /**
  * Core implementation for executing shell commands from a string.
  *
  * This function processes a single chunk of input (typically one line),
  * handling lexing, tokenization, parsing, and execution. It maintains
- * state in the provided context for handling multi-line constructs.
+ * state in the provided session for handling multi-line constructs.
  *
- * @param frame The execution frame
- * @param input The input string to process
- * @param tokenizer The tokenizer for alias expansion and token processing
- * @param ctx The execution context (maintains lexer and accumulated tokens)
+ * @param frame   The execution frame
+ * @param input   The input string to process
+ * @param session The parse session (maintains lexer, tokenizer, and accumulated tokens)
  * @return Status indicating success, need for more input, or error
  */
 static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *input,
-                                             tokenizer_t *tokenizer, exec_string_ctx_t *ctx)
+                                             exec_parse_session_t *session)
 {
     Expects_not_null(frame);
     Expects_not_null(input);
-    Expects_not_null(tokenizer);
-    Expects_not_null(ctx);
-    Expects_not_null(ctx->lexer);
+    Expects_not_null(session);
+    Expects_not_null(session->lexer);
+    Expects_not_null(session->tokenizer);
     Expects_not_null(frame->executor);
 
     exec_t *executor = frame->executor;
-    lexer_t *lx = ctx->lexer;
+    lexer_t *lx = session->lexer;
+    tokenizer_t *tokenizer = session->tokenizer;
 
-    ctx->line_num++;
-    log_debug("exec_string_core: Processing line %d: %.*s", ctx->line_num,
+    session->line_num++;
+    log_debug("exec_string_core: Processing line %d: %.*s", session->line_num,
               (int)strcspn(input, "\r\n"), input);
 
     lexer_append_input_cstr(lx, input);
@@ -1956,7 +1915,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (lex_status == LEX_ERROR)
     {
-        log_debug("exec_string_core: Lexer error at line %d", ctx->line_num);
+        log_debug("exec_string_core: Lexer error at line %d", session->line_num);
         const char *err = lexer_get_error(lx);
         frame_set_error_printf(frame, "Lexer error: %s", err ? err : "unknown");
         token_list_destroy(&raw_tokens);
@@ -1965,7 +1924,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (lex_status == LEX_INCOMPLETE || lex_status == LEX_NEED_HEREDOC)
     {
-        log_debug("exec_string_core: Lexer incomplete/heredoc at line %d", ctx->line_num);
+        log_debug("exec_string_core: Lexer incomplete/heredoc at line %d", session->line_num);
 
         /* Check if any tokens were produced before the incomplete state.
          * If so, we should accumulate them for parsing when more input arrives. */
@@ -1981,7 +1940,8 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
             if (tok_status == TOK_ERROR)
             {
-                log_debug("exec_string_core: Tokenizer error on incomplete line %d", ctx->line_num);
+                log_debug("exec_string_core: Tokenizer error on incomplete line %d",
+                          session->line_num);
                 const char *err = tokenizer_get_error(tokenizer);
                 frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
                 token_list_destroy(&processed_tokens);
@@ -1992,20 +1952,21 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
             {
                 log_debug("exec_string_core: Tokenizer incomplete (compound command) during lexer "
                           "incomplete at line %d",
-                          ctx->line_num);
+                          session->line_num);
                 /* Tokens are buffered in tokenizer, continue to next line */
                 token_list_destroy(&processed_tokens);
                 return EXEC_STRING_INCOMPLETE;
             }
 
             /* Accumulate these tokens for when the lexer completes */
-            if (ctx->accumulated_tokens == NULL)
+            if (session->accumulated_tokens == NULL)
             {
-                ctx->accumulated_tokens = processed_tokens;
+                session->accumulated_tokens = processed_tokens;
             }
             else
             {
-                if (token_list_append_list_move(ctx->accumulated_tokens, &processed_tokens) != 0)
+                if (token_list_append_list_move(session->accumulated_tokens, &processed_tokens) !=
+                    0)
                 {
                     log_debug("exec_string_core: Failed to append incomplete tokens");
                     return EXEC_STRING_ERROR;
@@ -2020,7 +1981,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     }
 
     log_debug("exec_string_core: Lexer produced %d raw tokens at line %d",
-              token_list_size(raw_tokens), ctx->line_num);
+              token_list_size(raw_tokens), session->line_num);
 
     token_list_t *processed_tokens = token_list_create();
     tok_status_t tok_status = tokenizer_process(tokenizer, raw_tokens, processed_tokens);
@@ -2028,7 +1989,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (tok_status == TOK_ERROR)
     {
-        log_debug("exec_string_core: Tokenizer error at line %d", ctx->line_num);
+        log_debug("exec_string_core: Tokenizer error at line %d", session->line_num);
         const char *err = tokenizer_get_error(tokenizer);
         frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
         token_list_destroy(&processed_tokens);
@@ -2039,7 +2000,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     {
         log_debug(
             "exec_string_core: Tokenizer incomplete (compound command) at line %d, tokens buffered",
-            ctx->line_num);
+            session->line_num);
         /* Tokenizer is buffering tokens for an incomplete compound command.
          * The processed_tokens list will be empty - tokens are held in the tokenizer's buffer.
          * Continue reading more input. */
@@ -2049,31 +2010,31 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     if (token_list_size(processed_tokens) == 0)
     {
-        log_debug("exec_string_core: No tokens after processing at line %d", ctx->line_num);
+        log_debug("exec_string_core: No tokens after processing at line %d", session->line_num);
         token_list_destroy(&processed_tokens);
         return EXEC_STRING_EMPTY;
     }
 
     /* Accumulate tokens if we had an incomplete parse previously */
-    if (ctx->accumulated_tokens)
+    if (session->accumulated_tokens)
     {
         log_debug("exec_string_core: Appending %d new tokens to %d accumulated tokens",
-                  token_list_size(processed_tokens), token_list_size(ctx->accumulated_tokens));
+                  token_list_size(processed_tokens), token_list_size(session->accumulated_tokens));
 
         /* Move all tokens from processed_tokens to accumulated_tokens */
-        if (token_list_append_list_move(ctx->accumulated_tokens, &processed_tokens) != 0)
+        if (token_list_append_list_move(session->accumulated_tokens, &processed_tokens) != 0)
         {
             log_debug("exec_string_core: Failed to append tokens");
             return EXEC_STRING_ERROR;
         }
 
         /* Use the accumulated list for parsing */
-        processed_tokens = ctx->accumulated_tokens;
-        ctx->accumulated_tokens = NULL;
+        processed_tokens = session->accumulated_tokens;
+        session->accumulated_tokens = NULL;
     }
 
     log_debug("exec_string_core: Tokenizer produced %d processed tokens at line %d",
-              token_list_size(processed_tokens), ctx->line_num);
+              token_list_size(processed_tokens), session->line_num);
 
     /* Debug: print all tokens */
     for (int i = 0; i < token_list_size(processed_tokens); i++)
@@ -2086,16 +2047,16 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     parser_t *parser = parser_create_with_tokens_move(&processed_tokens);
     gnode_t *gnode = NULL;
 
-    log_debug("exec_string_core: Starting parse at line %d", ctx->line_num);
+    log_debug("exec_string_core: Starting parse at line %d", session->line_num);
     parse_status_t parse_status = parser_parse_program(parser, &gnode);
 
     if (parse_status == PARSE_ERROR)
     {
-        log_debug("exec_string_core: Parse error at line %d", ctx->line_num);
+        log_debug("exec_string_core: Parse error at line %d", session->line_num);
         const char *err = parser_get_error(parser);
         if (err && err[0])
         {
-            frame_set_error_printf(frame, "Parse error at line %d: %s", ctx->line_num, err);
+            frame_set_error_printf(frame, "Parse error at line %d: %s", session->line_num, err);
         }
         else
         {
@@ -2117,7 +2078,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
             {
                 log_debug("exec_string_core: No current token available");
                 frame_set_error_printf(frame, "Parse error at line %d: no error details available",
-                                       ctx->line_num);
+                                       session->line_num);
             }
         }
         parser_destroy(&parser);
@@ -2127,18 +2088,18 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     if (parse_status == PARSE_INCOMPLETE)
     {
         log_debug("exec_string_core: Parse incomplete at line %d, accumulating tokens",
-                  ctx->line_num);
+                  session->line_num);
         if (gnode)
             g_node_destroy(&gnode);
         /* Clone token list from parser - respect silo boundary */
-        ctx->accumulated_tokens = token_list_clone(parser->tokens);
+        session->accumulated_tokens = token_list_clone(parser->tokens);
         parser_destroy(&parser);
         return EXEC_STRING_INCOMPLETE;
     }
 
     if (parse_status == PARSE_EMPTY || !gnode)
     {
-        log_debug("exec_string_core: Parse empty at line %d", ctx->line_num);
+        log_debug("exec_string_core: Parse empty at line %d", session->line_num);
         parser_destroy(&parser);
         return EXEC_STRING_EMPTY;
     }
@@ -2171,20 +2132,19 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
     }
 
     /* Reset context after successful execution */
-    exec_string_ctx_reset(ctx);
+    exec_parse_session_reset(session);
 
     return EXEC_STRING_OK;
 }
 
 /* extracts strings from an input stream to feed to exec_string_core */
-exec_status_t exec_stream_core_ex(exec_frame_t *frame, FILE *fp, tokenizer_t *tokenizer,
-                                  exec_string_ctx_t *ctx)
+exec_status_t exec_stream_core_ex(exec_frame_t *frame, FILE *fp, exec_parse_session_t *session)
 {
     Expects_not_null(frame);
     Expects_not_null(fp);
-    Expects_not_null(tokenizer);
-    Expects_not_null(ctx);
-    Expects_not_null(ctx->lexer);
+    Expects_not_null(session);
+    Expects_not_null(session->lexer);
+    Expects_not_null(session->tokenizer);
     Expects_not_null(frame->executor);
 
     exec_status_t final_status = EXEC_OK;
@@ -2205,9 +2165,9 @@ exec_status_t exec_stream_core_ex(exec_frame_t *frame, FILE *fp, tokenizer_t *to
             if (line_len == 0)
             {
                 /* Fast path: entire line fits in chunk */
-                exec_string_status_t status = exec_string_core(frame, chunk, tokenizer, ctx);
-                if (ctx->line_num > 0)
-                    frame->source_line = ctx->line_num;
+                exec_string_status_t status = exec_string_core(frame, chunk, session);
+                if (session->line_num > 0)
+                    frame->source_line = session->line_num;
 
                 switch (status)
                 {
@@ -2266,9 +2226,9 @@ exec_status_t exec_stream_core_ex(exec_frame_t *frame, FILE *fp, tokenizer_t *to
     /* Process whatever we accumulated (may be empty on pure EOF) */
     if (line_len > 0)
     {
-        exec_string_status_t status = exec_string_core(frame, line_buf, tokenizer, ctx);
-        if (ctx->line_num > 0)
-            frame->source_line = ctx->line_num;
+        exec_string_status_t status = exec_string_core(frame, line_buf, session);
+        if (session->line_num > 0)
+            frame->source_line = session->line_num;
 
         switch (status)
         {
@@ -2307,32 +2267,18 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         // Not a fatal error
     }
     /* ------------------------------------------------------------------
-     * Create / reuse the persistent tokenizer
+     * Create / reuse the persistent parse session
      * ------------------------------------------------------------------ */
-    if (!executor->tokenizer)
+    if (!executor->session)
     {
-        executor->tokenizer = tokenizer_create(executor->aliases);
-        if (!executor->tokenizer)
+        executor->session = exec_parse_session_create(executor->aliases);
+        if (!executor->session)
         {
-            exec_set_error_cstr(executor, "Failed to create tokenizer");
+            exec_set_error_cstr(executor, "Failed to create parse session");
             return EXEC_ERROR;
         }
     }
-
-    /* ------------------------------------------------------------------
-     * Create the persistent string-execution context.
-     * This is what survives across INCOMPLETE lines — it holds the lexer
-     * (with its quote/heredoc state) and any accumulated tokens from
-     * partial parses.
-     * ------------------------------------------------------------------ */
-    exec_string_ctx_t *ctx = exec_string_ctx_create();
-    if (!ctx || !ctx->lexer)
-    {
-        if (ctx)
-            exec_string_ctx_destroy(&ctx);
-        exec_set_error_cstr(executor, "Failed to create execution context");
-        return EXEC_ERROR;
-    }
+    exec_parse_session_t *session = executor->session;
 
     /* ------------------------------------------------------------------
      * REPL state
@@ -2365,8 +2311,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         }
 
         /* ---- 2. Read & execute one line ---- */
-        exec_status_t line_status =
-            exec_stream_core_ex(executor->current_frame, fp, executor->tokenizer, ctx);
+        exec_status_t line_status = exec_stream_core_ex(executor->current_frame, fp, session);
 
         /* ---- 3. EOF handling ---- */
         if (feof(fp))
@@ -2414,7 +2359,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         if (line_status == EXEC_INCOMPLETE_INPUT)
         {
             /*
-             * The lexer or parser needs more input.  The ctx holds the
+             * The lexer or parser needs more input.  The session holds the
              * incomplete lexer state and/or accumulated tokens; the
              * tokenizer may also be buffering compound-command tokens.
              * Loop back to read the next line (prompting with PS2).
@@ -2427,14 +2372,14 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         need_continuation = false;
 
         /*
-         * The ctx was reset internally by exec_string_core on success
-         * (exec_string_ctx_reset clears the lexer and accumulated
-         * tokens).  On error the ctx may have stale state, so reset
+         * The session was reset internally by exec_string_core on success
+         * (exec_parse_session_reset clears the lexer and accumulated
+         * tokens).  On error the session may have stale state, so reset
          * it explicitly to be safe.
          */
         if (line_status == EXEC_ERROR)
         {
-            exec_string_ctx_reset(ctx);
+            exec_parse_session_reset(session);
 
             if (interactive)
             {
@@ -2489,7 +2434,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
                 exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
             exec_frame_execute_result_t trap_result =
-                exec_frame_execute_command_string(trap_frame, string_cstr(trap_action->action));
+                exec_frame_execute_command_string(trap_frame, trap_action->action);
 
             exec_frame_pop(&executor->current_frame);
 
@@ -2524,13 +2469,11 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
                 need_continuation = false;
 
                 /*
-                 * Discard all partial state: reset the ctx (lexer +
-                 * accumulated tokens) and recreate the tokenizer so
-                 * any buffered compound-command tokens are flushed.
+                 * Discard all partial state: hard-reset the session so
+                 * the lexer, accumulated tokens, and any buffered
+                 * compound-command tokens in the tokenizer are flushed.
                  */
-                exec_string_ctx_reset(ctx);
-                tokenizer_destroy(&executor->tokenizer);
-                executor->tokenizer = tokenizer_create(executor->aliases);
+                exec_parse_session_hard_reset(session, executor->aliases);
             }
             else
             {
@@ -2542,7 +2485,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
     } /* for (;;) */
 
 done:
-    exec_string_ctx_destroy(&ctx);
+    /* session is owned by executor->session, not destroyed here */
     return final_result;
 }
 
@@ -2607,31 +2550,14 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     }
 
     /* ------------------------------------------------------------------
-     * Create / reuse the persistent tokenizer.
-     * ------------------------------------------------------------------ */
-    if (!executor->tokenizer)
-    {
-        executor->tokenizer = tokenizer_create(executor->aliases);
-        if (!executor->tokenizer)
-        {
-            exec_set_error_cstr(executor, "Failed to create tokenizer");
-            result.status = EXEC_ERROR;
-            result.exit_code = EXEC_EXIT_FAILURE;
-            return result;
-        }
-    }
-
-    /* ------------------------------------------------------------------
-     * Create a temporary string-execution context.
-     * Unlike the REPL, we feed all input at once, so the context is
+     * Create a temporary parse session.
+     * Unlike the REPL, we feed all input at once, so the session is
      * local to this call rather than persistent across lines.
      * ------------------------------------------------------------------ */
-    exec_string_ctx_t *ctx = exec_string_ctx_create();
-    if (!ctx || !ctx->lexer)
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
     {
-        if (ctx)
-            exec_string_ctx_destroy(&ctx);
-        exec_set_error_cstr(executor, "Failed to create execution context");
+        exec_set_error_cstr(executor, "Failed to create parse session");
         result.status = EXEC_ERROR;
         result.exit_code = EXEC_EXIT_FAILURE;
         return result;
@@ -2640,7 +2566,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     /* ------------------------------------------------------------------
      * Feed the entire command string to the core execution engine.
      * ------------------------------------------------------------------ */
-    exec_string_status_t str_status = exec_string_core(frame, command, executor->tokenizer, ctx);
+    exec_string_status_t str_status = exec_string_core(frame, command, session);
 
     switch (str_status)
     {
@@ -2662,7 +2588,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
         if (!exec_get_error_cstr(executor))
         {
             exec_set_error_cstr(executor, "Unexpected end of input (unclosed quote, "
-                                     "here-document, or compound command)");
+                                          "here-document, or compound command)");
         }
         result.status = EXEC_INCOMPLETE_INPUT;
         result.exit_code = EXEC_EXIT_MISUSE;
@@ -2694,7 +2620,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     /* ------------------------------------------------------------------
      * Clean up.
      * ------------------------------------------------------------------ */
-    exec_string_ctx_destroy(&ctx);
+    exec_parse_session_destroy(&session);
 
     return result;
 }
@@ -2705,35 +2631,25 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
 
 size_t exec_partial_state_size(void)
 {
-    return sizeof(struct exec_partial_state_t);
+    return sizeof(exec_parse_session_t);
 }
 
-void exec_partial_state_cleanup(exec_partial_state_t *state)
+void exec_partial_state_cleanup(exec_partial_state_t *session)
 {
-    if (!state)
-        return;
-
-    if (state->filename)
-        string_destroy(&state->filename);
-    // if (state->string_ctx)
-    //    exec_string_ctx_destroy(&state->string_ctx);
-    if (state->tokenizer)
-        tokenizer_destroy(&state->tokenizer);
-
-    memset(state, 0, sizeof(*state));
+    exec_parse_session_cleanup(session);
 }
 
 /* ============================================================================
  * Incremental Command String Execution
  * ============================================================================ */
 
-exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *command,
+exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const char *command,
                                                   const char *filename, size_t line_number,
-                                                  exec_partial_state_t *partial_state_out)
+                                                  exec_parse_session_t *session)
 {
     Expects_not_null(executor);
     Expects_not_null(command);
-    Expects_not_null(partial_state_out);
+    Expects_not_null(session);
 
     /* ------------------------------------------------------------------
      * Ensure the frame stack is initialized.
@@ -2762,20 +2678,20 @@ exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *
     /* ------------------------------------------------------------------
      * Source location tracking.
      *
-     * If the caller supplies a filename, store it in the partial state
+     * If the caller supplies a filename, store it in the session
      * so it persists across calls.  The filename is also pushed into the
      * frame for error messages.
      *
      * line_number is updated every call when >= 1.  When the caller
      * does not supply a line number (0), we auto-increment from the
-     * value stored in the partial state on previous calls.
+     * value stored in the session on previous calls.
      * ------------------------------------------------------------------ */
     if (filename)
     {
-        if (!partial_state_out->filename)
-            partial_state_out->filename = string_create_from_cstr(filename);
+        if (!session->filename)
+            session->filename = string_create_from_cstr(filename);
         else
-            string_set_cstr(partial_state_out->filename, filename);
+            string_set_cstr(session->filename, filename);
 
         /* Push into the frame for error reporting. */
         if (frame->source_name)
@@ -2783,82 +2699,70 @@ exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *
         else
             frame->source_name = string_create_from_cstr(filename);
     }
-    else if (partial_state_out->filename)
+    else if (session->filename)
     {
         /* Caller previously supplied a filename — keep using it. */
         if (frame->source_name)
-            string_set(frame->source_name, partial_state_out->filename);
+            string_set(frame->source_name, session->filename);
         else
-            frame->source_name = string_clone(partial_state_out->filename);
+            frame->source_name = string_clone(session->filename);
     }
 
     if (line_number >= 1)
     {
-        partial_state_out->line_number = line_number;
+        session->caller_line_number = line_number;
     }
-    else if (partial_state_out->line_number > 0)
+    else if (session->caller_line_number > 0)
     {
         /* Auto-increment from last known line. */
-        partial_state_out->line_number++;
+        session->caller_line_number++;
     }
 
-    if (partial_state_out->line_number >= 1)
-        frame->source_line = (int)partial_state_out->line_number;
+    if (session->caller_line_number >= 1)
+        frame->source_line = (int)session->caller_line_number;
 
     /* ------------------------------------------------------------------
-     * Lazily create the tokenizer.
+     * Lazily create the lexer and tokenizer inside the session.
      *
-     * The tokenizer lives in the partial state (not the executor) so
-     * that each partial-execution sequence has its own compound-command
-     * buffering independent of the executor's REPL tokenizer.
+     * The session lives in the caller (not the executor) so that each
+     * partial-execution sequence has its own state independent of the
+     * executor's REPL session.
      * ------------------------------------------------------------------ */
-    if (!partial_state_out->tokenizer)
+    if (!session->tokenizer)
     {
-        partial_state_out->tokenizer = tokenizer_create(executor->aliases);
-        if (!partial_state_out->tokenizer)
+        session->tokenizer = tokenizer_create(executor->aliases);
+        if (!session->tokenizer)
         {
             exec_set_error_cstr(executor, "Failed to create tokenizer");
             return EXEC_ERROR;
         }
     }
-
-    /* ------------------------------------------------------------------
-     * Lazily create the string execution context.
-     *
-     * This context holds the lexer (with its quote / heredoc state) and
-     * any accumulated tokens from previous partial calls.
-     * ------------------------------------------------------------------ */
-#if 0
-    if (!partial_state_out->string_ctx)
+    if (!session->lexer)
     {
-        partial_state_out->string_ctx = exec_string_ctx_create();
-        if (!partial_state_out->string_ctx || !partial_state_out->string_ctx->lexer)
+        session->lexer = lexer_create();
+        if (!session->lexer)
         {
-            if (partial_state_out->string_ctx)
-                exec_string_ctx_destroy(&partial_state_out->string_ctx);
-            exec_set_error_cstr(executor, "Failed to create execution context");
+            exec_set_error_cstr(executor, "Failed to create lexer");
             return EXEC_ERROR;
         }
     }
-#endif
 
     /* ------------------------------------------------------------------
-     * Synchronise the context's line number with ours so that error
-     * messages from exec_string_core reference the correct line.
+     * Synchronise the session's line number so that error messages from
+     * exec_string_core reference the correct line.
      * ------------------------------------------------------------------ */
-    if (partial_state_out->line_number >= 1)
-        partial_state_out->string_ctx->line_num = (int)partial_state_out->line_number - 1;
+    if (session->caller_line_number >= 1)
+        session->line_num = (int)session->caller_line_number - 1;
     /* -1 because exec_string_core increments before processing */
 
     /* ------------------------------------------------------------------
      * Feed this chunk to the core execution engine.
      * ------------------------------------------------------------------ */
-    exec_string_status_t str_status = exec_string_core(frame, command, partial_state_out->tokenizer,
-                                                       partial_state_out->string_ctx);
+    exec_string_status_t str_status = exec_string_core(frame, command, session);
 
-    /* Update the line number from the context (exec_string_core may
+    /* Update the caller line number from the session (exec_string_core may
        have incremented it). */
-    partial_state_out->line_number = (size_t)partial_state_out->string_ctx->line_num;
+    session->caller_line_number = (size_t)session->line_num;
 
     /* ------------------------------------------------------------------
      * Translate the internal status to the public exec_status_t.
@@ -2868,7 +2772,7 @@ exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *
     switch (str_status)
     {
     case EXEC_STRING_OK:
-        partial_state_out->incomplete = false;
+        session->incomplete = false;
         result = EXEC_OK;
         break;
 
@@ -2877,22 +2781,22 @@ exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *
          * If we were already mid-continuation, stay incomplete — the
          * empty line is just a blank line inside a multi-line construct.
          * Otherwise report OK. */
-        if (partial_state_out->incomplete)
+        if (session->incomplete)
             result = EXEC_INCOMPLETE_INPUT;
         else
             result = EXEC_OK;
         break;
 
     case EXEC_STRING_INCOMPLETE:
-        partial_state_out->incomplete = true;
+        session->incomplete = true;
         result = EXEC_INCOMPLETE_INPUT;
         break;
 
     case EXEC_STRING_ERROR:
-        /* On error, clean up the context so the next call starts fresh.
+        /* On error, clean up the session so the next call starts fresh.
          * The caller can inspect exec_get_error() for details. */
-        exec_string_ctx_reset(partial_state_out->string_ctx);
-        partial_state_out->incomplete = false;
+        exec_parse_session_reset(session);
+        session->incomplete = false;
         result = EXEC_ERROR;
         break;
 
@@ -2920,15 +2824,14 @@ exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *
 
     /* ------------------------------------------------------------------
      * If the parse completed (not INCOMPLETE), release the internal
-     * resources but keep the partial state struct valid for reuse.
+     * resources but keep the session struct valid for reuse.
      * The caller can start a new sequence without calling cleanup.
      * ------------------------------------------------------------------ */
     if (result != EXEC_INCOMPLETE_INPUT)
     {
-        if (partial_state_out->string_ctx)
-            exec_string_ctx_reset(partial_state_out->string_ctx);
-        partial_state_out->incomplete = false;
-        /* Keep tokenizer and string_ctx allocated for reuse on next call. */
+        exec_parse_session_reset(session);
+        session->incomplete = false;
+        /* Keep session allocated for reuse on next call. */
     }
 
     return result;
@@ -2952,7 +2855,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
     if (!executor->is_interactive)
     {
         exec_set_error_cstr(executor, "exec_execute_stream_with_line_editor: "
-                                 "only valid after exec_setup_interactive()");
+                                      "only valid after exec_setup_interactive()");
         return EXEC_ERROR;
     }
 
@@ -2967,29 +2870,18 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
     }
 
     /* ------------------------------------------------------------------
-     * Create / reuse the persistent tokenizer.
+     * Create / reuse the persistent parse session.
      * ------------------------------------------------------------------ */
-    if (!executor->tokenizer)
+    if (!executor->session)
     {
-        executor->tokenizer = tokenizer_create(executor->aliases);
-        if (!executor->tokenizer)
+        executor->session = exec_parse_session_create(executor->aliases);
+        if (!executor->session)
         {
-            exec_set_error_cstr(executor, "Failed to create tokenizer");
+            exec_set_error_cstr(executor, "Failed to create parse session");
             return EXEC_ERROR;
         }
     }
-
-    /* ------------------------------------------------------------------
-     * Create the persistent string-execution context.
-     * ------------------------------------------------------------------ */
-    exec_string_ctx_t *ctx = exec_string_ctx_create();
-    if (!ctx || !ctx->lexer)
-    {
-        if (ctx)
-            exec_string_ctx_destroy(&ctx);
-        exec_set_error_cstr(executor, "Failed to create execution context");
-        return EXEC_ERROR;
-    }
+    exec_parse_session_t *session = executor->session;
 
     /* ------------------------------------------------------------------
      * REPL state
@@ -3079,9 +2971,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
             consecutive_eof = 0;
             need_continuation = false;
 
-            exec_string_ctx_reset(ctx);
-            tokenizer_destroy(&executor->tokenizer);
-            executor->tokenizer = tokenizer_create(executor->aliases);
+            exec_parse_session_hard_reset(session, executor->aliases);
 
             /* POSIX: $? = 128 + SIGINT after an interrupted command. */
             executor->last_exit_status = 128 + SIGINT;
@@ -3114,12 +3004,12 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         string_append_char(input, '\n');
 
         exec_string_status_t str_status =
-            exec_string_core(executor->current_frame, string_cstr(input), executor->tokenizer, ctx);
+            exec_string_core(executor->current_frame, string_cstr(input), session);
 
         string_destroy(&input);
 
-        if (ctx->line_num > 0)
-            executor->current_frame->source_line = ctx->line_num;
+        if (session->line_num > 0)
+            executor->current_frame->source_line = session->line_num;
 
         /* ---- 6. Dispatch on execution status ---- */
 
@@ -3134,7 +3024,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 
         if (str_status == EXEC_STRING_ERROR)
         {
-            exec_string_ctx_reset(ctx);
+            exec_parse_session_reset(session);
 
             const char *err = exec_get_error_cstr(executor);
             if (err)
@@ -3203,7 +3093,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 
             if (trap_result.status == EXEC_ERROR)
             {
-                const char *err = exec_get_error(executor);
+                const char *err = exec_get_error_cstr(executor);
                 if (err)
                 {
                     fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
@@ -3227,9 +3117,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
             fprintf(stderr, "\n");
             need_continuation = false;
 
-            exec_string_ctx_reset(ctx);
-            tokenizer_destroy(&executor->tokenizer);
-            executor->tokenizer = tokenizer_create(executor->aliases);
+            exec_parse_session_hard_reset(session, executor->aliases);
         }
 
     } /* for (;;) */
@@ -3237,7 +3125,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 done:
     if (line)
         string_destroy(&line);
-    exec_string_ctx_destroy(&ctx);
+    /* session is owned by executor->session, not destroyed here */
     return final_result;
 }
 
@@ -3329,33 +3217,6 @@ void exec_reset_pipe_statuses(exec_t *executor)
     executor->pipe_status_count = 0;
 }
 
-/* ── Prompts ─────────────────────────────────────────────────────────────── */
-
-char *exec_get_ps1_cstr(const exec_t *executor)
-{
-    Expects_not_null(executor);
-    // FIXME: first check for a PS1 in the current frame's variable store, then fall back to the
-    // global store
-    const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
-    return ps1 ? xstrdup(ps1) : NULL;
-}
-
-char *exec_get_rendered_ps1_cstr(const exec_t *executor)
-{
-    Expects_not_null(executor);
-    if (executor->current_frame)
-        return frame_render_ps1(executor->current_frame);
-    /* Fallback if no frame yet */
-    return xstrdup("$ ");
-}
-
-char *exec_get_ps2_cstr(const exec_t *executor)
-{
-    Expects_not_null(executor);
-    const char *ps2 = variable_store_get_value_cstr(executor->variables, "PS2");
-    return ps2 ? xstrdup(ps2) : NULL;
-}
-
 /* ============================================================================
  * Job Control
  * ============================================================================ */
@@ -3434,7 +3295,7 @@ const char *exec_job_get_command_cstr(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
-    return job ? string_cstr(job->command) : NULL;
+    return job ? string_cstr(job->command_line) : NULL;
 }
 
 bool exec_job_is_background(const exec_t *executor, int job_id)
@@ -3560,7 +3421,7 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
 
 /* ── Job actions ─────────────────────────────────────────────────────────── */
 
-bool exec_job_foreground(exec_t *executor, int job_id, char **out_cmd)
+bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **out_cmd)
 {
     Expects_not_null(executor);
 
@@ -3589,7 +3450,8 @@ bool exec_job_foreground(exec_t *executor, int job_id, char **out_cmd)
 #ifdef POSIX_API
     if (tcsetpgrp(STDIN_FILENO, job->pgid) < 0)
     {
-        exec_set_error_printf(executor, "fg: cannot set foreground process group: %s", strerror(errno));
+        exec_set_error_printf(executor, "fg: cannot set foreground process group: %s",
+                              strerror(errno));
         return false;
     }
 
@@ -3605,28 +3467,28 @@ bool exec_job_foreground(exec_t *executor, int job_id, char **out_cmd)
 #endif
 }
 
-bool exec_job_background(exec_t *executor, int job_id, bool cont)
+bool exec_job_background(exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
 
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
     {
-        exec_set_error(executor, "bg: no such job");
+        exec_set_error_cstr(executor, "bg: no such job");
         return false;
     }
 
-    if (cont && job->state == JOB_STOPPED)
+    if (job->state == JOB_STOPPED)
     {
 #ifdef POSIX_API
         if (kill(-job->pgid, SIGCONT) < 0)
         {
-            exec_set_error(executor, "bg: cannot resume job: %s", strerror(errno));
+            exec_set_error_printf(executor, "bg: cannot resume job: %s", strerror(errno));
             return false;
         }
         job_store_set_state(executor->jobs, job_id, JOB_RUNNING);
 #else
-        exec_set_error(executor, "bg: cannot resume suspended jobs on this platform");
+        exec_set_error_cstr(executor, "bg: cannot resume suspended jobs on this platform");
         return false;
 #endif
     }
@@ -3642,7 +3504,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
     {
-        exec_set_error(executor, "kill: no such job");
+        exec_set_error_cstr(executor, "kill: no such job");
         return false;
     }
 
@@ -3653,7 +3515,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
 #ifdef POSIX_API
         if (kill(-job->pgid, 0) < 0)
         {
-            exec_set_error(executor, "kill: job %d: no such process group: %s", job_id,
+            exec_set_error_printf(executor, "kill: job %d: no such process group: %s", job_id,
                            strerror(errno));
             return false;
         }
@@ -3676,7 +3538,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     if (kill(-job->pgid, sig) < 0)
     {
         // Common errors: ESRCH (no such process), EPERM (permission denied)
-        exec_set_error(executor, "kill: cannot send signal %d to job %d: %s", sig, job_id,
+        exec_set_error_printf(executor, "kill: cannot send signal %d to job %d: %s", sig, job_id,
                        strerror(errno));
         return false;
     }
@@ -3685,7 +3547,11 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
 
 #elif defined(UCRT_API)
     // Very limited: only attempt forceful termination for common "kill" signals
-    if (sig == SIGTERM || sig == SIGKILL || sig == 15 || sig == 9)
+    if (sig == SIGTERM
+#ifdef SIGKILL
+        || sig == SIGKILL
+#endif
+        || sig == 15 || sig == 9)
     {
         // Each job has a list of process_t, but, in UCRT, there will
         // only ever be one entry. We can get the handle from the process.
@@ -3702,7 +3568,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
             }
             else
             {
-                exec_set_error(executor, "kill: failed to terminate job %d on Windows", job_id);
+                exec_set_error_printf(executor, "kill: failed to terminate job %d on Windows", job_id);
                 return false;
             }
         }
@@ -3712,13 +3578,13 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     }
     else
     {
-        exec_set_error(executor,
+        exec_set_error_cstr(executor,
                        "kill: only SIGTERM/SIGKILL supported on Windows (job control limited)");
         return false;
     }
 
 #else
-    exec_set_error(executor, "kill: job control not supported on this platform");
+    exec_set_error_cstr(executor, "kill: job control not supported on this platform");
     return false;
 #endif
 }
@@ -3739,7 +3605,7 @@ void exec_print_jobs(const exec_t *executor, FILE *output)
  *
  * @return Job ID on success, -1 on error.
  */
-int exec_parse_job_id(const exec_t *executor, const char *spec)
+int exec_parse_job_id_cstr(const exec_t *executor, const char *spec)
 {
     Expects_not_null(executor);
     Expects_not_null(spec);
@@ -3760,7 +3626,7 @@ int exec_parse_job_id(const exec_t *executor, const char *spec)
             long id = strtol(spec + 1, &endptr, 10);
             if (*endptr != '\0' || id <= 0)
             {
-                exec_set_error((exec_t *)executor, "Invalid job specifier: %s", spec);
+                exec_set_error_printf((exec_t *)executor, "Invalid job specifier: %s", spec);
                 return -1;
             }
             return (int)id;
@@ -3773,7 +3639,7 @@ int exec_parse_job_id(const exec_t *executor, const char *spec)
         long id = strtol(spec, &endptr, 10);
         if (*endptr != '\0' || id <= 0)
         {
-            exec_set_error((exec_t *)executor, "Invalid job ID: %s", spec);
+            exec_set_error_printf((exec_t *)executor, "Invalid job ID: %s", spec);
             return -1;
         }
         return (int)id;
@@ -3900,24 +3766,11 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
 
     exec_t *executor = frame->executor;
 
-    /* Create a temporary tokenizer for this command */
-    tokenizer_t *tokenizer = tokenizer_create(executor->aliases);
-    if (!tokenizer)
+    /* Create a temporary parse session for this command */
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
     {
-        frame_set_error_printf(frame, "Failed to create tokenizer for command string");
-        result.status = EXEC_ERROR;
-        result.exit_status = 1;
-        return result;
-    }
-
-    /* Create execution context */
-    exec_string_ctx_t *ctx = exec_string_ctx_create();
-    if (!ctx || !ctx->lexer)
-    {
-        frame_set_error_printf(frame, "Failed to create execution context");
-        if (ctx)
-            exec_string_ctx_destroy(&ctx);
-        tokenizer_destroy(&tokenizer);
+        frame_set_error_printf(frame, "Failed to create parse session for command string");
         result.status = EXEC_ERROR;
         result.exit_status = 1;
         return result;
@@ -3932,8 +3785,7 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     }
 
     /* Execute the command string */
-    exec_string_status_t status =
-        exec_string_core(frame, string_cstr(cmd_with_newline), tokenizer, ctx);
+    exec_string_status_t status = exec_string_core(frame, string_cstr(cmd_with_newline), session);
 
     string_destroy(&cmd_with_newline);
 
@@ -3965,8 +3817,7 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     }
 
     /* Clean up */
-    exec_string_ctx_destroy(&ctx);
-    tokenizer_destroy(&tokenizer);
+    exec_parse_session_destroy(&session);
 
     return result;
 }
@@ -3996,22 +3847,11 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
 
     exec_t *executor = frame->executor;
 
-    /* Create a temporary tokenizer for parsing */
-    tokenizer_t *tokenizer = tokenizer_create(executor->aliases);
-    if (!tokenizer)
+    /* Create a temporary parse session for parsing */
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
     {
-        frame_set_error_printf(frame, "Failed to create tokenizer for parsing");
-        result.status = EXEC_ERROR;
-        result.exit_status = 1;
-        return result;
-    }
-
-    /* Create lexer */
-    lexer_t *lexer = lexer_create();
-    if (!lexer)
-    {
-        frame_set_error_printf(frame, "Failed to create lexer for parsing");
-        tokenizer_destroy(&tokenizer);
+        frame_set_error_printf(frame, "Failed to create parse session for parsing");
         result.status = EXEC_ERROR;
         result.exit_status = 1;
         return result;
@@ -4026,19 +3866,18 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     }
 
     /* Lex the input */
-    lexer_append_input_cstr(lexer, string_cstr(cmd_with_newline));
+    lexer_append_input_cstr(session->lexer, string_cstr(cmd_with_newline));
     string_destroy(&cmd_with_newline);
 
     token_list_t *raw_tokens = token_list_create();
-    lex_status_t lex_status = lexer_tokenize(lexer, raw_tokens, NULL);
+    lex_status_t lex_status = lexer_tokenize(session->lexer, raw_tokens, NULL);
 
     if (lex_status == LEX_ERROR)
     {
-        const char *err = lexer_get_error(lexer);
+        const char *err = lexer_get_error(session->lexer);
         frame_set_error_printf(frame, "Lexer error: %s", err ? err : "unknown");
         token_list_destroy(&raw_tokens);
-        lexer_destroy(&lexer);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4048,8 +3887,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     {
         frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
         token_list_destroy(&raw_tokens);
-        lexer_destroy(&lexer);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4057,16 +3895,15 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
 
     /* Process tokens */
     token_list_t *processed_tokens = token_list_create();
-    tok_status_t tok_status = tokenizer_process(tokenizer, raw_tokens, processed_tokens);
+    tok_status_t tok_status = tokenizer_process(session->tokenizer, raw_tokens, processed_tokens);
     token_list_destroy(&raw_tokens);
-    lexer_destroy(&lexer);
 
     if (tok_status == TOK_ERROR)
     {
-        const char *err = tokenizer_get_error(tokenizer);
+        const char *err = tokenizer_get_error(session->tokenizer);
         frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
         token_list_destroy(&processed_tokens);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4076,7 +3913,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     {
         frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
         token_list_destroy(&processed_tokens);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4086,7 +3923,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     {
         /* Empty command */
         token_list_destroy(&processed_tokens);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         return result;
     }
 
@@ -4108,7 +3945,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
             frame_set_error_printf(frame, "Parse error");
         }
         parser_destroy(&parser);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4120,7 +3957,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
         if (gnode)
             g_node_destroy(&gnode);
         parser_destroy(&parser);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         result.status = EXEC_ERROR;
         result.exit_status = 2;
         return result;
@@ -4130,7 +3967,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     {
         /* Empty command */
         parser_destroy(&parser);
-        tokenizer_destroy(&tokenizer);
+        exec_parse_session_destroy(&session);
         return result;
     }
 
@@ -4138,7 +3975,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     ast_node_t *ast = ast_lower(gnode);
     g_node_destroy(&gnode);
     parser_destroy(&parser);
-    tokenizer_destroy(&tokenizer);
+    exec_parse_session_destroy(&session);
 
     *out_ast = ast;
     return result;
@@ -4160,20 +3997,39 @@ exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
         executor->current_frame = executor->top_frame;
     }
 
-    /* Use the executor's persistent tokenizer (create if needed) */
-    if (!executor->tokenizer)
+    /* Create a transient parse session for this stream.
+     * Unlike the REPL, this session does not persist across calls. */
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
     {
-        executor->tokenizer = tokenizer_create(executor->aliases);
-        if (!executor->tokenizer)
-        {
-            exec_set_error(executor, "Failed to create tokenizer");
-            return EXEC_ERROR;
-        }
+        exec_set_error(executor, "Failed to create parse session");
+        return EXEC_ERROR;
     }
 
-    frame_exec_status_t status = exec_stream_core(executor->current_frame, fp, executor->tokenizer);
+    exec_status_t raw_status = exec_stream_core_ex(executor->current_frame, fp, session);
 
-    if (status == FRAME_EXEC_OK)
+    /* Tear down the transient session. */
+    exec_parse_session_destroy(&session);
+
+    /* Map INCOMPLETE to OK — a non-interactive stream that ends mid-construct
+     * is not an error for existing callers (exec_execute_stream,
+     * frame_execute_stream). */
+    exec_status_t status;
+    switch (raw_status)
+    {
+    case EXEC_OK:
+    case EXEC_INCOMPLETE_INPUT:
+        status = EXEC_OK;
+        break;
+    case EXEC_ERROR:
+        status = EXEC_ERROR;
+        break;
+    default:
+        status = raw_status;
+        break;
+    }
+
+    if (status == EXEC_OK)
     {
         /* Process any pending trap handlers */
         for (int signo = 1; signo < NSIG; signo++)
@@ -4204,25 +4060,14 @@ exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
 
                 if (trap_result.status == EXEC_ERROR)
                 {
-                    status = FRAME_EXEC_ERROR;
+                    status = EXEC_ERROR;
                     break;
                 }
             }
         }
     }
 
-    /* Map frame_exec_status_t to exec_status_t */
-    switch (status)
-    {
-    case FRAME_EXEC_OK:
-        return EXEC_OK;
-    case FRAME_EXEC_ERROR:
-        return EXEC_ERROR;
-    case FRAME_EXEC_NOT_IMPL:
-        return EXEC_NOT_IMPL;
-    default:
-        return EXEC_OK;
-    }
+    return status;
 }
 
 /* ============================================================================
@@ -4294,6 +4139,5 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
         job_store_remove_completed(executor->jobs);
 #endif
 }
-
 
 #endif

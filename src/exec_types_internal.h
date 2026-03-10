@@ -27,6 +27,7 @@
 #include "builtin_store.h" /* New: registry of builtin_fn_t entries    */
 #include "exec_expander.h"
 #include "exec_frame.h"
+#include "exec_parse_session.h"
 #include "func_store.h"
 #include "job_store.h"
 #include "lexer_t.h"
@@ -34,8 +35,8 @@
 #include "sig_act.h"
 #include "string_list.h"
 #include "string_t.h"
-#include "trap_store.h"
 #include "tokenizer.h"
+#include "trap_store.h"
 #include "variable_store.h"
 
 #ifdef POSIX_API
@@ -186,8 +187,8 @@ struct exec_t
     alias_store_t *aliases;
     trap_store_t *traps;
 
-    /* Tokenizer (persistent across interactive commands) */
-    struct tokenizer_t *tokenizer;
+    /* Parse session (persistent across interactive commands) */
+    exec_parse_session_t *session;
 
 #if defined(POSIX_API) || defined(UCRT_API)
     fd_table_t *open_fds;
@@ -286,48 +287,19 @@ typedef struct exec_redirections_t
 } exec_redirections_t;
 
 /* ============================================================================
- * Partial Execution State (concrete definition)
- * ============================================================================ */
-
-/**
- * Concrete definition of exec_partial_state_t.
+ * Partial Execution State
+ * ============================================================================
  *
- * Callers zero-initialise this before the first call to
- * exec_execute_command_string_partial().  The executor fills it with
- * continuation state after each call.
- */
-struct exec_partial_state_t
-{
-    /* Whether we are mid-parse (e.g. inside an unclosed quote or compound
-       command that spans multiple input chunks). */
-    bool incomplete;
-
-    /* Accumulated input from previous partial calls, if any. */
-    string_t *accumulated_input;
-
-    /* Source location tracking across calls. */
-    string_t *filename;
-    size_t line_number;
-
-    /* Tokenizer / parser state carried across calls. */
-    struct tokenizer_t *tokenizer;
-    /* Additional parser continuation state may be added here. */
-};
-
-/**
- * Context structure for exec_string_core to maintain state between calls.
- */
-struct exec_string_ctx_t
-{
-    lexer_t *lexer;
-    token_list_t *accumulated_tokens;
-    int line_num;
-};
+ * exec_partial_state_t is now a typedef for exec_parse_session_t.
+ * The concrete definition lives in exec_parse_session.h.
+ *
+ * exec_string_ctx_t has been eliminated; its fields are now part of
+ * exec_parse_session_t.
+ * ============================================================================ */
 
 /* ============================================================================
  * Frame-Level Execution Result Types
  * ============================================================================ */
-
 
 // todo:
 // exec_frame_execute_status_t is a simple enum
@@ -354,9 +326,9 @@ typedef struct exec_frame_execute_result_t
     int exit_status; // valid if has_exit_status is true
 
     bool has_control_flow;
-    enum exec_control_flow_t flow;       // for break/continue/return: what control flow is pending from this execution
+    enum exec_control_flow_t
+        flow;       // for break/continue/return: what control flow is pending from this execution
     int flow_depth; // for break/continue: how many nested loops to break/continue out of
 } exec_frame_execute_result_t;
 
 #endif /* EXEC_TYPES_INTERNAL_H */
-

@@ -26,17 +26,16 @@
 #include <stdio.h>
 
 /* ── Public utility types (also used by frame.h) ─────────────────────────── */
+#include "exec_types_public.h"
 #include "getopt_string.h"
 #include "string_list.h"
 #include "string_t.h"
-#include "exec_types_public.h"
 
 /* ── Platform-specific system headers ────────────────────────────────────── */
 #ifdef POSIX_API
 #include <sys/resource.h>
 #include <sys/types.h>
 #endif
-
 
 /* ============================================================================
  * Executor Lifecycle
@@ -262,9 +261,9 @@ typedef struct exec_builtin_context_t
     exec_t *executor;    /**< The executor (global state)           */
     exec_frame_t *frame; /**< The current execution frame           */
 #if !defined(POSIX_API) && !defined(UCRT_API)
-    FILE *stdin_fp;      /**< stdin for this invocation (may be redirected)  */
-    FILE *stdout_fp;     /**< stdout for this invocation (may be redirected) */
-    FILE *stderr_fp;     /**< stderr for this invocation (may be redirected) */
+    FILE *stdin_fp;  /**< stdin for this invocation (may be redirected)  */
+    FILE *stdout_fp; /**< stdout for this invocation (may be redirected) */
+    FILE *stderr_fp; /**< stderr for this invocation (may be redirected) */
 #endif
 } exec_builtin_context_t;
 
@@ -315,7 +314,7 @@ typedef enum exec_builtin_category_t
 bool exec_register_builtin(exec_t *executor, const string_t *name, exec_builtin_fn_t fn,
                            exec_builtin_category_t category);
 bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin_fn_t fn,
-                           exec_builtin_category_t category);
+                                exec_builtin_category_t category);
 
 /**
  * Unregister a previously registered builtin command.
@@ -380,12 +379,12 @@ bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
  */
 typedef enum exec_command_type_t
 {
-    EXEC_COMMAND_NOT_FOUND,      /**< Name did not resolve to anything          */
-    EXEC_COMMAND_ALIAS,          /**< Alias (only when aliases are checked)     */
-    EXEC_COMMAND_SPECIAL_BUILTIN,/**< POSIX special builtin                    */
-    EXEC_COMMAND_FUNCTION,       /**< Shell function                            */
-    EXEC_COMMAND_REGULAR_BUILTIN,/**< POSIX regular builtin                    */
-    EXEC_COMMAND_EXTERNAL        /**< External command found on PATH            */
+    EXEC_COMMAND_NOT_FOUND,       /**< Name did not resolve to anything          */
+    EXEC_COMMAND_ALIAS,           /**< Alias (only when aliases are checked)     */
+    EXEC_COMMAND_SPECIAL_BUILTIN, /**< POSIX special builtin                    */
+    EXEC_COMMAND_FUNCTION,        /**< Shell function                            */
+    EXEC_COMMAND_REGULAR_BUILTIN, /**< POSIX regular builtin                    */
+    EXEC_COMMAND_EXTERNAL         /**< External command found on PATH            */
 } exec_command_type_t;
 
 /**
@@ -393,11 +392,11 @@ typedef enum exec_command_type_t
  */
 typedef struct exec_command_resolution_t
 {
-    exec_command_type_t type;  /**< What the name resolved to                  */
-    string_t *path;            /**< For EXTERNAL: the resolved filesystem path.
-                                    For ALIAS: the alias value.
-                                    NULL for builtins and functions.
-                                    Caller frees.                              */
+    exec_command_type_t type; /**< What the name resolved to                  */
+    string_t *path;           /**< For EXTERNAL: the resolved filesystem path.
+                                   For ALIAS: the alias value.
+                                   NULL for builtins and functions.
+                                   Caller frees.                              */
 } exec_command_resolution_t;
 
 /**
@@ -412,11 +411,9 @@ typedef struct exec_command_resolution_t
  * @param check_aliases  If true, check aliases before everything else.
  * @return Resolution result.  Caller must free result.path if non-NULL.
  */
-exec_command_resolution_t exec_resolve_command(const exec_t *executor,
-                                               const string_t *name,
+exec_command_resolution_t exec_resolve_command(const exec_t *executor, const string_t *name,
                                                bool check_aliases);
-exec_command_resolution_t exec_resolve_command_cstr(const exec_t *executor,
-                                                    const char *name,
+exec_command_resolution_t exec_resolve_command_cstr(const exec_t *executor, const char *name,
                                                     bool check_aliases);
 
 /* ============================================================================
@@ -497,19 +494,23 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
  * with the executor reporting when more input is needed (e.g. unclosed
  * quotes or compound commands).
  *
- * Zero-initialise before the first call.  The executor populates it with
- * continuation state after each call.
+ * Allocate with exec_parse_session_create() (preferred) or allocate
+ * exec_parse_session_size() bytes and zero-initialise before the first call.
+ * The executor populates it with continuation state after each call.
+ *
+ * The old exec_partial_state_t typedef is preserved for source compatibility.
  */
-typedef struct exec_partial_state_t exec_partial_state_t;
+typedef struct exec_parse_session_t exec_parse_session_t;
+typedef struct exec_parse_session_t exec_partial_state_t; /* back-compat alias */
 
 /**
- * Return the size of exec_partial_state_t so callers can allocate it
- * without including exec_internal.h.
+ * Return the size of exec_parse_session_t so callers can allocate it
+ * without including exec_parse_session.h.
  */
-size_t exec_partial_state_size(void);
+size_t exec_parse_session_size(void);
 
 /**
- * Release all resources held by a partial state.
+ * Release all resources held by a parse session.
  *
  * Call this when abandoning an incomplete parse, or after the final
  * successful call.  After cleanup the struct is zeroed and may be
@@ -517,7 +518,7 @@ size_t exec_partial_state_size(void);
  *
  * Safe to call on an already-zeroed struct (no-op).
  */
-void exec_partial_state_cleanup(exec_partial_state_t *state);
+void exec_parse_session_cleanup(exec_parse_session_t *session);
 
 /**
  * Execute a command string incrementally.
@@ -526,17 +527,17 @@ void exec_partial_state_cleanup(exec_partial_state_t *state);
  * @param command           The command text for this chunk.
  * @param filename          Source filename for error messages (may be NULL).
  * @param line_number       Starting line number (0 = not provided).
- * @param partial_state_out Continuation state (caller zero-inits before first
- *                          call; memset to zero to reset).
+ * @param session           Parse session (caller creates with
+ *                          exec_parse_session_create() before first call).
  * @return EXEC_OK if the command completed, EXEC_INCOMPLETE_INPUT if more
  *         input is needed, or an error / control-flow status.
  */
 exec_status_t exec_execute_command_string_partial(exec_t *executor, const string_t *command,
                                                   const string_t *filename, size_t line_number,
-                                                  exec_partial_state_t *partial_state_out);
+                                                  exec_parse_session_t *session);
 exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const char *command,
                                                        const char *filename, size_t line_number,
-                                                       exec_partial_state_t *partial_state_out);
+                                                       exec_parse_session_t *session);
 
 /* ── Custom line-editor support ──────────────────────────────────────────── */
 
@@ -686,8 +687,7 @@ typedef void (*exec_signal_callback_t)(int signal_number, void *user_data);
  * @param callback   The callback function, or NULL to clear.
  * @param user_data  Opaque context passed to the callback.
  */
-void exec_set_signal_callback(exec_t *executor, exec_signal_callback_t callback,
-                              void *user_data);
+void exec_set_signal_callback(exec_t *executor, exec_signal_callback_t callback, void *user_data);
 
 /* ============================================================================
  * Job Control

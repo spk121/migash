@@ -54,11 +54,6 @@ typedef enum
     EXEC_STRING_ERROR       /* Error occurred */
 } exec_string_status_t;
 
-/**
- * Context structure for exec_string_core to maintain state between calls.
- */
-typedef struct exec_string_ctx_t exec_string_ctx_t;
-
 /* ============================================================================
  * Standard Exit Codes
  * ============================================================================
