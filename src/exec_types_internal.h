@@ -1,5 +1,5 @@
-#ifndef EXEC_INTERNAL_H
-#define EXEC_INTERNAL_H
+#ifndef EXEC_TYPES_INTERNAL_H
+#define EXEC_TYPES_INTERNAL_H
 
 /**
  * @file exec_internal.h
@@ -29,10 +29,13 @@
 #include "exec_frame.h"
 #include "func_store.h"
 #include "job_store.h"
+#include "lexer_t.h"
 #include "positional_params.h"
 #include "sig_act.h"
+#include "string_list.h"
 #include "string_t.h"
 #include "trap_store.h"
+#include "tokenizer.h"
 #include "variable_store.h"
 
 #ifdef POSIX_API
@@ -209,9 +212,78 @@ struct exec_t
     /* ─── Frame stack ─────────────────────────────────────────────────── */
 
     bool top_frame_initialized;
-    exec_frame_t *top_frame;
-    exec_frame_t *current_frame;
+    struct exec_frame_t *top_frame;
+    struct exec_frame_t *current_frame;
 };
+
+/**
+ * Types of redirection operations.
+ */
+
+/* redirection_type_t is recycled from the one in ast.h */
+
+/**
+ * How the target of a redirection is specified.
+ */
+
+/* redir_target_kind_t is recycled from the one in ast.h */
+
+/**
+ * Runtime representation of a single redirection.
+ */
+typedef struct exec_redirection_t
+{
+    redirection_type_t type;
+    int explicit_fd;     /* [n] prefix, or -1 for default */
+    bool is_io_location; /* POSIX 2024 {varname} syntax */
+    string_t *io_location_varname;
+    redir_target_kind_t target_kind;
+
+    union {
+        /* REDIR_TARGET_FILE */
+        struct
+        {
+            bool is_expanded;
+            string_t *filename; /* Expanded filename */
+            token_t *tok;       /* Original parts for expansion (if not yet expanded) */
+        } file;
+
+        /* REDIR_TARGET_FD */
+        struct
+        {
+            int fixed_fd;            /* Literal fd number, or -1 */
+            string_t *fd_expression; /* If fd comes from expansion */
+            token_t *fd_token;       /* Full token for variable-derived FDs */
+        } fd;
+
+        /* REDIR_TARGET_HEREDOC */
+        struct
+        {
+            string_t *content;    /* The heredoc content */
+            bool needs_expansion; /* false if delimiter was quoted */
+        } heredoc;
+
+        /* REDIR_TARGET_IO_LOCATION */
+        struct
+        {
+            string_t *raw_filename; /* For {var}>file */
+            int fixed_fd;           /* For {var}>&N */
+        } io_location;
+    } target;
+
+    int source_line; /* For error messages */
+} exec_redirection_t;
+
+/**
+ * Dynamic array of runtime redirections.
+ */
+
+typedef struct exec_redirections_t
+{
+    exec_redirection_t *items;
+    size_t count;
+    size_t capacity;
+} exec_redirections_t;
 
 /* ============================================================================
  * Partial Execution State (concrete definition)
@@ -242,59 +314,49 @@ struct exec_partial_state_t
     /* Additional parser continuation state may be added here. */
 };
 
+/**
+ * Context structure for exec_string_core to maintain state between calls.
+ */
+struct exec_string_ctx_t
+{
+    lexer_t *lexer;
+    token_list_t *accumulated_tokens;
+    int line_num;
+};
+
 /* ============================================================================
- * Internal Helper Functions
- * ============================================================================
- *
- * These functions are used by the executor, frame, and builtin dispatch
- * implementation files.  They must NOT be called by library consumers.
- */
+ * Frame-Level Execution Result Types
+ * ============================================================================ */
 
-/* ── AST visitor (internal) ──────────────────────────────────────────────── */
 
-typedef bool (*ast_visitor_fn)(const ast_node_t *node, void *user_data);
-bool ast_traverse(const ast_node_t *root, ast_visitor_fn visitor, void *user_data);
+// todo:
+// exec_frame_execute_status_t is a simple enum
+// exec_frame_execute_result_t is a struct that includes the status plus any additional info (like
+//   exit status, flow control info, etc)
 
-/* ── Command substitution callback (internal, for the expander) ──────────── */
+typedef enum exec_frame_execute_status_t
+{
+    EXEC_FRAME_EXECUTE_STATUS_OK,
+    EXEC_FRAME_EXECUTE_STATUS_ERROR,
+    EXEC_FRAME_EXECUTE_STATUS_NOT_IMPL,
+    EXEC_FRAME_EXECUTE_STATUS_INCOMPLETE,
+    EXEC_FRAME_EXECUTE_STATUS_UNKNOWN
+} exec_frame_execute_status_t;
 
-string_t *exec_command_subst_callback(void *userdata, const string_t *command);
+// FIXME? TODO? is exec_control_flow_t a frame-level concept?
+// or should it remain at the exec level?
 
-/* ── Direct store access (internal) ──────────────────────────────────────── */
+typedef struct exec_frame_execute_result_t
+{
+    enum exec_frame_execute_status_t status;
 
-positional_params_t *exec_get_positional_params(const exec_t *executor);
-variable_store_t *exec_get_variables(const exec_t *executor);
-alias_store_t *exec_get_aliases(const exec_t *executor);
+    bool has_exit_status;
+    int exit_status; // valid if has_exit_status is true
 
-/* ── Function call via AST node (internal) ───────────────────────────────── */
+    bool has_control_flow;
+    enum exec_control_flow_t flow;       // for break/continue/return: what control flow is pending from this execution
+    int flow_depth; // for break/continue: how many nested loops to break/continue out of
+} exec_frame_execute_result_t;
 
-frame_status_t frame_set_function_ast(exec_frame_t *frame, const string_t *name,
-                                      const ast_node_t *body);
+#endif /* EXEC_TYPES_INTERNAL_H */
 
-frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
-                                        const string_list_t *args);
-
-/* ── Word-token expansion (internal — public API uses frame_expand_string) ─ */
-
-string_list_t *frame_expand_word_token(exec_frame_t *frame, const token_t *tok);
-
-/* ── Exit trap execution (internal) ──────────────────────────────────────── */
-
-void frame_run_exit_traps(const trap_store_t *store, exec_frame_t *frame);
-
-/* ── Top-frame lazy initialisation (internal) ────────────────────────────── */
-
-bool exec_ensure_top_frame(exec_t *executor);
-
-/* ── Status code translation helpers ─────────────────────────────────────── */
-
-/**
- * Translate an internal var_store_error_t to the public frame_status_t.
- */
-frame_status_t frame_status_from_var_error(var_store_error_t err);
-
-/**
- * Translate an internal func_store_error_t to the public frame_status_t.
- */
-frame_status_t frame_status_from_func_error(func_store_error_t err);
-
-#endif /* EXEC_INTERNAL_H */

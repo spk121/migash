@@ -39,8 +39,9 @@ typedef int (*builtin_fn_t)(exec_builtin_context_t* ctx,
  */
 typedef enum builtin_category_t
 {
-    BUILTIN_SPECIAL = 0, /**< POSIX special builtin  */
-    BUILTIN_REGULAR = 1  /**< POSIX regular builtin  */
+    BUILTIN_NONE = 0,    /**< Not a builtin (used internally) */
+    BUILTIN_SPECIAL = 1, /**< POSIX special builtin  */
+    BUILTIN_REGULAR = 2  /**< POSIX regular builtin  */
 } builtin_category_t;
 
 /* ============================================================================

@@ -18,7 +18,7 @@
  * of local variables in functions.
  */
 
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 #include "exec.h"
 #include "string_list.h"
 #include "string_t.h"

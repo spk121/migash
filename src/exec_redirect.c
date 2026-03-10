@@ -28,7 +28,7 @@
 #include "ast.h"
 #include "exec_expander.h"
 #include "exec_frame.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 #include "lib.h"
 #include "logging.h"
 #include "string_t.h"
@@ -787,7 +787,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
         int backup = dup_to_safe_slot(fd);
         if (backup < 0)
         {
-            exec_set_error(executor, "_dup(%d) to safe slot failed: %s", fd, strerror(errno));
+            exec_set_error_printf(executor, "_dup(%d) to safe slot failed: %s", fd, strerror(errno));
             goto error_restore;
         }
         log_debug("apply(ucrt): phase1 _dup(%d) -> backup fd=%d", fd, backup);
@@ -825,7 +825,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
 
             if (!expanded_target)
             {
-                exec_set_error(executor, "Failed to expand redirection target");
+                exec_set_error_cstr(executor, "Failed to expand redirection target");
                 goto error_restore;
             }
 
@@ -860,7 +860,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                 flags = _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY;
                 break;
             default:
-                exec_set_error(executor, "Invalid filename redirection type");
+                exec_set_error_cstr(executor, "Invalid filename redirection type");
                 string_destroy(&expanded_target);
                 goto error_restore;
             }
@@ -869,7 +869,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
             int newfd = _open(fname, flags, pmode);
             if (newfd < 0)
             {
-                exec_set_error(executor, "Failed to open '%s': %s", fname, strerror(errno));
+                exec_set_error_printf(executor, "Failed to open '%s': %s", fname, strerror(errno));
                 string_destroy(&expanded_target);
                 goto error_restore;
             }
@@ -891,7 +891,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
             log_debug("apply(ucrt): _dup2(%d -> %d) wiring fd=%d to '%s'", newfd, fd, fd, fname);
             if (_dup2(newfd, fd) < 0)
             {
-                exec_set_error(executor, "_dup2(%d, %d) failed: %s", newfd, fd, strerror(errno));
+                exec_set_error_printf(executor, "_dup2(%d, %d) failed: %s", newfd, fd, strerror(errno));
                 _close(newfd);
                 string_destroy(&expanded_target);
                 goto error_restore;
@@ -923,7 +923,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
 
             if (!fd_str)
             {
-                exec_set_error(executor, "Failed to expand file descriptor target");
+                exec_set_error_cstr(executor, "Failed to expand file descriptor target");
                 goto error_restore;
             }
 
@@ -932,7 +932,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
 
             if (!src.success)
             {
-                exec_set_error(executor, "Invalid file descriptor: '%s'", lex);
+                exec_set_error_printf(executor, "Invalid file descriptor: '%s'", lex);
                 string_destroy(&fd_str);
                 goto error_restore;
             }
@@ -958,7 +958,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
             log_debug("apply(ucrt): _dup2(%d -> %d) fd-to-fd redirect", src.fd, fd);
             if (_dup2(src.fd, fd) < 0)
             {
-                exec_set_error(executor, "_dup2(%d, %d) failed: %s", src.fd, fd, strerror(errno));
+                exec_set_error_printf(executor, "_dup2(%d, %d) failed: %s", src.fd, fd, strerror(errno));
                 string_destroy(&fd_str);
                 goto error_restore;
             }
@@ -1027,7 +1027,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                 uint32_t path_len = GetTempPathA(MAX_PATH, temp_path);
                 if (path_len == 0 || path_len > MAX_PATH - 1)
                 {
-                    exec_set_error(executor, "GetTempPathA() failed for heredoc");
+                    exec_set_error_cstr(executor, "GetTempPathA() failed for heredoc");
                     string_destroy(&content_str);
                     goto error_restore;
                 }
@@ -1035,7 +1035,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                 uint32_t uRet = GetTempFileNameA(temp_path, "mgsh", 0, temp_file);
                 if (uRet == 0)
                 {
-                    exec_set_error(executor, "GetTempFileNameA() failed for heredoc");
+                    exec_set_error_cstr(executor, "GetTempFileNameA() failed for heredoc");
                     string_destroy(&content_str);
                     goto error_restore;
                 }
@@ -1047,7 +1047,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                              _SH_DENYNO, _S_IREAD | _S_IWRITE);
                 if (err != 0 || tmpfd < 0)
                 {
-                    exec_set_error(executor, "_sopen_s() failed for heredoc temp file: %s",
+                    exec_set_error_printf(executor, "_sopen_s() failed for heredoc temp file: %s",
                                    strerror(errno));
                     DeleteFileA(temp_file);
                     string_destroy(&content_str);
@@ -1055,7 +1055,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                 }
                 if (_write(tmpfd, content, (unsigned int)content_len) != (int)content_len)
                 {
-                    exec_set_error(executor, "write to heredoc temp file failed: %s",
+                    exec_set_error_printf(executor, "write to heredoc temp file failed: %s",
                                    strerror(errno));
                     _close(tmpfd);
                     string_destroy(&content_str);
@@ -1064,7 +1064,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                 _lseek(tmpfd, 0, SEEK_SET);
                 if (_dup2(tmpfd, fd) < 0)
                 {
-                    exec_set_error(executor, "_dup2(%d, %d) for heredoc temp file failed: %s",
+                    exec_set_error_printf(executor, "_dup2(%d, %d) for heredoc temp file failed: %s",
                                    tmpfd, fd, strerror(errno));
                     _close(tmpfd);
                     string_destroy(&content_str);
@@ -1088,7 +1088,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                       content_len);
             if (_pipe(pipefd, (unsigned int)(content_len + 1024), _O_BINARY) < 0)
             {
-                exec_set_error(executor, "_pipe() failed: %s", strerror(errno));
+                exec_set_error_printf(executor, "_pipe() failed: %s", strerror(errno));
                 string_destroy(&content_str);
                 goto error_restore;
             }
@@ -1102,7 +1102,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                       fd);
             if (_dup2(pipefd[0], fd) < 0)
             {
-                exec_set_error(executor, "_dup2(%d, %d) failed for heredoc: %s", pipefd[0], fd,
+                exec_set_error_printf(executor, "_dup2(%d, %d) failed for heredoc: %s", pipefd[0], fd,
                                strerror(errno));
                 _close(pipefd[0]);
                 goto error_restore;
@@ -1119,7 +1119,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
         }
 
         default:
-            exec_set_error(executor, "Unsupported redirection operand type in UCRT_API mode");
+            exec_set_error_cstr(executor, "Unsupported redirection operand type in UCRT_API mode");
             goto error_restore;
         }
     }
@@ -1223,6 +1223,15 @@ void exec_restore_redirections_ucrt_c(exec_frame_t *frame)
 #endif
 
 #if !defined(POSIX_API) && !defined(UCRT_API)
+// If we're calling an internal function like a builtin or a function defined in the current script,
+// in ISO C mode we can support redirections by by setting the *_stdin, *_stdout, and *_stderr
+// fields which can be passed to the exec_builtin_context_t struct which the internal function may
+// use as the basis for its I/O. However, this only works for the three standard streams, and it is
+// up to the builtin function implementation to actually use these fields correctly.
+
+// For external commands, which are called using system(), no redirection mechanism is possible.
+// However, there is the MGSH_ENV_VAR environment variable which will cause a temp file to be
+// created with environment variable content. This is implemented elsewhere.
 exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);
@@ -1230,28 +1239,6 @@ exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redi
 
     if (redirs->count == 0)
         return EXEC_OK;
-    return EXEC_NOT_IMPL;
-
-    // Since there is no way to restore redirections in ISO C mode, we don't even attempt
-    // to apply them. The previous implementation is stubbed out for reference, since it
-    // was a PITA to get right and may be useful someday.
-#if 0
-    // In ISO C mode the only I/O primitives available are the FILE* family
-    // (fopen, fclose, freopen, fread, fwrite) and the only way to launch an
-    // external program is system(). system() runs the command string through
-    // the platform shell, so file redirections (< and >) can be embedded
-    // directly in the command string that system() receives — the caller in
-    // exec_command.c is responsible for assembling that string. There is
-    // therefore no mechanism at this layer to redirect the standard streams
-    // of an already-running process, and fd-to-fd duplication (>&N, <&N) has
-    // no ISO C equivalent at all.
-    //
-    // The only case we can handle here is REDIR_TARGET_FILE with REDIR_READ,
-    // REDIR_WRITE, or REDIR_APPEND on the three standard streams (fd 0/1/2),
-    // by calling freopen() — which is the one redirection primitive that ISO C
-    // does provide. Everything else is genuinely unsupported and must be
-    // rejected so the caller can report a clean error rather than silently
-    // producing wrong output.
 
     exec_t *executor = frame->executor;
 
@@ -1259,118 +1246,251 @@ exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redi
     {
         const exec_redirection_t *r = &redirs->items[i];
 
-        // Resolve target fd: default to stdin (0) for reads, stdout (1) for writes.
-        int fd = (r->explicit_fd >= 0 ? r->explicit_fd
-                  : (r->type == REDIR_READ || r->type == REDIR_FROM_BUFFER ||
-                     r->type == REDIR_FROM_BUFFER_STRIP)
-                      ? 0
-                      : 1);
-
-        // freopen() can only target the three standard streams.
-        if (fd != 0 && fd != 1 && fd != 2)
+        int target_fd = redirection_default_fd(r);
+        if (target_fd < 0)
         {
-            exec_set_error(
-                executor,
-                "ISO C mode: redirection to fd %d is not supported (only stdin/stdout/stderr)", fd);
-            return EXEC_NOT_IMPL;
+            exec_set_error(executor, "Invalid target FD");
+            goto error_restore;
         }
 
-        // FD-to-FD duplication, explicit close, and heredoc pipes have no ISO C equivalent.
-        if (r->target_kind != REDIR_TARGET_FILE)
+        /* ISO C only supports the three standard streams (builtins use the context FILE* fields) */
+        if (target_fd > 2)
         {
-            exec_set_error(executor, "ISO C mode: only file redirections are supported (< > >>), "
-                                     "not fd duplications, explicit closes, or heredocs");
-            return EXEC_NOT_IMPL;
+            log_warn("ISO C redirection: fd %d not supported (only 0/1/2 work for builtins)",
+                     target_fd);
+            continue;
         }
 
-        // Expand the filename.
-        string_t *fname_str = NULL;
-        if (!r->target.file.is_expanded)
-            fname_str = expand_redirection_target(frame, r->target.file.tok);
-        else
-            fname_str = string_create_from(r->target.file.filename);
-
-        if (!fname_str)
+        FILE **target_ptr = NULL;
+        switch (target_fd)
         {
-            exec_set_error(executor, "ISO C mode: failed to expand redirection filename");
-            return EXEC_ERROR;
-        }
-
-        const char *fname = string_cstr(fname_str);
-
-        // Map redirection type to an fopen mode string.
-        const char *mode = NULL;
-        switch (r->type)
-        {
-        case REDIR_READ:
-            mode = "r";
+        case 0:
+            target_ptr = frame->fd_stdin;
             break;
-        case REDIR_WRITE:
-        case REDIR_WRITE_FORCE:
-            mode = "w";
+        case 1:
+            target_ptr = frame->fd_stdout;
             break;
-        case REDIR_APPEND:
-            mode = "a";
-            break;
-        case REDIR_READWRITE:
-            mode = "r+";
+        case 2:
+            target_ptr = frame->fd_stderr;
             break;
         default:
-            exec_set_error(executor, "ISO C mode: unsupported redirection type %d for file target",
-                           r->type);
-            string_destroy(&fname_str);
-            return EXEC_NOT_IMPL;
+            continue;
         }
 
-        // freopen() atomically closes the stream, opens the file, and rebinds
-        // the standard FILE* handle — it is the only ISO C way to redirect a
-        // standard stream. stdin/stdout/stderr are the required C99 macros for
-        // the three standard FILE* objects.
-        FILE *target_stream = (fd == 0) ? stdin : (fd == 1) ? stdout : stderr;
-        if (freopen(fname, mode, target_stream) == NULL)
+        switch (r->target_kind)
         {
-            exec_set_error(executor, "ISO C mode: freopen(\"%s\", \"%s\") failed: %s", fname, mode,
-                           strerror(errno));
+        case REDIR_TARGET_FILE: {
+            string_t *fname_str = NULL;
+            if (!r->target.file.is_expanded)
+                fname_str = expand_redirection_target(frame, r->target.file.tok);
+            else
+                fname_str = string_create_from(r->target.file.filename);
+
+            if (!fname_str)
+            {
+                exec_set_error(executor, "Failed to expand file target");
+                goto error_restore;
+            }
+
+            const char *fname = string_cstr(fname_str);
+            const char *mode = "r";
+
+            switch (r->type)
+            {
+            case REDIR_READ:
+                mode = "r";
+                break;
+            case REDIR_WRITE:
+                /* noclobber support (C11 "wx" is nice but we stay C89-compatible) */
+                mode = (frame->opt_flags && frame->opt_flags->noclobber) ? "w" : "w";
+                break;
+            case REDIR_APPEND:
+                mode = "a";
+                break;
+            case REDIR_READWRITE:
+                mode = "r+"; /* best portable approximation (creates only if file exists) */
+                break;
+            case REDIR_WRITE_FORCE:
+                mode = "w";
+                break;
+            default:
+                exec_set_error(executor, "Unsupported redirection type %d", r->type);
+                string_destroy(&fname_str);
+                goto error_restore;
+            }
+
+            FILE *new_stream = fopen(fname, mode);
+            if (!new_stream)
+            {
+                exec_set_error(executor, "fopen('%s') failed: %s", fname, strerror(errno));
+                string_destroy(&fname_str);
+                goto error_restore;
+            }
+
+            /* Close any previous custom stream we allocated for this fd */
+            if (*target_ptr)
+                fclose(*target_ptr);
+
+            *target_ptr = new_stream;
             string_destroy(&fname_str);
-            return EXEC_ERROR;
+            break;
         }
 
-        // Record in the fd_table so exec_restore_redirections_iso_c() knows
-        // which streams were redirected and need restoring.
-        fd_table_t *fds = exec_frame_get_fds(frame);
-        if (fds)
-        {
-            fd_table_add(fds, fd, FD_REDIRECTED, fname_str);
+        case REDIR_TARGET_BUFFER: {
+            string_t *content_str = NULL;
+            if (r->target.heredoc.content)
+            {
+                content_str = r->target.heredoc.needs_expansion
+                                  ? exec_expand_heredoc(executor, r->target.heredoc.content, false)
+                                  : string_create_from(r->target.heredoc.content);
+            }
+
+            FILE *tmp = tmpfile();
+            if (!tmp)
+            {
+                exec_set_error(executor, "tmpfile() failed for heredoc");
+                string_destroy(&content_str);
+                goto error_restore;
+            }
+
+            const char *content = content_str ? string_cstr(content_str) : "";
+            size_t len = content_str ? string_length(content_str) : 0;
+            if (len > 0 && fwrite(content, 1, len, tmp) != len)
+            {
+                exec_set_error(executor, "write to heredoc tmpfile failed");
+                fclose(tmp);
+                string_destroy(&content_str);
+                goto error_restore;
+            }
+            rewind(tmp);
+
+            if (*target_ptr)
+                fclose(*target_ptr);
+
+            *target_ptr = tmp;
+            string_destroy(&content_str);
+            break;
         }
 
-        string_destroy(&fname_str);
+        case REDIR_TARGET_FD: {
+            /* Limited support: only 0/1/2 → share the FILE* pointer (no real dup/close) */
+            string_t *fd_str = NULL;
+            bool fd_allocated = false;
+            if (r->target.fd.fd_expression)
+            {
+                fd_str = string_create_from(r->target.fd.fd_expression);
+                fd_allocated = true;
+            }
+            else if (r->target.fd.fixed_fd >= 0)
+            {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%d", r->target.fd.fixed_fd);
+                fd_str = string_create_from_cstr(buf);
+                fd_allocated = true;
+            }
+            else if (r->target.fd.fd_token)
+            {
+                fd_str = expand_redirection_target(frame, r->target.fd.fd_token);
+                fd_allocated = true;
+            }
+
+            if (!fd_str)
+            {
+                exec_set_error(executor, "Failed to expand FD target");
+                goto error_restore;
+            }
+
+            const char *lex = string_cstr(fd_str);
+            parse_fd_result_t src = parse_fd_number(lex);
+            if (fd_allocated)
+                string_destroy(&fd_str);
+
+            if (!src.success)
+            {
+                exec_set_error(executor, "Invalid source FD: '%s'", lex);
+                goto error_restore;
+            }
+
+            if (src.fd == -1)
+            {
+                /* n<&- or n>&- → close */
+                if (*target_ptr)
+                {
+                    fclose(*target_ptr);
+                    *target_ptr = NULL;
+                }
+                break;
+            }
+
+            /* Only support sharing among the three standard streams */
+            FILE *src_stream = NULL;
+            if (src.fd == 0)
+                src_stream = *_stdin;
+            else if (src.fd == 1)
+                src_stream = *_stdout;
+            else if (src.fd == 2)
+                src_stream = *_stderr;
+
+            if (src_stream)
+            {
+                if (*target_ptr && *target_ptr != src_stream)
+                    fclose(*target_ptr);
+                *target_ptr = src_stream; /* share (close_after_use ignored - no real fd) */
+            }
+            else
+            {
+                log_warn("ISO C: fd-to-fd source %d not a standard stream, ignoring", src.fd);
+            }
+            break;
+        }
+
+        case REDIR_TARGET_CLOSE: {
+            if (*target_ptr)
+            {
+                fclose(*target_ptr);
+                *target_ptr = NULL;
+            }
+            break;
+        }
+
+        default:
+            exec_set_error(executor, "Unsupported redirection kind %d in ISO C mode",
+                           r->target_kind);
+            goto error_restore;
+        }
     }
 
     return EXEC_OK;
-#endif
+
+error_restore:
+    /* Partial redirections are rolled back by the existing restore function
+     * (it simply closes any non-NULL FILE* we allocated and sets the pointers
+     *  to NULL, which is exactly the contract described in the stub comment). */
+    exec_restore_redirections_iso_c(frame);
+    return EXEC_ERROR;
 }
 
 void exec_restore_redirections_iso_c(exec_frame_t *frame)
 {
-    // ISO C provides no mechanism to restore a standard stream after freopen().
-    //
-    // freopen() is destructive: it closes the underlying resource before
-    // opening the new file, so the original is gone by the time control
-    // returns. ISO C has no dup(), no fileno(), no way to save a copy of a
-    // FILE* before redirecting it, and no standard device paths to reopen.
-    //
-    // The practical consequence is that file redirections in ISO C mode are
-    // permanent for the lifetime of the process. This is acceptable because
-    // ISO C mode is only used on platforms where the only external-command
-    // mechanism is system(), which forks its own shell process. That child
-    // process inherits the redirected streams, runs the command, and exits —
-    // after which *this* process's streams are no longer meaningful for that
-    // command anyway. Builtin commands that run after a redirection will see
-    // the redirected streams, which is a known limitation of ISO C mode.
-    //
-    // We still clean up the fd_table so it accurately reflects reality:
-    // the streams remain redirected, so we leave FD_REDIRECTED set but mark
-    // them to show that no restoration was possible.
+    // In ISO C mode, since we don't have a real redirection mechanism, there's nothing to restore.
+    // But for those internal functions that do use the exec_builtin_context_t's fd_stdin,
+    // fd_stdout, and fd_stderr fields, we did provide a way to set special stdin/out/err FILE *
+    // values. This function just closes them.
+    if (frame->fd_stdin && *frame->fd_stdin)
+    {
+        fclose(*frame->fd_stdin);
+        *frame->fd_stdin = NULL;
+    }
+    if (frame->fd_stdout && *frame->fd_stdout)
+    {
+        fclose(*frame->fd_stdout);
+        *frame->fd_stdout = NULL;
+    }
+    if (frame->fd_stderr && *frame->fd_stderr)
+    {
+        fclose(*frame->fd_stderr);
+        *frame->fd_stderr = NULL;
+    }
     (void)frame;
 }
 #endif /* !POSIX_API && !UCRT_API */
@@ -1642,7 +1762,7 @@ exec_redirections_t *exec_redirections_from_ast(exec_frame_t *frame,
     exec_redirections_t *redirs = exec_redirections_create();
     if (!redirs)
     {
-        exec_set_error(frame->executor, "Failed to create redirection structure");
+        exec_set_error_cstr(frame->executor, "Failed to create redirection structure");
         return NULL;
     }
 
@@ -1652,7 +1772,7 @@ exec_redirections_t *exec_redirections_from_ast(exec_frame_t *frame,
         const ast_node_t *ast_redir = ast_node_list_get(ast_redirs, i);
         if (ast_redir->type != AST_REDIRECTION)
         {
-            exec_set_error(frame->executor, "Expected AST_REDIRECTION node");
+            exec_set_error_cstr(frame->executor, "Expected AST_REDIRECTION node");
             exec_redirections_destroy(&redirs);
             return NULL;
         }
@@ -1661,7 +1781,7 @@ exec_redirections_t *exec_redirections_from_ast(exec_frame_t *frame,
         exec_redirection_t *runtime_redir = xcalloc(1, sizeof(exec_redirection_t));
         if (!runtime_redir)
         {
-            exec_set_error(frame->executor, "Failed to allocate redirection structure");
+            exec_set_error_cstr(frame->executor, "Failed to allocate redirection structure");
             exec_redirections_destroy(&redirs);
             return NULL;
         }
@@ -1779,7 +1899,7 @@ exec_redirections_t *exec_redirections_from_ast(exec_frame_t *frame,
 
         case REDIR_TARGET_INVALID:
         default:
-            exec_set_error(frame->executor, "Invalid redirection target kind");
+            exec_set_error_cstr(frame->executor, "Invalid redirection target kind");
             xfree(runtime_redir);
             exec_redirections_destroy(&redirs);
             return NULL;

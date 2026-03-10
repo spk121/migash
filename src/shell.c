@@ -27,7 +27,6 @@ static sh_status_t shell_execute_script_file(shell_t *sh);
 static sh_status_t shell_execute_interactive(shell_t *sh);
 static sh_status_t shell_execute_command_string(shell_t *sh);
 static sh_status_t shell_execute_stdin(shell_t *sh);
-static FILE *open_mem_stream(const char *buf, size_t len);
 
 shell_t *shell_create(const shell_cfg_t *cfg)
 {
@@ -59,16 +58,36 @@ shell_t *shell_create(const shell_cfg_t *cfg)
         sh->command_string = NULL;
     }
 
-    sh->executor = exec_create(&cfg->exec_cfg);
-    if (!sh->executor)
-    {
-        if (sh->script_filename)
-            string_destroy(&sh->script_filename);
-        if (sh->command_string)
-            string_destroy(&sh->command_string);
-        xfree(sh);
-        return NULL;
-    }
+    sh->executor = exec_create();
+    if (cfg->arguments)
+        exec_set_args(sh->executor, cfg->arguments);
+    if (cfg->envp)
+        exec_set_env(sh->executor, cfg->envp);
+    if (cfg->flags.allexport)
+        exec_set_flag_allexport(sh->executor, true);
+    if (cfg->flags.errexit)
+        exec_set_flag_errexit(sh->executor, true);
+    if (cfg->flags.ignoreeof)
+        exec_set_flag_ignoreeof(sh->executor, true);
+    if (cfg->flags.monitor)
+        exec_set_flag_monitor(sh->executor, true);
+    if (cfg->flags.noclobber)
+        exec_set_flag_noclobber(sh->executor, true);
+    if (cfg->flags.noexec)
+        exec_set_flag_noexec(sh->executor, true);
+    if (cfg->flags.noglob)
+        exec_set_flag_noglob(sh->executor, true);
+    if (cfg->flags.nounset)
+        exec_set_flag_nounset(sh->executor, true);
+    if (cfg->flags.pipefail)
+        exec_set_flag_pipefail(sh->executor, true);
+    if (cfg->flags.verbose)
+        exec_set_flag_verbose(sh->executor, true);
+    if (cfg->flags.vi)
+        exec_set_flag_vi(sh->executor, true);
+    if (cfg->flags.xtrace)
+        exec_set_flag_xtrace(sh->executor, true);
+
     return sh;
 }
 
@@ -102,7 +121,7 @@ sh_status_t shell_execute(shell_t *sh)
     case SHELL_MODE_SCRIPT_FILE:
         if (!sh->script_filename)
         {
-            exec_set_error(sh->executor, "No script file specified");
+            exec_set_error_cstr(sh->executor, "No script file specified");
             return SH_INTERNAL_ERROR;
         }
         return shell_execute_script_file(sh);
@@ -112,7 +131,7 @@ sh_status_t shell_execute(shell_t *sh)
     case SHELL_MODE_COMMAND_STRING:
         if (!sh->command_string)
         {
-            exec_set_error(sh->executor, "No command string specified");
+            exec_set_error_cstr(sh->executor, "No command string specified");
             return SH_INTERNAL_ERROR;
         }
         return shell_execute_command_string(sh);
@@ -122,7 +141,7 @@ sh_status_t shell_execute(shell_t *sh)
     case SHELL_MODE_UNKNOWN:
     case SHELL_MODE_INVALID_UID_GID:
     default:
-        exec_set_error(sh->executor, "Invalid shell mode");
+        exec_set_error_cstr(sh->executor, "Invalid shell mode");
         return SH_INTERNAL_ERROR;
     }
 }
@@ -170,16 +189,21 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
     FILE *fp = fopen(string_cstr(sh->script_filename), "r");
     if (!fp)
     {
-        exec_set_error(sh->executor, "Cannot open file: %s", string_cstr(sh->script_filename));
+        exec_set_error_printf(sh->executor, "Cannot open file: %s",
+                              string_cstr(sh->script_filename));
         return SH_RUNTIME_ERROR;
     }
 
-    /* Set $0 to the script filename */
-    exec_frame_t *frame = sh->executor->current_frame;
-    if (frame && frame->positional_params)
+    exec_status_t setup_status = exec_setup_noninteractive(sh->executor);
+    if (setup_status != EXEC_OK)
     {
-        positional_params_set_arg0(frame->positional_params, sh->script_filename);
+        fprintf(stderr, "Failed to parse RC file: %s\n", exec_get_error_cstr(sh->executor));
+        // Not a fatal error.
     }
+
+    /* Set $0 to the script filename */
+    exec_frame_t *frame = exec_get_current_frame(sh->executor);
+    frame_set_arg0(frame, sh->script_filename);
 
     exec_status_t status = exec_execute_stream_repl(sh->executor, fp, false /* not interactive */);
     fclose(fp);
@@ -204,19 +228,10 @@ sh_status_t shell_execute_command_string(shell_t *sh)
     Expects_not_null(sh->command_string);
 
     const char *cmd = string_cstr(sh->command_string);
-    size_t len = string_length(sh->command_string);
 
-    FILE *mem = open_mem_stream(cmd, len);
-    if (!mem)
-    {
-        exec_set_error(sh->executor, "Failed to create memory stream for command string");
-        return SH_RUNTIME_ERROR;
-    }
+    exec_result_t result = exec_execute_command_string(sh->executor, cmd);
 
-    exec_status_t status = exec_execute_stream(sh->executor, mem);
-    fclose(mem);
-
-    switch (status)
+    switch (result.status)
     {
     case EXEC_OK:
         return SH_OK;
@@ -230,31 +245,6 @@ sh_status_t shell_execute_command_string(shell_t *sh)
 }
 
 /**
- * Open a read-only memory-backed FILE* over a buffer.
- * On POSIX, uses fmemopen.  On other platforms, falls back to tmpfile().
- * Returns NULL on failure.  Caller must fclose() the result.
- */
-static FILE *open_mem_stream(const char *buf, size_t len)
-{
-#ifdef POSIX_API
-    return fmemopen((void *)buf, len, "r");
-#else
-    /* Portable fallback: write to a tmpfile and rewind.
-     * This is only used on non-POSIX platforms where fmemopen is absent. */
-    FILE *tmp = tmpfile();
-    if (!tmp)
-        return NULL;
-    if (fwrite(buf, 1, len, tmp) != len)
-    {
-        fclose(tmp);
-        return NULL;
-    }
-    rewind(tmp);
-    return tmp;
-#endif
-}
-
-/**
  * Read a single line from stdin into a caller-provided buffer, with dynamic
  * fallback for lines that exceed the buffer.
  *
@@ -265,6 +255,7 @@ static FILE *open_mem_stream(const char *buf, size_t len)
  * @param out_len      Receives the length of the line (excluding NUL)
  * @return true on success, false on EOF or error
  */
+// FIXME: get rid of this. Use exec.c functions instead.
 static bool read_line(char *static_buf, size_t static_size, char **out_buf, size_t *out_len)
 {
     if (!fgets(static_buf, (int)static_size, stdin))
@@ -308,15 +299,13 @@ static bool read_line(char *static_buf, size_t static_size, char **out_buf, size
     return true;
 }
 
+// FIXME: use exec_execute_stream_repl() here and share more code with exec_stream_repl.c
 static sh_status_t shell_execute_interactive(shell_t *sh)
 {
     Expects_not_null(sh);
     extern char *frame_render_ps1(const exec_frame_t *frame);
 
-    char *ps1_prompt = frame_render_ps1(sh->executor->current_frame);
-    if (!ps1_prompt)
-        ps1_prompt = xstrdup("$ ");
-
+    char *ps1_prompt = exec_get_rendered_ps1_cstr(sh->executor);
     fprintf(stdout, "%s", ps1_prompt);
     fflush(stdout);
 
@@ -348,13 +337,13 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
             xfree(line);
 
         /* Report errors */
-        const char *error = exec_get_error(sh->executor);
+        const char *error = exec_get_error_cstr(sh->executor);
         if (error && error[0])
         {
             fprintf(stderr, "%s\n", error);
             exec_clear_error(sh->executor);
         }
-        else if (sh->executor && sh->executor->last_exit_status == 127)
+        else if (sh->executor && exec_get_last_exit_status(sh->executor) == 127)
         {
             fprintf(stderr, "command not found\n");
             exec_clear_error(sh->executor);
@@ -365,7 +354,7 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
 
         /* Print next prompt */
         xfree(ps1_prompt);
-        ps1_prompt = frame_render_ps1(sh->executor->current_frame);
+        ps1_prompt = exec_get_rendered_ps1_cstr(sh->executor);
         if (!ps1_prompt)
             ps1_prompt = xstrdup("$ ");
         fprintf(stdout, "%s", ps1_prompt);
@@ -399,7 +388,7 @@ const char *shell_last_error(shell_t *sh)
     Expects_not_null(sh);
     Expects_not_null(sh->executor);
 
-    return exec_get_error(sh->executor);
+    return exec_get_error_cstr(sh->executor);
 }
 
 void shell_reset_error(shell_t *sh)
@@ -425,7 +414,7 @@ const char *shell_get_ps1(const shell_t *sh)
     Expects_not_null(sh);
     Expects_not_null(sh->executor);
 
-    return exec_get_ps1(sh->executor);
+    return exec_get_ps1_cstr(sh->executor);
 }
 
 const char *shell_get_ps2(const shell_t *sh)
@@ -433,7 +422,7 @@ const char *shell_get_ps2(const shell_t *sh)
     Expects_not_null(sh);
     Expects_not_null(sh->executor);
 
-    return exec_get_ps2(sh->executor);
+    return exec_get_ps2_cstr(sh->executor);
 }
 
 exec_t *shell_get_exec(shell_t *sh)

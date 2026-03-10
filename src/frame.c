@@ -3,6 +3,12 @@
  *
  * This file implements the public API defined in frame.h, providing a clean
  * interface to execution frames without exposing internal implementation details.
+ *
+ * Internal frame management (push, pop, exec_in_frame, etc.) is in exec_frame.c
+ * and exec_frame.h.
+ * 
+ * Whenever possible, frame.c functions should delegate to exec_frame.c for
+ * logic and to avoid duplication.
  */
 
 #ifdef _MSC_VER
@@ -15,15 +21,17 @@
 #include <stdio.h>
 #include <string.h>
 
+// FIXME: This module should not need internal headers.
+// It should be delegating down to functions from exec_frame.h.
 #include "alias_store.h"
 #include "ast.h"
 #include "exec.h"
 #include "exec_expander.h"
 #include "exec_frame.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
+#include "exec_types_public.h"
 #include "func_store.h"
 #include "gnode.h"
-#include "job_store.h"
 #include "lexer.h"
 #include "lib.h"
 #include "logging.h"
@@ -38,8 +46,8 @@
 #include "variable_store.h"
 #include "xalloc.h"
 
-
 #ifdef POSIX_API
+#include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <limits.h>
@@ -52,6 +60,7 @@
 #ifdef UCRT_API
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <direct.h>
 #include <io.h>
 #include <process.h>
 #endif
@@ -65,7 +74,7 @@ bool frame_has_error(const exec_frame_t *frame)
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
 
-    const char *err = exec_get_error(frame->executor);
+    const char *err = exec_get_error_cstr(frame->executor);
     return (err != NULL && err[0] != '\0');
 }
 
@@ -74,7 +83,7 @@ const string_t *frame_get_error_message(const exec_frame_t *frame)
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
 
-    return frame->executor->error_msg;
+    return exec_get_error(frame->executor);
 }
 
 void frame_clear_error(exec_frame_t *frame)
@@ -91,7 +100,7 @@ void frame_set_error(exec_frame_t *frame, const string_t *error)
     Expects_not_null(frame->executor);
     Expects_not_null(error);
 
-    exec_set_error(frame->executor, "%s", string_cstr(error));
+    exec_set_error_printf(frame->executor, "%s", string_cstr(error));
 }
 
 void frame_set_error_printf(exec_frame_t *frame, const char *format, ...)
@@ -108,7 +117,7 @@ void frame_set_error_printf(exec_frame_t *frame, const char *format, ...)
 
     va_end(args);
 
-    exec_set_error(frame->executor, "%s", buffer);
+    exec_set_error_printf(frame->executor, "%s", buffer);
 }
 
 /* ============================================================================
@@ -249,7 +258,7 @@ string_t *frame_get_ps2(exec_frame_t *frame)
     return string_create_from_cstr("> ");
 }
 
-var_store_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
                                      const string_t *value)
 {
     Expects_not_null(frame);
@@ -259,7 +268,7 @@ var_store_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     variable_store_t *vars = frame->local_variables ? frame->local_variables : frame->variables;
     if (!vars)
     {
-        return VAR_STORE_ERROR_NOT_FOUND;
+        return FRAME_VAR_ERROR_NOT_FOUND;
     }
 
     variable_view_t view;
@@ -269,18 +278,32 @@ var_store_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     {
         if (string_compare(view.value, value) != 0)
         {
-            return VAR_STORE_ERROR_READ_ONLY;
+            return FRAME_VAR_ERROR_READ_ONLY;
         }
-        return VAR_STORE_ERROR_NONE;
+        return FRAME_VAR_ERROR_NONE;
     }
 
     bool exported = exists ? view.exported : false;
     bool read_only = exists ? view.read_only : false;
 
-    return variable_store_add(vars, name, value, exported, read_only);
+    var_store_error_t internal_result = variable_store_add(vars, name, value, exported, read_only);
+
+    /* Map internal error codes to public error codes */
+    switch (internal_result)
+    {
+    case VAR_STORE_ERROR_NONE:
+        return FRAME_VAR_ERROR_NONE;
+    case VAR_STORE_ERROR_READ_ONLY:
+        return FRAME_VAR_ERROR_READ_ONLY;
+    case VAR_STORE_ERROR_NOT_FOUND:
+        return FRAME_VAR_ERROR_NOT_FOUND;
+    default:
+        return FRAME_VAR_ERROR_NONE;
+    }
 }
 
-var_store_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value)
+frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
+                                          const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -288,14 +311,14 @@ var_store_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *value_str = string_create_from_cstr(value);
-    var_store_error_t result = frame_set_variable(frame, name_str, value_str);
+    frame_var_error_t result = frame_set_variable(frame, name_str, value_str);
     string_destroy(&name_str);
     string_destroy(&value_str);
     return result;
 }
 
-var_store_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
-                                     const string_t *value)
+frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
+                                                const string_t *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -304,7 +327,7 @@ var_store_error_t frame_set_persistent_variable(exec_frame_t *frame, const strin
     variable_store_t *vars = frame->saved_variables ? frame->saved_variables : frame->variables;
     if (!vars)
     {
-        return VAR_STORE_ERROR_NOT_FOUND;
+        return FRAME_VAR_ERROR_NOT_FOUND;
     }
 
     variable_view_t view;
@@ -314,19 +337,31 @@ var_store_error_t frame_set_persistent_variable(exec_frame_t *frame, const strin
     {
         if (string_compare(view.value, value) != 0)
         {
-            return VAR_STORE_ERROR_READ_ONLY;
+            return FRAME_VAR_ERROR_READ_ONLY;
         }
-        return VAR_STORE_ERROR_NONE;
+        return FRAME_VAR_ERROR_NONE;
     }
 
     bool exported = exists ? view.exported : false;
     bool read_only = exists ? view.read_only : false;
 
-    return variable_store_add(vars, name, value, exported, read_only);
+    var_store_error_t internal_result = variable_store_add(vars, name, value, exported, read_only);
+
+    switch (internal_result)
+    {
+    case VAR_STORE_ERROR_NONE:
+        return FRAME_VAR_ERROR_NONE;
+    case VAR_STORE_ERROR_READ_ONLY:
+        return FRAME_VAR_ERROR_READ_ONLY;
+    case VAR_STORE_ERROR_NOT_FOUND:
+        return FRAME_VAR_ERROR_NOT_FOUND;
+    default:
+        return FRAME_VAR_ERROR_NONE;
+    }
 }
 
-var_store_error_t frame_set_persistent_variable_cstr(exec_frame_t* frame, const char* name,
-    const char* value)
+frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
+                                                     const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -334,24 +369,34 @@ var_store_error_t frame_set_persistent_variable_cstr(exec_frame_t* frame, const 
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *value_str = string_create_from_cstr(value);
-    var_store_error_t result = frame_set_persistent_variable(frame, name_str, value_str);
+    frame_var_error_t result = frame_set_persistent_variable(frame, name_str, value_str);
     string_destroy(&name_str);
     string_destroy(&value_str);
     return result;
 }
 
-var_store_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
                                               bool exported)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
     Expects_not_null(frame->variables);
 
-    return variable_store_set_exported(frame->variables, name, exported);
+    var_store_error_t internal_result = variable_store_set_exported(frame->variables, name,
+                                                                    exported);
+    switch (internal_result)
+    {
+    case VAR_STORE_ERROR_NONE:
+        return FRAME_VAR_ERROR_NONE;
+    case VAR_STORE_ERROR_NOT_FOUND:
+        return FRAME_VAR_ERROR_NOT_FOUND;
+    default:
+        return FRAME_VAR_ERROR_NONE;
+    }
 }
 
 frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t *name,
-                                           const string_t *value)
+                                            const string_t *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -369,7 +414,8 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     const char *name_cstr = string_cstr(name);
     for (const char *p = name_cstr; *p; p++)
     {
-        /* POSIX: name must start with letter or underscore, contain only alphanumeric and underscore */
+        /* POSIX: name must start with letter or underscore, contain only
+         * alphanumeric and underscore */
         if (p == name_cstr)
         {
             if (!(*p == '_' || (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')))
@@ -403,10 +449,10 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     /* Set or update the variable value if provided */
     if (value)
     {
-        var_store_error_t set_result = frame_set_variable(frame, name, value);
-        if (set_result != VAR_STORE_ERROR_NONE)
+        frame_var_error_t set_result = frame_set_variable(frame, name, value);
+        if (set_result != FRAME_VAR_ERROR_NONE)
         {
-            if (set_result == VAR_STORE_ERROR_READ_ONLY)
+            if (set_result == FRAME_VAR_ERROR_READ_ONLY)
             {
                 return FRAME_EXPORT_READONLY;
             }
@@ -417,9 +463,9 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     {
         /* If value is NULL and variable doesn't exist, create with empty value */
         string_t *empty = string_create();
-        var_store_error_t set_result = frame_set_variable(frame, name, empty);
+        frame_var_error_t set_result = frame_set_variable(frame, name, empty);
         string_destroy(&empty);
-        if (set_result != VAR_STORE_ERROR_NONE)
+        if (set_result != FRAME_VAR_ERROR_NONE)
         {
             return FRAME_EXPORT_SYSTEM_ERROR;
         }
@@ -434,7 +480,8 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
 
     /* Export to system environment if supported */
 #if defined(POSIX_API) || defined(UCRT_API)
-    /* Get the current value (which might be the value we just set, or the existing value) */
+    /* Get the current value (which might be the value we just set, or the
+     * existing value) */
     variable_view_t current_view;
     if (!variable_store_get_variable(vars, name, &current_view))
     {
@@ -464,17 +511,27 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     return FRAME_EXPORT_SUCCESS;
 }
 
-var_store_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
+frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
                                               bool readonly)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
     Expects_not_null(frame->variables);
 
-    return variable_store_set_read_only(frame->variables, name, readonly);
+    var_store_error_t internal_result = variable_store_set_read_only(frame->variables, name,
+                                                                     readonly);
+    switch (internal_result)
+    {
+    case VAR_STORE_ERROR_NONE:
+        return FRAME_VAR_ERROR_NONE;
+    case VAR_STORE_ERROR_NOT_FOUND:
+        return FRAME_VAR_ERROR_NOT_FOUND;
+    default:
+        return FRAME_VAR_ERROR_NONE;
+    }
 }
 
-var_store_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name)
+frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -482,18 +539,18 @@ var_store_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name
     variable_store_t *vars = frame->local_variables ? frame->local_variables : frame->variables;
     if (!vars)
     {
-        return VAR_STORE_ERROR_NOT_FOUND;
+        return FRAME_VAR_ERROR_NOT_FOUND;
     }
 
     variable_view_t view;
     if (!variable_store_get_variable(vars, name, &view))
     {
-        return VAR_STORE_ERROR_NOT_FOUND;
+        return FRAME_VAR_ERROR_NOT_FOUND;
     }
 
     if (view.read_only)
     {
-        return VAR_STORE_ERROR_READ_ONLY;
+        return FRAME_VAR_ERROR_READ_ONLY;
     }
 
     variable_store_remove(vars, name);
@@ -509,61 +566,72 @@ var_store_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name
     }
 #endif
 
-    return VAR_STORE_ERROR_NONE;
+    return FRAME_VAR_ERROR_NONE;
 }
 
-var_store_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name)
+frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     string_t *name_str = string_create_from_cstr(name);
-    var_store_error_t result = frame_unset_variable(frame, name_str);
+    frame_var_error_t result = frame_unset_variable(frame, name_str);
     string_destroy(&name_str);
     return result;
 }
 
-static void print_exported_var_callback(const string_t *name, const string_t *value, bool exported,
-                                       bool read_only, void *user_data)
+/* -- Variable printing helpers --------------------------------------------- */
+
+typedef struct
+{
+    FILE *output;
+} print_var_context_t;
+
+static void print_exported_var_callback(const string_t *name, const string_t *value,
+                                        bool exported, bool read_only, void *user_data)
 {
     (void)read_only;
-    (void)user_data;
+    print_var_context_t *ctx = user_data;
 
     if (exported)
     {
-        printf("export %s=%s\n", string_cstr(name), string_cstr(value));
+        fprintf(ctx->output, "export %s=%s\n", string_cstr(name), string_cstr(value));
     }
 }
 
-void frame_print_exported_variables_in_export_format(exec_frame_t *frame)
+void frame_print_exported_variables_in_export_format(exec_frame_t *frame, FILE *output)
 {
     Expects_not_null(frame);
+    Expects_not_null(output);
 
     if (frame->variables)
     {
-        variable_store_for_each(frame->variables, print_exported_var_callback, NULL);
+        print_var_context_t ctx = { .output = output };
+        variable_store_for_each(frame->variables, print_exported_var_callback, &ctx);
     }
 }
 
-static void print_readonly_var_callback(const string_t *name, const string_t *value, bool exported,
-                                        bool read_only, void *user_data)
+static void print_readonly_var_callback(const string_t *name, const string_t *value,
+                                        bool exported, bool read_only, void *user_data)
 {
     (void)exported;
-    (void)user_data;
+    print_var_context_t *ctx = user_data;
 
     if (read_only)
     {
-        printf("readonly %s=%s\n", string_cstr(name), string_cstr(value));
+        fprintf(ctx->output, "readonly %s=%s\n", string_cstr(name), string_cstr(value));
     }
 }
 
-void frame_print_readonly_variables(exec_frame_t *frame)
+void frame_print_readonly_variables(exec_frame_t *frame, FILE *output)
 {
     Expects_not_null(frame);
+    Expects_not_null(output);
 
     if (frame->variables)
     {
-        variable_store_for_each(frame->variables, print_readonly_var_callback, NULL);
+        print_var_context_t ctx = { .output = output };
+        variable_store_for_each(frame->variables, print_readonly_var_callback, &ctx);
     }
 }
 
@@ -572,6 +640,8 @@ typedef struct
 {
     const string_t *key;
     const string_t *value;
+    bool exported;
+    bool read_only;
 } frame_var_entry_t;
 
 /* Collector context for variable_store_for_each */
@@ -585,9 +655,6 @@ typedef struct
 static void frame_collect_var(const string_t *name, const string_t *value, bool exported,
                               bool read_only, void *user_data)
 {
-    (void)exported;
-    (void)read_only;
-
     frame_collect_ctx_t *ctx = user_data;
 
     if (ctx->count >= ctx->capacity)
@@ -598,6 +665,8 @@ static void frame_collect_var(const string_t *name, const string_t *value, bool 
 
     ctx->vars[ctx->count].key = name;
     ctx->vars[ctx->count].value = value;
+    ctx->vars[ctx->count].exported = exported;
+    ctx->vars[ctx->count].read_only = read_only;
     ctx->count++;
 }
 
@@ -609,51 +678,58 @@ static int frame_compare_vars(const void *a, const void *b)
     return lib_strcoll(string_cstr(va->key), string_cstr(vb->key));
 }
 
+typedef struct
+{
+    bool reusable;
+    FILE *output;
+} print_all_var_context_t;
+
 static void print_var_callback(const string_t *name, const string_t *value, bool exported,
                                bool read_only, void *user_data)
 {
-    bool reusable = *(bool *)user_data;
+    print_all_var_context_t *ctx = user_data;
 
-    if (reusable)
+    if (ctx->reusable)
     {
         if (exported && read_only)
         {
-            printf("export -r %s=%s\n", string_cstr(name), string_cstr(value));
+            fprintf(ctx->output, "export -r %s=%s\n", string_cstr(name), string_cstr(value));
         }
         else if (exported)
         {
-            printf("export %s=%s\n", string_cstr(name), string_cstr(value));
+            fprintf(ctx->output, "export %s=%s\n", string_cstr(name), string_cstr(value));
         }
         else if (read_only)
         {
-            printf("readonly %s=%s\n", string_cstr(name), string_cstr(value));
+            fprintf(ctx->output, "readonly %s=%s\n", string_cstr(name), string_cstr(value));
         }
         else
         {
-            printf("%s=%s\n", string_cstr(name), string_cstr(value));
+            fprintf(ctx->output, "%s=%s\n", string_cstr(name), string_cstr(value));
         }
     }
     else
     {
-        printf("%s=%s", string_cstr(name), string_cstr(value));
+        fprintf(ctx->output, "%s=%s", string_cstr(name), string_cstr(value));
         if (exported || read_only)
         {
-            printf(" [");
+            fprintf(ctx->output, " [");
             if (exported)
-                printf("exported");
+                fprintf(ctx->output, "exported");
             if (exported && read_only)
-                printf(", ");
+                fprintf(ctx->output, ", ");
             if (read_only)
-                printf("readonly");
-            printf("]");
+                fprintf(ctx->output, "readonly");
+            fprintf(ctx->output, "]");
         }
-        printf("\n");
+        fprintf(ctx->output, "\n");
     }
 }
 
-void frame_print_variables(exec_frame_t *frame, bool reusable_format)
+void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *output)
 {
     Expects_not_null(frame);
+    Expects_not_null(output);
 
     if (!frame->variables)
     {
@@ -676,7 +752,7 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format)
         for (int i = 0; i < ctx.count; i++)
         {
             string_t *quoted = lib_quote(ctx.vars[i].key, ctx.vars[i].value);
-            printf("%s\n", string_cstr(quoted));
+            fprintf(output, "%s\n", string_cstr(quoted));
             string_destroy(&quoted);
         }
 
@@ -685,8 +761,128 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format)
     else
     {
         /* Non-reusable format: print without sorting */
-        variable_store_for_each(frame->variables, print_var_callback, &reusable_format);
+        print_all_var_context_t pctx = { .reusable = false, .output = output };
+        variable_store_for_each(frame->variables, print_var_callback, &pctx);
     }
+}
+
+/* -- IFS convenience ------------------------------------------------------- */
+
+string_t *frame_get_ifs(exec_frame_t *frame)
+{
+    Expects_not_null(frame);
+
+    string_t *ifs_name = string_create_from_cstr("IFS");
+    bool has_ifs = frame_has_variable(frame, ifs_name);
+
+    if (has_ifs)
+    {
+        string_t *value = frame_get_variable_value(frame, ifs_name);
+        string_destroy(&ifs_name);
+        return value;
+    }
+
+    string_destroy(&ifs_name);
+    /* POSIX default: space, tab, newline */
+    return string_create_from_cstr(" \t\n");
+}
+
+char *frame_get_ifs_cstr(exec_frame_t *frame)
+{
+    string_t *ifs = frame_get_ifs(frame);
+    char *result = string_release(&ifs);
+    return result;
+}
+
+/* -- Working directory ----------------------------------------------------- */
+
+bool frame_change_directory(exec_frame_t *frame, const string_t *path)
+{
+    Expects_not_null(frame);
+    Expects_not_null(path);
+
+    return frame_change_directory_cstr(frame, string_cstr(path));
+}
+
+bool frame_change_directory_cstr(exec_frame_t *frame, const char *path)
+{
+    Expects_not_null(frame);
+    Expects_not_null(path);
+
+#ifdef POSIX_API
+    /* Get current PWD before changing */
+    string_t *old_pwd = frame_get_variable_cstr(frame, "PWD");
+
+    if (chdir(path) != 0)
+    {
+        string_destroy(&old_pwd);
+        return false;
+    }
+
+    /* Get the new absolute path */
+    char resolved[PATH_MAX];
+    if (getcwd(resolved, sizeof(resolved)) == NULL)
+    {
+        /* chdir succeeded but getcwd failed; try to go back */
+        if (old_pwd && string_length(old_pwd) > 0)
+        {
+            chdir(string_cstr(old_pwd));
+        }
+        string_destroy(&old_pwd);
+        return false;
+    }
+
+    /* Set OLDPWD = previous PWD */
+    if (old_pwd && string_length(old_pwd) > 0)
+    {
+        frame_set_variable_cstr(frame, "OLDPWD", string_cstr(old_pwd));
+    }
+    string_destroy(&old_pwd);
+
+    /* Set PWD = new directory */
+    frame_set_variable_cstr(frame, "PWD", resolved);
+
+    return true;
+
+#elif defined(UCRT_API)
+    /* Get current PWD before changing */
+    string_t *old_pwd = frame_get_variable_cstr(frame, "PWD");
+
+    if (_chdir(path) != 0)
+    {
+        string_destroy(&old_pwd);
+        return false;
+    }
+
+    /* Get the new absolute path */
+    char resolved[MAX_PATH];
+    if (_getcwd(resolved, sizeof(resolved)) == NULL)
+    {
+        if (old_pwd && string_length(old_pwd) > 0)
+        {
+            _chdir(string_cstr(old_pwd));
+        }
+        string_destroy(&old_pwd);
+        return false;
+    }
+
+    /* Set OLDPWD = previous PWD */
+    if (old_pwd && string_length(old_pwd) > 0)
+    {
+        frame_set_variable_cstr(frame, "OLDPWD", string_cstr(old_pwd));
+    }
+    string_destroy(&old_pwd);
+
+    /* Set PWD = new directory */
+    frame_set_variable_cstr(frame, "PWD", resolved);
+
+    return true;
+
+#else
+    (void)frame;
+    (void)path;
+    return false;
+#endif
 }
 
 /* ============================================================================
@@ -711,20 +907,13 @@ static expand_flags_t convert_frame_expand_flags(frame_expand_flags_t frame_flag
     return flags;
 }
 
-string_t *frame_expand_string(exec_frame_t *frame, const string_t *text, frame_expand_flags_t flags)
+string_t *frame_expand_string(exec_frame_t *frame, const string_t *text,
+                              frame_expand_flags_t flags)
 {
     Expects_not_null(frame);
     Expects_not_null(text);
 
     return expand_string(frame, text, convert_frame_expand_flags(flags));
-}
-
-string_list_t *frame_expand_word_token(exec_frame_t *frame, const token_t *tok)
-{
-    Expects_not_null(frame);
-    Expects_not_null(tok);
-
-    return expand_word(frame, (const token_t *)tok);
 }
 
 /* ============================================================================
@@ -785,6 +974,31 @@ void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *n
 
     positional_params_replace(frame->positional_params, params, count);
 }
+
+void frame_set_arg0(exec_frame_t *frame, const string_t *new_arg0)
+{
+    Expects_not_null(frame);
+
+    if (!frame->positional_params)
+    {
+        return;
+    }
+
+    positional_params_set_arg0(frame->positional_params, new_arg0);
+}
+
+void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0)
+{
+    Expects_not_null(frame);
+    if (!frame->positional_params)
+    {
+        return;
+    }
+    string_t *new_arg0_str = string_create_from_cstr(new_arg0);
+    positional_params_set_arg0(frame->positional_params, new_arg0_str);
+    string_destroy(&new_arg0_str);
+}
+
 
 string_t *frame_get_positional_param(const exec_frame_t *frame, int index)
 {
@@ -1029,7 +1243,7 @@ bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, b
 }
 
 /* ============================================================================
- * Functions
+ * Shell Functions
  * ============================================================================ */
 
 bool frame_has_function(const exec_frame_t *frame, const string_t *name)
@@ -1045,65 +1259,90 @@ bool frame_has_function(const exec_frame_t *frame, const string_t *name)
     return func_store_has_name(frame->functions, name);
 }
 
-string_t *frame_get_function(exec_frame_t *frame, const string_t *name)
+frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
+                                      string_t **out_body)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
+    Expects_not_null(out_body);
 
     if (!frame->functions)
     {
-        return NULL;
+        *out_body = NULL;
+        return FRAME_FUNC_ERROR_NOT_FOUND;
     }
 
     const ast_node_t *func_def = func_store_get_def(frame->functions, name);
     if (!func_def)
     {
-        return NULL;
+        *out_body = NULL;
+        return FRAME_FUNC_ERROR_NOT_FOUND;
     }
 
-    return ast_node_to_string(func_def);
+    *out_body = ast_node_to_string(func_def);
+    return FRAME_FUNC_ERROR_NONE;
 }
 
-func_store_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, string_t **value)
+frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name,
+                                           char **out_body)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
-    Expects_not_null(value);
-
-    if (!frame->functions)
-    {
-        *value = NULL;
-        return FUNC_STORE_ERROR_NOT_FOUND;
-    }
+    Expects_not_null(out_body);
 
     string_t *name_str = string_create_from_cstr(name);
-    const ast_node_t *func_def = func_store_get_def(frame->functions, name_str);
+    string_t *body = NULL;
+    frame_func_error_t result = frame_get_function(frame, name_str, &body);
     string_destroy(&name_str);
 
-    if (!func_def)
+    if (result == FRAME_FUNC_ERROR_NONE && body)
     {
-        *value = NULL;
-        return FUNC_STORE_ERROR_NOT_FOUND;
+        *out_body = string_release(&body);
     }
-
-    *value = ast_node_to_string(func_def);
-    return FUNC_STORE_ERROR_NONE;
-}
-
-func_store_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
-                                      const ast_node_t *func_def)
-{
-    Expects_not_null(frame);
-    Expects_not_null(name);
-    Expects_not_null(func_def);
-    Expects_not_null(frame->functions);
-
-    func_store_error_t result = func_store_add(frame->functions, name, func_def);
+    else
+    {
+        *out_body = NULL;
+        if (body)
+            string_destroy(&body);
+    }
 
     return result;
 }
 
-func_store_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
+frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
+                                      const string_t *value)
+{
+    Expects_not_null(frame);
+    Expects_not_null(name);
+    Expects_not_null(value);
+    Expects_not_null(frame->functions);
+
+    /* Parse the string into an AST for storage */
+    gnode_t *root = NULL;
+    parse_status_t status = parser_string_to_gnodes(string_cstr(value), &root);
+    if (status != PARSE_OK)
+    {
+        g_node_destroy(&root);
+        return FRAME_FUNC_ERROR_PARSE_FAILURE;
+    }
+    ast_t *node = ast_lower(root);
+
+    func_store_error_t internal_result = func_store_add(frame->functions, name, node);
+
+    switch (internal_result)
+    {
+    case FUNC_STORE_ERROR_NONE:
+        return FRAME_FUNC_ERROR_NONE;
+    case FUNC_STORE_ERROR_NOT_FOUND:
+        return FRAME_FUNC_ERROR_NOT_FOUND;
+    case FUNC_STORE_ERROR_READONLY:
+        return FRAME_FUNC_ERROR_READONLY;
+    default:
+        return FRAME_FUNC_ERROR_SYSTEM_ERROR;
+    }
+}
+
+frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
                                            const char *value)
 {
     Expects_not_null(frame);
@@ -1111,51 +1350,54 @@ func_store_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name
     Expects_not_null(value);
 
     string_t *name_str = string_create_from_cstr(name);
-    gnode_t *root = NULL;
-    parse_status_t status = parser_string_to_gnodes(value, &root);
-    if (status != PARSE_OK)
-    {
-        string_destroy(&name_str);
-        g_node_destroy(&root);
-        return FUNC_STORE_ERROR_PARSE_FAILURE;
-    }
-    ast_t *node = ast_lower(root);
-    func_store_error_t result = frame_set_function(frame, name_str, node);
+    string_t *value_str = string_create_from_cstr(value);
+    frame_func_error_t result = frame_set_function(frame, name_str, value_str);
     string_destroy(&name_str);
+    string_destroy(&value_str);
     return result;
 }
 
-func_store_error_t frame_unset_function(exec_frame_t *frame, const string_t *name)
+frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     if (!frame->functions)
     {
-        return FUNC_STORE_ERROR_NOT_FOUND;
+        return FRAME_FUNC_ERROR_NOT_FOUND;
     }
 
-    return func_store_remove(frame->functions, name);
+    func_store_error_t internal_result = func_store_remove(frame->functions, name);
+
+    switch (internal_result)
+    {
+    case FUNC_STORE_ERROR_NONE:
+        return FRAME_FUNC_ERROR_NONE;
+    case FUNC_STORE_ERROR_NOT_FOUND:
+        return FRAME_FUNC_ERROR_NOT_FOUND;
+    case FUNC_STORE_ERROR_READONLY:
+        return FRAME_FUNC_ERROR_READONLY;
+    default:
+        return FRAME_FUNC_ERROR_SYSTEM_ERROR;
+    }
 }
 
-func_store_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name)
+frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     string_t *name_str = string_create_from_cstr(name);
-    func_store_error_t result = frame_unset_function(frame, name_str);
+    frame_func_error_t result = frame_unset_function(frame, name_str);
     string_destroy(&name_str);
     return result;
 }
 
 frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
-                                  const string_list_t *args)
+                                        const string_list_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
-
-    (void)args;
 
     if (!frame->functions)
     {
@@ -1168,8 +1410,13 @@ frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *nam
         return FRAME_EXEC_ERROR;
     }
 
-    // FIXME: Implement the execution of a function body AST node
-    return FRAME_EXEC_NOT_IMPL;
+    /* Execute the function body in a new function frame */
+    exec_frame_execute_result_t result = exec_frame_execute_function_body(frame, func_def, (string_list_t *)args, NULL);
+
+    if (result.status == EXEC_FRAME_EXECUTE_STATUS_ERROR)
+        return FRAME_EXEC_ERROR;
+
+    return FRAME_EXEC_OK;
 }
 
 /* ============================================================================
@@ -1197,28 +1444,33 @@ void frame_set_last_exit_status(exec_frame_t *frame, int status)
 void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t flow, int depth)
 {
     Expects_not_null(frame);
+
     exec_control_flow_t internal_flow;
     switch (flow)
     {
-        case FRAME_FLOW_BREAK:
-            internal_flow = EXEC_BREAK;
-            break;
-        case FRAME_FLOW_CONTINUE:
-            internal_flow = EXEC_CONTINUE;
-            break;
-        case FRAME_FLOW_RETURN:
-            internal_flow = EXEC_RETURN;
-            break;
-
+    case FRAME_FLOW_BREAK:
+        internal_flow = EXEC_FLOW_BREAK;
+        break;
+    case FRAME_FLOW_CONTINUE:
+        internal_flow = EXEC_FLOW_CONTINUE;
+        break;
+    case FRAME_FLOW_RETURN:
+        internal_flow = EXEC_FLOW_RETURN;
+        break;
+    case FRAME_FLOW_TOP:
+        /* Unwind all frames to top level — request exit on the executor */
+        exec_request_exit(frame->executor, frame->last_exit_status);
+        internal_flow = EXEC_FLOW_RETURN; /* Use RETURN to unwind frame stack */
+        break;
     default:
-            internal_flow = EXEC_OK;
+        internal_flow = EXEC_FLOW_NORMAL;
         break;
     }
     frame->pending_control_flow = internal_flow;
     frame->pending_flow_depth = depth;
 }
 
-exec_frame_t* frame_find_return_target(exec_frame_t* frame)
+exec_frame_t *frame_find_return_target(exec_frame_t *frame)
 {
     /* Just delegate to the internal API function */
     return exec_frame_find_return_target(frame);
@@ -1227,25 +1479,6 @@ exec_frame_t* frame_find_return_target(exec_frame_t* frame)
 /* ============================================================================
  * Traps
  * ============================================================================ */
-
-void frame_run_exit_traps(const trap_store_t *store, exec_frame_t *frame)
-{
-    Expects_not_null(store);
-    Expects_not_null(frame);
-
-    if (!trap_store_is_exit_set(store))
-    {
-        return;
-    }
-
-    const string_t *exit_action = trap_store_get_exit(store);
-    if (!exit_action || string_length(exit_action) == 0)
-    {
-        return;
-    }
-
-    trap_store_run_exit_trap(store, frame);
-}
 
 /* Helper: Get trap store from frame */
 static trap_store_t *get_trap_store(exec_frame_t *frame)
@@ -1257,8 +1490,31 @@ static trap_store_t *get_trap_store(exec_frame_t *frame)
     return NULL;
 }
 
+void frame_run_exit_traps(exec_frame_t *frame)
+{
+    Expects_not_null(frame);
+
+    trap_store_t *traps = get_trap_store(frame);
+    if (!traps)
+        return;
+
+    if (!trap_store_is_exit_set(traps))
+    {
+        return;
+    }
+
+    const string_t *exit_action = trap_store_get_exit(traps);
+    if (!exit_action || string_length(exit_action) == 0)
+    {
+        return;
+    }
+
+    trap_store_run_exit_trap(traps, frame);
+}
+
 /* Callback adapter for frame_for_each_set_trap */
-typedef struct {
+typedef struct
+{
     frame_trap_callback_t callback;
     void *context;
 } frame_trap_callback_adapter_t;
@@ -1278,7 +1534,7 @@ void frame_for_each_set_trap(exec_frame_t *frame, frame_trap_callback_t callback
     if (!traps)
         return;
 
-    frame_trap_callback_adapter_t adapter = { .callback = callback, .context = context };
+    frame_trap_callback_adapter_t adapter = {.callback = callback, .context = context};
     trap_store_for_each_set_trap(traps, trap_callback_adapter, &adapter);
 }
 
@@ -1499,7 +1755,8 @@ int frame_alias_count(const exec_frame_t *frame)
     return alias_store_size(aliases);
 }
 
-void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback, void *context)
+void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback,
+                          void *context)
 {
     Expects_not_null(frame);
     Expects_not_null(callback);
@@ -1532,383 +1789,20 @@ bool frame_alias_name_is_valid(const char *name)
 }
 
 /* ============================================================================
- * Background Jobs
+ * Frame-Level Command Execution
  * ============================================================================ */
 
-// TODO: move to the job_store API, since it's not really specific to frames. The frame API can just
-// delegate to it.
-static bool job_store_update_status(job_store_t *jobs, bool wait_for_completion)
-{
-    Expects_not_null(jobs);
-
-#ifdef POSIX_API
-    int status;
-    pid_t pid;
-    bool any_completed = false;
-
-    if (!wait_for_completion)
-    {
-        /* -1 and WNOHANG mean we return the PID of any completed child process or -1 
-         * if
-         * no child process has recently completed */
-        while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-        {
-            // Determine if the job is done, or if it was terminated by a signal
-            bool terminated = WIFSIGNALED(status);
-            int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-            if (terminated)
-                job_store_set_state(jobs, pid, JOB_STATE_TERMINATED);
-            else
-                job_store_set_state(jobs, pid, JOB_STATE_DONE);
-            job_store_set_exit_status(jobs, pid, exit_status);
-            any_completed = true;
-        }
-    }
-    else
-    {
-        while (1)
-        {
-            pid_t w = waitpid(-1, &status, 0);
-
-            if (w == -1)
-            {
-                if (errno == ECHILD)
-                {
-                    // No more child processes
-                    break;
-                }
-                // Some other error occurred
-                break;
-            }
-            // Determine if the job is done, or if it was terminated by a signal
-            bool terminated = WIFSIGNALED(status);
-            int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-            if (terminated)
-                job_store_set_state(jobs, pid, JOB_STATE_TERMINATED);
-            else
-                job_store_set_state(jobs, pid, JOB_STATE_DONE);
-            job_store_set_exit_status(jobs, pid, exit_status);
-            any_completed = true;
-        }
-    }
-    if (any_completed)
-        job_store_remove_completed(jobs);
-    return any_completed;
-#elifdef UCRT_API
-    bool any_completed = false;
-    job_process_iterator_t iter = job_store_active_processes_begin(jobs);
-    const DWORD one_hour_ms = 60 * 60 * 1000; // 1 hour in milliseconds
-
-    while (job_store_active_processes_next(&iter))
-    {
-        uintptr_t h = job_store_iter_get_handle(&iter);
-        if (!h)
-        {
-            // Unreachable?
-            job_store_iter_set_state(&iter, JOB_DONE, 0); // Return 0 as exit code?
-
-            // Check if job is now complete
-            job_state_t state = job_store_iter_get_job_state(&iter);
-            if (state == JOB_DONE || state == JOB_TERMINATED)
-                any_completed = true;
-        }
-        else if (WaitForSingleObject((HANDLE)h, (DWORD)(wait_for_completion ? one_hour_ms : 0)) == WAIT_OBJECT_0)
-        {
-            DWORD exit_code = 0;
-            if (GetExitCodeProcess((HANDLE)h, &exit_code))
-            {
-                // No precise way to distinguish between normal exit and termination by signal.
-                // So we infer heuristically by exit code.
-                if (exit_code == 1 || exit_code == 2 || exit_code > 0xC0000000) 
-                    job_store_iter_set_state(&iter, JOB_TERMINATED, (int)exit_code);
-                else
-                    job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-            }
-
-            // Check if job is now complete
-            job_state_t state = job_store_iter_get_job_state(&iter);
-            if (state == JOB_DONE || state == JOB_TERMINATED)
-                any_completed = true;
-        }
-        else
-        {
-            // Process is still active or an error occurred. We can check for errors if needed.
-        }
-    }
-    if (any_completed)
-        job_store_remove_completed(jobs);
-    return any_completed;
-#else
-    (void)jobs;
-    (void)wait_for_completion;
-    return false;
-#endif
-}
-
-// TODO: background jobs should be part of the exec.h API, not the frame API,
-// since they are more related to the executor than individual frames.
-bool frame_reap_background_jobs(exec_frame_t *frame, bool wait_for_completion)
+frame_exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *command)
 {
     Expects_not_null(frame);
-    Expects_not_null(frame->executor);
-    Expects_not_null(frame->executor->jobs);
 
-    return job_store_update_status(frame->executor->jobs, wait_for_completion);
+    if (!command || string_empty(command))
+        return FRAME_EXEC_OK;
+
+    return frame_execute_string_cstr(frame, string_cstr(command));
 }
 
-// TODO: move to exec.h API
-void frame_print_completed_background_jobs(exec_frame_t *frame)
-{
-    Expects_not_null(frame);
-    Expects_not_null(frame->executor);
-    Expects_not_null(frame->executor->jobs);
-    job_store_print_completed_jobs(frame->executor->jobs, stdout);
-}
-
-// TODO: move to exec.h API
-void frame_print_background_jobs(exec_frame_t *frame)
-{
-    Expects_not_null(frame);
-    Expects_not_null(frame->executor);
-    Expects_not_null(frame->executor->jobs);
-
-    job_store_print_jobs(frame->executor->jobs, stdout);
-}
-
-/* ============================================================================
- * Stream Execution
- * ============================================================================ */
-
-/* Execute a stream with fresh tokenizer at a specific frame. This is used for the `builtin_dot`
- * implementation, which needs to execute a stream starting
- * at an arbitrary frame in a non-interactive context with a fresh tokenizer.
- */ 
-// TODO: if this is still used, it should call a frame-specific execute function.
-// If we can't make a frame-specific execute function, it should be move to the exec API.
-frame_exec_status_t frame_execute_stream(exec_frame_t *frame, FILE *fp)
-{
-    Expects_not_null(frame);
-    Expects_not_null(fp);
-
-    tokenizer_t *tokenizer = tokenizer_create(frame->aliases);
-    if (!tokenizer)
-    {
-        frame_set_error_printf(frame, "Failed to create tokenizer");
-        return FRAME_EXEC_ERROR;
-    }
-
-    // TODO: this should be a frame-specific execute function, if possible.
-    exec_status_t est = exec_execute_stream_repl(frame->executor, fp, false);
-    frame_exec_status_t status;
-    switch (est)
-    {
-    case EXEC_OK:
-    case EXEC_RETURN:
-        status = FRAME_EXEC_OK;
-        break;
-    case EXEC_ERROR:
-    case EXEC_BREAK:
-    case EXEC_CONTINUE:
-    default:
-        status = FRAME_EXEC_ERROR;
-        break;
-    }
-
-    tokenizer_destroy(&tokenizer);
-    return status;
-}
-
-/* ============================================================================
- * Job Control Functions
- * ============================================================================ */
-
-/**
- * Helper: Get the job_store from the frame's executor
- */
-// TODO: this should be part of the exec API, not the frame API, since it's more related to the
-// executor than individual frames.
-static job_store_t *get_job_store(const exec_frame_t *frame)
-{
-    if (!frame || !frame->executor)
-        return NULL;
-    return frame->executor->jobs;
-}
-
-/**
- * Helper: Get job indicator character
- */
-// TODO: this should be moved to the job store API.
-static char get_job_indicator(const job_store_t *store, const job_t *job)
-{
-    if (job == store->current_job)
-        return '+';
-    if (job == store->previous_job)
-        return '-';
-    return ' ';
-}
-
-/**
- * Helper: Print a single job
- */
-// TODO: this should be moved to the job store API, since it's not really specific to frames. The
-// frame API can just delegate to it.
-static void print_job(const job_store_t *store, const job_t *job, frame_jobs_format_t format)
-{
-    if (!job || !store)
-        return;
-
-    char indicator = get_job_indicator(store, job);
-    const char *state_str = job_state_to_string(job->state);
-    const char *cmd = job->command_line ? string_cstr(job->command_line) : "";
-
-    switch (format)
-    {
-    case FRAME_JOBS_FORMAT_PID_ONLY:
-        /* Print only the process group leader PID */
-        if (job->processes)
-        {
-#ifdef POSIX_API
-            printf("%d\n", (int)job->pgid);
-#else
-            printf("%d\n", job->pgid);
-#endif
-        }
-        break;
-
-    case FRAME_JOBS_FORMAT_LONG:
-        /* Long format: [job_id]± PID state command */
-        printf("[%d]%c ", job->job_id, indicator);
-
-        /* Print each process in the pipeline */
-        for (process_t *proc = job->processes; proc; proc = proc->next)
-        {
-#ifdef POSIX_API
-            printf("%d ", (int)proc->pid);
-#else
-            printf("%d ", proc->pid);
-#endif
-        }
-
-        printf(" %s\t%s\n", state_str, cmd);
-        break;
-
-    case FRAME_JOBS_FORMAT_DEFAULT:
-    default:
-        /* Default format: [job_id]± state command */
-        printf("[%d]%c  %s\t\t%s\n", job->job_id, indicator, state_str, cmd);
-        break;
-    }
-}
-
-// TODO: this should be moved to the exec API, since it's more related to the executor than
-// individual frames.
-int frame_parse_job_id(const exec_frame_t* frame, const string_t* arg_str)
-{
-    if (!frame || !arg_str || string_length(arg_str) == 0)
-        return -1;
-
-    job_store_t *store = get_job_store(frame);
-    if (!store)
-        return -1;
-
-    const char *arg = string_cstr(arg_str);
-
-    if (arg[0] == '%')
-    {
-        arg++; /* Skip % */
-
-        if (*arg == '\0' || *arg == '+' || *arg == '%')
-        {
-            /* %%, %+, or just % -> current job */
-            job_t *current = job_store_get_current(store);
-            return current ? current->job_id : -1;
-        }
-
-        if (*arg == '-')
-        {
-            /* %- -> previous job */
-            job_t *previous = job_store_get_previous(store);
-            return previous ? previous->job_id : -1;
-        }
-
-        /* %n -> job number n */
-        long val = strtol(arg, (char **)&arg, 10);
-        if (*arg == '\0' && val > 0)
-        {
-            return (int)val;
-        }
-
-        /* %?str or %str not implemented */
-        return -1;
-    }
-
-    /* Plain number */
-    int endpos = 0;
-    long val = string_atol_at(arg_str, 0, &endpos);
-    if (endpos == string_length(arg_str) && val > 0)
-    {
-        return (int)val;
-    }
-
-    return -1;
-}
-
-// TODO: this should be moved to the exec API, since it's more related to the executor than
-// individual frames.
-bool frame_print_job_by_id(const exec_frame_t* frame, int job_id, frame_jobs_format_t format)
-{
-    if (!frame)
-        return false;
-
-    job_store_t *store = get_job_store(frame);
-    if (!store)
-        return false;
-
-    job_t *job = job_store_find(store, job_id);
-    if (!job)
-        return false;
-
-    print_job(store, job, format);
-    return true;
-}
-
-// TODO: this should be moved to the exec API, since it's more related to the executor than
-// individual frames. Or it could be moved to the job store API, since it's really just printing
-// jobs from the store.
-void frame_print_all_jobs(const exec_frame_t* frame, frame_jobs_format_t format)
-{
-    if (!frame)
-        return;
-
-    job_store_t *store = get_job_store(frame);
-    if (!store)
-        return;
-
-    for (job_t *job = store->jobs; job; job = job->next)
-    {
-        print_job(store, job, format);
-    }
-}
-
-// TODO: this should be moved to the exec API, since it's more related to the executor than
-// individual frames.
-bool frame_has_jobs(const exec_frame_t* frame)
-{
-    if (!frame)
-        return false;
-
-    job_store_t *store = get_job_store(frame);
-    if (!store)
-        return false;
-
-    return store->jobs != NULL;
-}
-
-/* ============================================================================
- * Stream/String Execution
- * ============================================================================ */
-
-frame_exec_status_t frame_execute_string(exec_frame_t *frame, const char *command)
+frame_exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
 
@@ -1923,7 +1817,17 @@ frame_exec_status_t frame_execute_string(exec_frame_t *frame, const char *comman
     return FRAME_EXEC_OK;
 }
 
-frame_exec_status_t frame_execute_eval_string(exec_frame_t *frame, const char *command)
+frame_exec_status_t frame_execute_string_as_eval(exec_frame_t *frame, const string_t *command)
+{
+    Expects_not_null(frame);
+
+    if (!command || string_empty(command))
+        return FRAME_EXEC_OK;
+
+    return frame_execute_eval_string_cstr(frame, string_cstr(command));
+}
+
+frame_exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
 
@@ -1957,4 +1861,3 @@ frame_exec_status_t frame_execute_eval_string(exec_frame_t *frame, const char *c
 
     return FRAME_EXEC_OK;
 }
-

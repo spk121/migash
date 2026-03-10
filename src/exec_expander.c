@@ -16,7 +16,7 @@
 #include "arithmetic.h"
 #include "exec_expander.h"
 #include "exec_frame.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 #include "glob_util.h"
 #include "logging.h"
 #include "pattern_removal.h"

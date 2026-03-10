@@ -1458,3 +1458,149 @@ cmd_separator_t cmd_separator_list_get(const cmd_separator_list_t *list, int ind
     Expects_lt(index, list->len);
     return list->separators[index];
 }
+
+
+/* ============================================================================
+ * AST Visitor Pattern Support
+ * ============================================================================ */
+
+typedef bool (*ast_visitor_fn)(const ast_node_t *node, void *user_data);
+
+static bool ast_traverse_helper(const ast_node_t *node, ast_visitor_fn visitor, void *user_data)
+{
+    if (node == NULL)
+        return true;
+
+    if (!visitor(node, user_data))
+        return false;
+
+    switch (node->type)
+    {
+    case AST_SIMPLE_COMMAND:
+        break;
+
+    case AST_PIPELINE:
+        if (node->data.pipeline.commands != NULL)
+        {
+            for (int i = 0; i < node->data.pipeline.commands->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.pipeline.commands->nodes[i], visitor,
+                                         user_data))
+                    return false;
+            }
+        }
+        break;
+
+    case AST_AND_OR_LIST:
+        if (!ast_traverse_helper(node->data.andor_list.left, visitor, user_data))
+            return false;
+        if (!ast_traverse_helper(node->data.andor_list.right, visitor, user_data))
+            return false;
+        break;
+
+    case AST_COMMAND_LIST:
+        if (node->data.command_list.items != NULL)
+        {
+            for (int i = 0; i < node->data.command_list.items->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.command_list.items->nodes[i], visitor,
+                                         user_data))
+                    return false;
+            }
+        }
+        break;
+
+    case AST_SUBSHELL:
+    case AST_BRACE_GROUP:
+        if (!ast_traverse_helper(node->data.compound.body, visitor, user_data))
+            return false;
+        break;
+
+    case AST_IF_CLAUSE:
+        if (!ast_traverse_helper(node->data.if_clause.condition, visitor, user_data))
+            return false;
+        if (!ast_traverse_helper(node->data.if_clause.then_body, visitor, user_data))
+            return false;
+        if (node->data.if_clause.elif_list != NULL)
+        {
+            for (int i = 0; i < node->data.if_clause.elif_list->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.if_clause.elif_list->nodes[i], visitor,
+                                         user_data))
+                    return false;
+            }
+        }
+        if (!ast_traverse_helper(node->data.if_clause.else_body, visitor, user_data))
+            return false;
+        break;
+
+    case AST_WHILE_CLAUSE:
+    case AST_UNTIL_CLAUSE:
+        if (!ast_traverse_helper(node->data.loop_clause.condition, visitor, user_data))
+            return false;
+        if (!ast_traverse_helper(node->data.loop_clause.body, visitor, user_data))
+            return false;
+        break;
+
+    case AST_FOR_CLAUSE:
+        if (!ast_traverse_helper(node->data.for_clause.body, visitor, user_data))
+            return false;
+        break;
+
+    case AST_CASE_CLAUSE:
+        if (node->data.case_clause.case_items != NULL)
+        {
+            for (int i = 0; i < node->data.case_clause.case_items->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.case_clause.case_items->nodes[i], visitor,
+                                         user_data))
+                    return false;
+            }
+        }
+        break;
+
+    case AST_CASE_ITEM:
+        if (!ast_traverse_helper(node->data.case_item.body, visitor, user_data))
+            return false;
+        break;
+
+    case AST_FUNCTION_DEF:
+        if (!ast_traverse_helper(node->data.function_def.body, visitor, user_data))
+            return false;
+        if (node->data.function_def.redirections != NULL)
+        {
+            for (int i = 0; i < node->data.function_def.redirections->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.function_def.redirections->nodes[i], visitor,
+                                         user_data))
+                    return false;
+            }
+        }
+        break;
+
+    case AST_REDIRECTED_COMMAND:
+        if (!ast_traverse_helper(node->data.redirected_command.command, visitor, user_data))
+            return false;
+        if (node->data.redirected_command.redirections != NULL)
+        {
+            for (int i = 0; i < node->data.redirected_command.redirections->size; i++)
+            {
+                if (!ast_traverse_helper(node->data.redirected_command.redirections->nodes[i],
+                                         visitor, user_data))
+                    return false;
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    return true;
+}
+
+bool ast_traverse(const ast_node_t *root, ast_visitor_fn visitor, void *user_data)
+{
+    Expects_not_null(visitor);
+    return ast_traverse_helper(root, visitor, user_data);
+}

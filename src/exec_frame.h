@@ -7,7 +7,7 @@
  * This header defines:
  * - exec_frame_t: The execution frame structure
  * - exec_params_t: Parameters for frame creation/execution
- * - exec_result_t: Result of frame execution
+ * - exec_frame_result_t: Result of frame execution
  * - Frame management functions (push, pop, exec_in_frame)
  * - Convenience wrappers for common frame types
  */
@@ -21,6 +21,7 @@
 #include "string_t.h"
 #include "string_list.h"
 #include "ast.h"
+#include "exec_types_internal.h"
 #include "variable_store.h"
 #include "fd_table.h"
 #include "positional_params.h"
@@ -34,24 +35,6 @@ typedef struct exec_t exec_t;
 typedef struct exec_opt_flags_t exec_opt_flags_t;
 typedef struct exec_redirections_t exec_redirections_t;
 typedef struct trap_store_t trap_store_t;
-
-// FIXME: this is duplicated from exec.h; we need to break out some common types into a shared
-// header
-#ifndef EXEC_RESULT_T_DEFINED
-#define EXEC_RESULT_T_DEFINED
-typedef enum exec_status_t
-{
-    EXEC_OK = 0,
-    EXEC_ERROR = 1,
-    EXEC_NOT_IMPL = 2,
-    EXEC_OK_INTERNAL_FUNCTION_STORED,
-    EXEC_BREAK,    ///< break statement executed
-    EXEC_CONTINUE, ///< continue statement executed
-    EXEC_RETURN,   ///< return statement executed
-    EXEC_EXIT,     ///< exit statement executed
-} exec_status_t;
-#endif
-
 
 /* ============================================================================
  * Control Flow State
@@ -116,6 +99,12 @@ typedef struct exec_frame_t {
      * Frame-local state (always owned by this frame)
      * -------------------------------------------------------------------------
      */
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
+    FILE **fd_stdin;
+    FILE **fd_stdout;
+    FILE **fd_stderr;
+#endif
     int loop_depth;         /* 0 if not in loop, else depth of nested loops */
     int last_exit_status;   /* $? */
     int last_bg_pid;        /* $! */
@@ -190,13 +179,13 @@ typedef struct exec_params_t
 /**
  * Result of executing a frame or command.
  */
-typedef struct exec_result_t {
-    exec_status_t status;       /* Execution status (EXEC_OK, EXEC_ERROR, etc.) */
+typedef struct exec_frame_result_t {
+    enum exec_status_t status;       /* Execution status (EXEC_OK, EXEC_ERROR, etc.) */
     int exit_status;            /* The exit status ($?) */
     bool has_exit_status;       /* Whether exit_status is valid */
     exec_control_flow_t flow;   /* Control flow state */
     int flow_depth;             /* For 'break N' / 'continue N' */
-} exec_result_t;
+} exec_frame_result_t;
 
 /* ============================================================================
  * Frame Management API
@@ -235,8 +224,17 @@ exec_frame_t* exec_frame_pop(exec_frame_t** frame_ptr);
  * @param params  Parameters for frame creation and execution
  * @return        The result of execution
  */
-exec_result_t exec_in_frame(exec_frame_t* parent, exec_frame_type_t type,
+struct exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type,
     exec_params_t* params);
+
+struct exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame,
+                                                        const ast_node_t *node);
+
+struct exec_frame_execute_result_t exec_frame_execute_function_body(exec_frame_t *frame, const ast_node_t *func_body,
+    string_list_t *func_args, const exec_redirections_t *func_redirs);
+
+struct exec_frame_execute_result_t exec_frame_execute_command_string(exec_frame_t *frame,
+                                                                     const string_t *command_str);
 
 /* ============================================================================
  * Convenience Wrappers
@@ -244,50 +242,50 @@ exec_result_t exec_in_frame(exec_frame_t* parent, exec_frame_type_t type,
  * These wrap exec_in_frame() with appropriate frame types and params.
  */
 
-exec_result_t exec_subshell(exec_frame_t* parent,
+exec_frame_result_t exec_subshell(exec_frame_t* parent,
 const ast_node_t* body);
 
-exec_result_t exec_brace_group(exec_frame_t* parent,
+exec_frame_result_t exec_brace_group(exec_frame_t* parent,
 const ast_node_t* body,
 const exec_redirections_t* redirections);
 
-exec_result_t exec_function(exec_frame_t* parent,
+exec_frame_result_t exec_function(exec_frame_t* parent,
 const ast_node_t* body,
 string_list_t* arguments,
 const exec_redirections_t* redirections);
 
-exec_result_t exec_for_loop(exec_frame_t* parent,
+exec_frame_result_t exec_for_loop(exec_frame_t* parent,
 string_t* var_name, string_list_t* words,
 const ast_node_t* body);
 
-exec_result_t exec_while_loop(exec_frame_t* parent,
+exec_frame_result_t exec_while_loop(exec_frame_t* parent,
 const ast_node_t* condition, const ast_node_t* body,
 bool until_mode);
 
-exec_result_t exec_dot_script(exec_frame_t* parent,
+exec_frame_result_t exec_dot_script(exec_frame_t* parent,
 string_t* script_path, const ast_node_t* body,
 string_list_t* arguments);
 
-exec_result_t exec_trap_handler(exec_frame_t* parent,
+exec_frame_result_t exec_trap_handler(exec_frame_t* parent,
 const ast_node_t* body);
 
-exec_result_t exec_background_job(exec_frame_t* parent,
+exec_frame_result_t exec_background_job(exec_frame_t* parent,
 const ast_node_t* body,
 string_list_t* command_args);
 
-exec_result_t exec_pipeline_group(exec_frame_t *parent, ast_node_list_t *commands, bool negated);
+exec_frame_result_t exec_pipeline_group(exec_frame_t *parent, ast_node_list_t *commands, bool negated);
 
 #ifdef POSIX_API
-exec_result_t exec_pipeline_cmd(exec_frame_t* parent,
+exec_frame_result_t exec_pipeline_cmd(exec_frame_t* parent,
     const ast_node_t* body,
     pid_t pipeline_pgid);
 #else
-exec_result_t exec_pipeline_cmd(exec_frame_t* parent,
+exec_frame_result_t exec_pipeline_cmd(exec_frame_t* parent,
     const ast_node_t* body,
     int pipeline_pgid);
 #endif
 
-exec_result_t exec_eval(exec_frame_t* parent,
+exec_frame_result_t exec_eval(exec_frame_t* parent,
 const ast_node_t* body);
 
 /* ============================================================================

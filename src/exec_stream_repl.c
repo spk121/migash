@@ -190,7 +190,7 @@ exec_status_t exec_execute_stream_repl(exec_t* executor, FILE* fp,
         executor->tokenizer = tokenizer_create(executor->aliases);
         if (!executor->tokenizer)
         {
-            exec_set_error(executor, "Failed to create tokenizer");
+            exec_set_error_cstr(executor, "Failed to create tokenizer");
             return EXEC_ERROR;
         }
     }
@@ -206,7 +206,7 @@ exec_status_t exec_execute_stream_repl(exec_t* executor, FILE* fp,
     {
         if (ctx)
             exec_string_ctx_destroy(&ctx);
-        exec_set_error(executor, "Failed to create execution context");
+        exec_set_error_cstr(executor, "Failed to create execution context");
         return EXEC_ERROR;
     }
 
@@ -228,7 +228,7 @@ exec_status_t exec_execute_stream_repl(exec_t* executor, FILE* fp,
         {
             if (need_continuation)
             {
-                const char* ps2 = exec_get_ps2(executor);
+                const char* ps2 = exec_get_ps2_cstr(executor);
                 fprintf(stderr, "%s", ps2);
             }
             else
@@ -317,7 +317,7 @@ exec_status_t exec_execute_stream_repl(exec_t* executor, FILE* fp,
 
             if (interactive)
             {
-                const char* err = exec_get_error(executor);
+                const char* err = exec_get_error_cstr(executor);
                 if (err)
                 {
                     fprintf(stderr, "%s: %s\n",

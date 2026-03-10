@@ -1,100 +1,43 @@
 #ifndef FRAME_H
 #define FRAME_H
 
+/**
+ * @file frame.h
+ * @brief Public API for frame-level operations in the POSIX shell executor.
+ *
+ * This header defines the public interface for operating on execution frames.
+ * It covers:
+ *
+ *   - Error handling
+ *   - Variables and IFS
+ *   - Positional parameters
+ *   - Named options
+ *   - Shell functions
+ *   - Exit status and control flow
+ *   - Word / string expansion
+ *   - Traps
+ *   - Aliases
+ *   - Frame-level command execution
+ *
+ * Top-level executor concerns (lifecycle, job control, builtin registration,
+ * execution entry points) are defined in exec.h.
+ *
+ * @par Naming Convention
+ * Functions that accept or return strings are provided in two variants:
+ *   - The unsuffixed form uses string_t / string_list_t.
+ *   - The @c _cstr suffixed form uses plain C strings (const char *).
+ */
+
 #include <stdio.h>
 
 #include "string_t.h"
 #include "string_list.h"
+#include "exec_types_public.h"
 
-typedef struct exec_frame_t exec_frame_t;
 
-typedef enum frame_expand_flags_t
-{
-    FRAME_EXPAND_NONE = 0,
-    FRAME_EXPAND_TILDE = (1 << 0),
-    FRAME_EXPAND_PARAMETER = (1 << 1),
-    FRAME_EXPAND_COMMAND_SUBST = (1 << 2),
-    FRAME_EXPAND_ARITHMETIC = (1 << 3),
-    FRAME_EXPAND_FIELD_SPLIT = (1 << 4),
-    FRAME_EXPAND_PATHNAME = (1 << 5),
-    
-    /* Common combinations */
-    FRAME_EXPAND_ALL = (FRAME_EXPAND_TILDE | FRAME_EXPAND_PARAMETER
-        | FRAME_EXPAND_COMMAND_SUBST | FRAME_EXPAND_ARITHMETIC
-        | FRAME_EXPAND_FIELD_SPLIT | FRAME_EXPAND_PATHNAME),
-
-     /* For assignments and redirections: no field splitting or globbing */
-     FRAME_EXPAND_NO_SPLIT_GLOB =
-         (FRAME_EXPAND_TILDE | FRAME_EXPAND_PARAMETER | FRAME_EXPAND_COMMAND_SUBST | FRAME_EXPAND_ARITHMETIC),
-
-     /* For here-documents: parameter, command, arithmetic only */
-     FRAME_EXPAND_HEREDOC = (FRAME_EXPAND_PARAMETER | FRAME_EXPAND_COMMAND_SUBST | FRAME_EXPAND_ARITHMETIC)
-} frame_expand_flags_t;
-
-/**
- * Execution status codes for frame operations.
- */
-typedef enum frame_exec_status_t
-{
-    FRAME_EXEC_OK = 0,       /* Execution succeeded */
-    FRAME_EXEC_ERROR = 1,    /* Execution error */
-    FRAME_EXEC_NOT_IMPL = 2, /* Feature not implemented */
-    FRAME_EXEC_INCOMPLETE = 3 /* Incomplete input (e.g. unclosed quotes) */
-} frame_exec_status_t;
-
-/**
- * Export variable status codes.
- */
-typedef enum frame_export_status_t
-{
-    FRAME_EXPORT_SUCCESS = 0,        /* Export succeeded */
-    FRAME_EXPORT_INVALID_NAME,       /* Invalid variable name */
-    FRAME_EXPORT_INVALID_VALUE,      /* Invalid variable value */
-    FRAME_EXPORT_READONLY,           /* Variable is readonly */
-    FRAME_EXPORT_NOT_SUPPORTED,      /* Export not supported on platform */
-    FRAME_EXPORT_SYSTEM_ERROR        /* System error during export */
-} frame_export_status_t;
-
-/**
- * Control flow state after executing a frame or command.
- */
-typedef enum frame_control_flow_t
-{
-    FRAME_FLOW_NORMAL,  /* Normal execution */
-    FRAME_FLOW_RETURN,  /* 'return' executed */
-    FRAME_FLOW_BREAK,   /* 'break' executed */
-    FRAME_FLOW_CONTINUE /* 'continue' executed */
-} frame_control_flow_t;
-
-typedef enum frame_func_error_t
-{
-    FRAME_FUNC_ERROR_NONE = 0,       /* No error */
-    FRAME_FUNC_ERROR_NOT_FOUND,      /* Function not found */
-    FRAME_FUNC_ERROR_EMPTY_NAME,     /* Function name is empty */
-    FRAME_FUNC_ERROR_NAME_TOO_LONG,  /* Function name is too long */
-    FRAME_FUNC_ERROR_NAME_INVALID_CHARACTER, /* Function name contains invalid character */
-    FRAME_FUNC_ERROR_NAME_STARTS_WITH_DIGIT, /* Function name starts with a digit */
-    FRAME_FUNC_ERROR_PARSE_FAILURE,   /* Invalid function body */
-    FRAME_FUNC_ERROR_READONLY,       /* Function is readonly and cannot be modified */
-    FRAME_FUNC_ERROR_SYSTEM_ERROR    /* System error (e.g. memory allocation failure) */
-} frame_func_error_t;
-
-/**
- * Error codes returned by variable store operations.
- */
-typedef enum frame_var_error_t
-{
-    FRAME_VAR_ERROR_NONE = 0,               /**< Operation succeeded. */
-    FRAME_VAR_ERROR_NOT_FOUND,              /**< Variable does not exist. */
-    FRAME_VAR_ERROR_READ_ONLY,              /**< Variable is read-only. */
-    FRAME_VAR_ERROR_EMPTY_NAME,             /**< Variable name is empty. */
-    FRAME_VAR_ERROR_NAME_TOO_LONG,          /**< Variable name exceeds limits. */
-    FRAME_VAR_ERROR_NAME_STARTS_WITH_DIGIT, /**< Variable name begins with a digit. */
-    FRAME_VAR_ERROR_NAME_INVALID_CHARACTER, /**< Variable name contains invalid characters. */
-    FRAME_VAR_ERROR_VALUE_TOO_LONG          /**< Variable value exceeds limits. */
-} frame_var_error_t;
-
-// NEW API: error handling
+/* ============================================================================
+ * Error Handling
+ * ============================================================================ */
 
 /**
  * Checks if the frame currently has an error message set.
@@ -117,33 +60,38 @@ void frame_clear_error(exec_frame_t *frame);
 
 /**
  * Sets the error message for the frame to the given string.
- * The provided string will be copied, so the caller retains ownership of the original string.
+ * The provided string will be copied, so the caller retains ownership of the
+ * original string.
  */
 void frame_set_error(exec_frame_t *frame, const string_t *error);
 void frame_set_error_printf(exec_frame_t *frame, const char *format, ...);
 
-// NEW API: variables and options
+/* ============================================================================
+ * Variables
+ * ============================================================================ */
 
 /**
- * Returns true if a variable with the given name exists in the variable store associated with the
- * current frame, false otherwise.
+ * Returns true if a variable with the given name exists in the variable store
+ * associated with the current frame, false otherwise.
  */
 bool frame_has_variable(const exec_frame_t *frame, const string_t *name);
 bool frame_has_variable_cstr(const exec_frame_t *frame, const char *name);
 
 /**
- * Returns the value of a variable with the given name from the variable store associated with the
- * current frame as a newly allocated string. If the variable exists but has no value, this will
- * return an empty string (not NULL). If the variable does not exist, this will return an empty
- * string (not NULL). Caller frees the returned string.
+ * Returns the value of a variable with the given name from the variable store
+ * associated with the current frame as a newly allocated string.  If the
+ * variable exists but has no value, this will return an empty string (not
+ * NULL).  If the variable does not exist, this will return an empty string
+ * (not NULL).  Caller frees the returned string.
  */
 string_t *frame_get_variable_value(exec_frame_t *frame, const string_t *name);
 string_t *frame_get_variable_cstr(exec_frame_t *frame, const char *name);
 
 /**
- * Checks if a variable with the given name is marked as exported or read-only in the variable store
- * associated with the current frame. Returns true if the variable is exported/read-only, false if
- * it is not exported/read-only or does not exist.
+ * Checks if a variable with the given name is marked as exported or read-only
+ * in the variable store associated with the current frame.  Returns true if
+ * the variable is exported/read-only, false if it is not exported/read-only
+ * or does not exist.
  */
 bool frame_variable_is_exported(exec_frame_t *frame, const string_t *name);
 bool frame_variable_is_exported_cstr(exec_frame_t *frame, const char *name);
@@ -152,7 +100,8 @@ bool frame_variable_is_readonly_cstr(exec_frame_t *frame, const char *name);
 
 /**
  * Returns the value of PS1 or PS2 for the current frame.
- * If the variable is not set, it returns a default value (e.g. "$ " for PS1 and "> " for PS2).
+ * If the variable is not set, it returns a default value (e.g. "$ " for PS1
+ * and "> " for PS2).
  * Caller frees the returned string.
  */
 string_t *frame_get_ps1(exec_frame_t *frame);
@@ -160,138 +109,213 @@ string_t *frame_get_ps2(exec_frame_t *frame);
 
 /**
  * Sets a variable in the variable store associated with current frame.
- * If the variable does not already exist, it will be created with the given value and will not be
- * marked as exported or read-only. If the variable already exists and is not read-only, its value
- * will be updated but its exported status will not be changed. If the variable already exists and
- * is read-only and the new value differs from the previous value, this will return an error code
- * and not update the variable. Returns VAR_STORE_ERROR_NONE on success, or error code on failure.
+ * If the variable does not already exist, it will be created with the given
+ * value and will not be marked as exported or read-only.  If the variable
+ * already exists and is not read-only, its value will be updated but its
+ * exported status will not be changed.  If the variable already exists and
+ * is read-only and the new value differs from the previous value, this will
+ * return an error code and not update the variable.  Returns
+ * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
  */
 frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
                                      const string_t *value);
-frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value);
-
+frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
+                                          const char *value);
 
 /**
- * Sets a non-temporary variable in the variable store associated with the current frame.
- * Even if the frame normally acts on a temporary variable store to execute a simple command,
- * this will add the variable as non-temporary.
+ * Sets a non-temporary variable in the variable store associated with the
+ * current frame.  Even if the frame normally acts on a temporary variable
+ * store to execute a simple command, this will add the variable as
+ * non-temporary.
  */
 frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
-                                                     const string_t *value);
+                                                const string_t *value);
 frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
                                                      const char *value);
 
 /**
- * Updates the export status of an existing variable in the variable store associated with the
- * current frame. If the variable does not exist, this will return an error code. If a variable
- * exists and was not previously exported, but is now being marked as exported, this will also set
- * the variable in the environment if supported by the OS. If a variable exists and was previously
- * exported, but is now being marked as not exported, this will also unset the variable in the
- * environment if supported by the OS. Read-only variables can still have their export status
- * changed. Returns VAR_STORE_ERROR_NONE on success, or error code on failure.
+ * Updates the export status of an existing variable in the variable store
+ * associated with the current frame.  If the variable does not exist, this
+ * will return an error code.  If a variable exists and was not previously
+ * exported, but is now being marked as exported, this will also set the
+ * variable in the environment if supported by the OS.  If a variable exists
+ * and was previously exported, but is now being marked as not exported, this
+ * will also unset the variable in the environment if supported by the OS.
+ * Read-only variables can still have their export status changed.  Returns
+ * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
  */
 frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
                                               bool exported);
 
 /**
- * Exports a variable to the environment. This is a convenience function that:
+ * Exports a variable to the environment.  This is a convenience function
+ * that:
  * - Sets or creates the variable with the given value (if value is not NULL)
  * - Marks the variable as exported
  * - Exports it to the system environment (if supported)
- * 
- * If value is NULL, only marks an existing variable as exported without changing its value.
- * If the variable doesn't exist and value is NULL, marks the variable as exported with empty value.
- * 
+ *
+ * If value is NULL, only marks an existing variable as exported without
+ * changing its value.  If the variable doesn't exist and value is NULL,
+ * marks the variable as exported with empty value.
+ *
  * Returns FRAME_EXPORT_SUCCESS on success, or an error code on failure.
  */
 frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t *name,
-                                           const string_t *value);
+                                            const string_t *value);
 
 /**
- * Updates the read-only status of an existing variable in the variable store associated with the
- * current frame. If the variable does not exist, this will return an error code. Returns
- * VAR_STORE_ERROR_NONE on success, or error code on failure.
+ * Updates the read-only status of an existing variable in the variable store
+ * associated with the current frame.  If the variable does not exist, this
+ * will return an error code.  Returns FRAME_VAR_ERROR_NONE on success, or
+ * an error code on failure.
  */
 frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
                                               bool readonly);
 
 /**
- * Removes a variable from the variable store associated with the current frame.
- * Also, when supported by the OS, this will unset the variable in the environment if it was
- * exported. If the variable does not exist, this will return an error code. If the variable exists
- * but is read-only, this will return an error code and not unset the variable. Returns
- * VAR_STORE_ERROR_NONE on success, or error code on failure.
+ * Removes a variable from the variable store associated with the current
+ * frame.  Also, when supported by the OS, this will unset the variable in
+ * the environment if it was exported.  If the variable does not exist, this
+ * will return an error code.  If the variable exists but is read-only, this
+ * will return an error code and not unset the variable.  Returns
+ * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
  */
 frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name);
 frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name);
 
 /**
- * Prints all variables in the variable store associated with the current frame in a format
- * suitable for export (e.g. "export VAR=value").
- * Only variables that are marked as exported will be printed.
+ * Prints all variables in the variable store associated with the current
+ * frame that are marked as exported, in a format suitable for re-input
+ * (e.g. "export VAR=value").
+ *
+ * @param frame   The execution frame.
+ * @param output  Output stream to write to (e.g. ctx->stdout_fp).
  */
-void frame_print_exported_variables_in_export_format(exec_frame_t *frame);
+void frame_print_exported_variables_in_export_format(exec_frame_t *frame, FILE *output);
 
 /**
- * Prints all variables in the variable store associated with the current frame that are
- * marked as read-only, in a format suitable for re-input (e.g. "readonly VAR=value").
+ * Prints all variables in the variable store associated with the current
+ * frame that are marked as read-only, in a format suitable for re-input
+ * (e.g. "readonly VAR=value").
+ *
+ * @param frame   The execution frame.
+ * @param output  Output stream to write to (e.g. ctx->stdout_fp).
  */
-void frame_print_readonly_variables(exec_frame_t *frame);
+void frame_print_readonly_variables(exec_frame_t *frame, FILE *output);
 
 /**
- * Prints all variables in the variable store associated with the current frame.
- * This includes all variables, not just exported ones.
- * If reusable_format is true, the output will be in a format that can be reused as input to the
- * shell (e.g. by using "eval" or sourcing a file). If false, the output may be more human-readable
- * but not necessarily reusable as input.
+ * Prints all variables in the variable store associated with the current
+ * frame.  This includes all variables, not just exported ones.
+ * If reusable_format is true, the output will be in a format that can be
+ * reused as input to the shell (e.g. by using "eval" or sourcing a file).
+ * If false, the output may be more human-readable but not necessarily
+ * reusable as input.
+ *
+ * @param frame            The execution frame.
+ * @param reusable_format  Whether to use shell-reusable format.
+ * @param output           Output stream to write to (e.g. ctx->stdout_fp).
  */
-void frame_print_variables(exec_frame_t *frame, bool reusable_format);
+void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *output);
 
-// NEW API: word and string expansion
+/* ── IFS convenience ─────────────────────────────────────────────────────── */
 
 /**
- * Expands the given string using the variable store and other context of the current frame.
- * This includes variable expansion, command substitution, arithmetic expansion, etc.
- * The exact expansions performed will depend on the flags provided.
- * Returns a newly allocated string with the expanded result. Caller is responsible for freeing the
- * returned string.
+ * Returns the current value of IFS for the given frame.
+ * If IFS is not set, returns the POSIX default: space, tab, newline (" \t\n").
+ * If IFS is set to the empty string, returns an empty string.
+ * Caller frees the returned string.
+ *
+ * @param frame  The execution frame.
+ * @return A newly allocated string containing the IFS value.
+ */
+string_t *frame_get_ifs(exec_frame_t *frame);
+char *frame_get_ifs_cstr(exec_frame_t *frame);
+
+/* ── Working directory ───────────────────────────────────────────────────── */
+
+/**
+ * Change the current working directory.
+ *
+ * This is the intended implementation helper for the cd builtin.  It performs
+ * all of the following atomically:
+ *   - Calls chdir() (or the platform equivalent) to change the process
+ *     working directory.
+ *   - Sets the OLDPWD variable to the previous value of PWD.
+ *   - Sets the PWD variable to the new directory (canonicalised).
+ *
+ * If the chdir() call fails, no variables are modified and the function
+ * returns false.
+ *
+ * @note This is distinct from exec_set_working_directory(), which only sets
+ *       the initial working directory before execution begins and does not
+ *       call chdir() or modify PWD/OLDPWD.
+ *
+ * @param frame  The execution frame.
+ * @param path   The target directory path.
+ * @return true on success, false on failure (e.g. directory does not exist,
+ *         permission denied).
+ */
+bool frame_change_directory(exec_frame_t *frame, const string_t *path);
+bool frame_change_directory_cstr(exec_frame_t *frame, const char *path);
+
+/* ============================================================================
+ * Word and String Expansion
+ * ============================================================================ */
+
+/**
+ * Expands the given string using the variable store and other context of the
+ * current frame.  This includes variable expansion, command substitution,
+ * arithmetic expansion, etc.  The exact expansions performed will depend on
+ * the flags provided.  Returns a newly allocated string with the expanded
+ * result.  Caller is responsible for freeing the returned string.
  */
 string_t *frame_expand_string(exec_frame_t *frame, const string_t *text,
                               frame_expand_flags_t flags);
 
-// NEW API: positional parameters
+/* ============================================================================
+ * Positional Parameters
+ * ============================================================================ */
 
 /**
- * Returns true if the given frame has positional parameters defined (e.g. $0, $1)
+ * Returns true if the given frame has positional parameters defined
+ * (e.g. $0, $1).
  */
 bool frame_has_positional_params(const exec_frame_t *frame);
 
 /**
- * Returns the number of positional parameters (e.g. $0, $1) associated with the given frame.
+ * Returns the number of positional parameters (e.g. $1, $2, ...)
+ * associated with the given frame.  Does not count $0.
  */
 int frame_count_positional_params(const exec_frame_t *frame);
 
 /**
- * Shifts the positional parameters in the given frame by the specified number of positions.
- * For example, if shift_count is 1, then $1 becomes $0, $2 becomes $1, etc. The last positional
- * parameter will be removed. If shift_count is greater than or equal to the number of positional
- * parameters, all positional parameters will be removed.
+ * Shifts the positional parameters in the given frame by the specified number
+ * of positions.  For example, if shift_count is 1, then $2 becomes $1,
+ * $3 becomes $2, etc.  If shift_count is greater than or equal to the number
+ * of positional parameters, all positional parameters will be removed.
  */
 void frame_shift_positional_params(exec_frame_t *frame, int shift_count);
 
 /**
- * Replaces the current positional parameters in the given frame with the new list of positional
- * parameters. The new_params list will be copied, so the caller retains ownership of the original
- * list and its strings. Returns true on success, or false on failure (e.g. memory allocation
- * failure).
+ * Replaces the current positional parameters in the given frame with the new
+ * list of positional parameters.  The new_params list will be copied, so the
+ * caller retains ownership of the original list and its strings.
  */
 void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *new_params);
 
 /**
- * Returns the value of the positional parameter at the given index for the specified frame.
- * For example, index 0 corresponds to $0, index 1 corresponds to $1, etc.
- * If the index is greater than or equal to the number of positional parameters, this will return an
- * empty string (not NULL).
+ * Sets the value of $0 for the given frame.  The new_arg0 string will be
+ * copied, so the caller retains ownership of the original string.
+ */
+void frame_set_arg0(exec_frame_t *frame, const string_t *new_arg0);
+void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0);
+
+/**
+ * Returns the value of the positional parameter at the given index for the
+ * specified frame.  For example, index 0 corresponds to $0, index 1
+ * corresponds to $1, etc.  If the index is greater than or equal to the
+ * number of positional parameters, this will return an empty string (not
+ * NULL).  Caller frees the returned string.
  */
 string_t *frame_get_positional_param(const exec_frame_t *frame, int index);
 
@@ -302,80 +326,112 @@ string_t *frame_get_positional_param(const exec_frame_t *frame, int index);
  */
 string_list_t *frame_get_all_positional_params(const exec_frame_t *frame);
 
-// NEW API: named options
+/* ============================================================================
+ * Named Options
+ * ============================================================================ */
 
 /**
- * Returns true if the given frame has an option with the specified name, false otherwise.
- * Note that it is possible for a frame to have an option with the given name that is currently set
- * to false, in which case this function will still return true. This function only checks for the
+ * Returns true if the given frame has an option with the specified name,
+ * false otherwise.  Note that it is possible for a frame to have an option
+ * with the given name that is currently set to false, in which case this
+ * function will still return true.  This function only checks for the
  * existence of the option, not its value.
  */
 bool frame_has_named_option(const exec_frame_t *frame, const string_t *option_name);
 bool frame_has_named_option_cstr(const exec_frame_t *frame, const char *option_name);
 
 /**
- * Returns the value of the named option with the specified name for the given frame.
- * If the option exists, this may return true or false depending on the current value of the option.
- * If the option does not exist, this will return false.
+ * Returns the value of the named option with the specified name for the given
+ * frame.  If the option exists, this may return true or false depending on
+ * the current value of the option.  If the option does not exist, this will
+ * return false.
  */
 bool frame_get_named_option(const exec_frame_t *frame, const string_t *option_name);
 bool frame_get_named_option_cstr(const exec_frame_t *frame, const char *option_name);
 
 /**
- * Sets the value of the named option with the specified name for the given frame.
- * If the option does not already exist, it will be created with the given value.
- * If the option already exists, its value will be updated to the new value.
- * If plus_prefix is true, then a plus sign (+) will be used in front of the option name when
- * printing it in error messages or when printing options, to indicate that this option is set using
- * a plus sign (e.g. "set +o option_name").
+ * Sets the value of the named option with the specified name for the given
+ * frame.  If the option does not already exist, it will be created with the
+ * given value.  If the option already exists, its value will be updated to
+ * the new value.  If plus_prefix is true, then a plus sign (+) will be used
+ * in front of the option name when printing it in error messages or when
+ * printing options, to indicate that this option is set using a plus sign
+ * (e.g. "set +o option_name").
  */
 bool frame_set_named_option(exec_frame_t *frame, const string_t *option_name, bool value,
                             bool plus_prefix);
 bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, bool value,
                                  bool plus_prefix);
 
-// Shell functions
+/* ============================================================================
+ * Shell Functions
+ * ============================================================================ */
 
 bool frame_has_function(const exec_frame_t *frame, const string_t *name);
 
-frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name, string_t **out_body);
-frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body);
-frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name, const string_t *value);
-frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name, const char *value);
+frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
+                                      string_t **out_body);
+frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name,
+                                           char **out_body);
+
+frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
+                                      const string_t *value);
+frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
+                                           const char *value);
+
 frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *name);
 frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name);
-// Is this public API? Or is this only for the exec_execute_* function to call?
+
+/**
+ * Call a shell function by name with the given arguments.
+ *
+ * Creates a new execution frame for the function call with the given
+ * positional parameters.  The function body is parsed and executed in that
+ * frame.
+ *
+ * @param frame  The current execution frame.
+ * @param name   The function name.
+ * @param args   The argument list (args[0] is conventionally the function name).
+ * @return FRAME_EXEC_OK on success, FRAME_EXEC_ERROR on error.
+ */
 frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
                                         const string_list_t *args);
 
+/* ============================================================================
+ * Exit Status
+ * ============================================================================ */
 
-// NEW API: exit status
 int frame_get_last_exit_status(const exec_frame_t *frame);
 void frame_set_last_exit_status(exec_frame_t *frame, int status);
 
-// NEW API: control flow
+/* ============================================================================
+ * Control Flow
+ * ============================================================================ */
 
 /**
- * Find the nearest ancestor frame that is a return target (function or dot script).
- * Returns NULL if no return target exists (return is invalid).
- * 
+ * Find the nearest ancestor frame that is a return target (function or dot
+ * script).  Returns NULL if no return target exists (return is invalid).
+ *
  * @param frame The current frame
  * @return The target frame for return, or NULL if return is not valid
  */
-exec_frame_t* frame_find_return_target(exec_frame_t* frame);
+exec_frame_t *frame_find_return_target(exec_frame_t *frame);
 
 /**
  * Sets whether this frame is supposed to return, break, or continue.
- * If flow is FRAME_FLOW_RETURN, then this frame is supposed to return from a function.
- * If flow is FRAME_FLOW_BREAK, then this frame is supposed to break out of a loop.
- * If flow is FRAME_FLOW_CONTINUE, then this frame is supposed to continue to the next iteration of a
- * loop. The depth parameter specifies how many nested loops this control flow applies to. For
- * example, if flow is FRAME_FLOW_BREAK and depth is 2, then this frame is supposed to break out of 2
- * nested loops.
+ * If flow is FRAME_FLOW_RETURN, then this frame is supposed to return from
+ * a function.  If flow is FRAME_FLOW_BREAK, then this frame is supposed to
+ * break out of a loop.  If flow is FRAME_FLOW_CONTINUE, then this frame is
+ * supposed to continue to the next iteration of a loop.  The depth parameter
+ * specifies how many nested loops this control flow applies to.  For example,
+ * if flow is FRAME_FLOW_BREAK and depth is 2, then this frame is supposed to
+ * break out of 2 nested loops.
  */
 void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t flow, int depth);
 
-// NEW API: traps
+/* ============================================================================
+ * Traps
+ * ============================================================================ */
 
 /**
  * Callback type for iterating over set traps.
@@ -458,14 +514,16 @@ const char *frame_trap_number_to_name(int signal_number);
 bool frame_trap_name_is_unsupported(const char *name);
 
 /**
- * Runs any exit traps that are stored in the given trap store, using the context of the given
- * frame. This should be called when a frame is exiting, to ensure that any traps that were set to
- * run on exit are executed. The traps will be executed in the order they were added to the trap
- * store.
+ * Runs any exit traps that are stored in the given trap store, using the
+ * context of the given frame.  This should be called when a frame is exiting,
+ * to ensure that any traps that were set to run on exit are executed.  The
+ * traps will be executed in the order they were added to the trap store.
  */
 void frame_run_exit_traps(exec_frame_t *frame);
 
-// NEW API: aliases
+/* ============================================================================
+ * Aliases
+ * ============================================================================ */
 
 /**
  * Callback type for iterating over aliases.
@@ -473,7 +531,8 @@ void frame_run_exit_traps(exec_frame_t *frame);
  * @param value The alias value (the replacement text)
  * @param context User-provided context pointer
  */
-typedef void (*frame_alias_callback_t)(const string_t *name, const string_t *value, void *context);
+typedef void (*frame_alias_callback_t)(const string_t *name, const string_t *value,
+                                       void *context);
 
 /**
  * Check if an alias exists in the frame's alias store.
@@ -526,7 +585,8 @@ int frame_alias_count(const exec_frame_t *frame);
  * @param callback The callback function to call for each alias
  * @param context User-provided context pointer passed to callback
  */
-void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback, void *context);
+void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback,
+                          void *context);
 
 /**
  * Remove all aliases from the frame's alias store.
@@ -541,25 +601,31 @@ void frame_clear_all_aliases(exec_frame_t *frame);
  */
 bool frame_alias_name_is_valid(const char *name);
 
+/* ============================================================================
+ * Frame-Level Command Execution
+ * ============================================================================ */
+
 /**
  * Execute commands from a string in the context of the given frame.
  * Parses and executes the string as shell commands.
- * 
+ *
  * @param frame The execution frame context
  * @param command The command string to execute
  * @return FRAME_EXEC_OK on success, FRAME_EXEC_ERROR on error
  */
-frame_exec_status_t frame_execute_string(exec_frame_t *frame, const char *command);
+frame_exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *command);
+frame_exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command);
 
 /**
  * Execute an eval command string in the context of the given frame.
  * Creates an EXEC_FRAME_EVAL frame for proper control flow handling
  * (return, break, continue pass through to enclosing contexts).
- * 
+ *
  * @param frame The execution frame context
  * @param command The command string to execute
  * @return FRAME_EXEC_OK on success, FRAME_EXEC_ERROR on error
  */
-frame_exec_status_t frame_execute_eval_string(exec_frame_t *frame, const char *command);
+frame_exec_status_t frame_execute_string_as_eval(exec_frame_t *frame, const string_t *command);
+frame_exec_status_t frame_execute_string_as_eval_cstr(exec_frame_t *frame, const char *command);
 
-#endif
+#endif /* FRAME_H */

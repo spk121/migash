@@ -11,11 +11,12 @@
 #include "exec_command.h"
 
 #include "ast.h"
-#include "builtins.h"
+// #include "builtins.h"
+#include "builtin_store.h"
 #include "exec.h"
 #include "exec_expander.h"
 #include "exec_frame_policy.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 #include "exec_redirect.h"
 #include "func_store.h"
 #include "job_store.h"
@@ -51,7 +52,7 @@
  * Populate special shell variables into a variable store.
  * Populates $?, $!, $$, $_, $- from frame state.
  */
-static void exec_populate_special_variables(variable_store_t *store, const exec_frame_t *frame)
+static void populate_special_variables(variable_store_t *store, const exec_frame_t *frame)
 {
     Expects_not_null(store);
     Expects_not_null(frame);
@@ -120,7 +121,7 @@ static void exec_populate_special_variables(variable_store_t *store, const exec_
  *   - populates special vars ($?, $!, $$, $_, $-)
  *   - overlays assignment words from the command with expanded RHS
  */
-static variable_store_t *exec_build_temp_store_for_simple_command(exec_frame_t *frame,
+static variable_store_t *build_temp_store_for_siple_command(exec_frame_t *frame,
                                                                   const ast_node_t *node)
 {
     Expects_not_null(frame);
@@ -129,7 +130,7 @@ static variable_store_t *exec_build_temp_store_for_simple_command(exec_frame_t *
 
     variable_store_t *temp = variable_store_create();
     variable_store_copy_all(temp, frame->variables);
-    exec_populate_special_variables(temp, frame);
+    populate_special_variables(temp, frame);
 
     token_list_t *assignments = node->data.simple_command.assignments;
     if (assignments)
@@ -163,7 +164,7 @@ static variable_store_t *exec_build_temp_store_for_simple_command(exec_frame_t *
  * So we apply the assignments to both the temp store and the shell's main store.
  *
  */
-static exec_status_t exec_apply_prefix_assignments(exec_frame_t *frame,
+static exec_status_t apply_prefix_assignments(exec_frame_t *frame,
                                                    variable_store_t *main_store,
                                                    const ast_node_t *node)
 {
@@ -185,7 +186,7 @@ static exec_status_t exec_apply_prefix_assignments(exec_frame_t *frame,
 
         if (err != VAR_STORE_ERROR_NONE)
         {
-            exec_set_error(executor, "Cannot assign variable (error %d)", err);
+            exec_set_error_printf(executor, "Cannot assign variable (error %d)", err);
             string_destroy(&value);
             return EXEC_ERROR;
         }
@@ -201,14 +202,14 @@ static exec_status_t exec_apply_prefix_assignments(exec_frame_t *frame,
 /* ============================================================================
  * Simple Command Execution
  * ============================================================================ */
-exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame, const ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
     Expects_eq(node->type, AST_SIMPLE_COMMAND);
 
     exec_t *executor = frame->executor;
-    exec_status_t status = EXEC_OK;
+    exec_frame_execute_status_t status = EXEC_OK;
 
     const token_list_t *word_tokens = node->data.simple_command.words;
     const token_list_t *assign_tokens = node->data.simple_command.assignments;
@@ -227,8 +228,8 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
                 string_t *value = expand_assignment_value(frame, tok);
                 if (!value)
                 {
-                    exec_set_error(executor, "assignment expansion failed");
-                    return EXEC_ERROR;
+                    exec_set_error_cstr(executor, "assignment expansion failed");
+                    return (exec_frame_execute_result_t){ .status = EXEC_FRAME_EXECUTE_STATUS_ERROR };
                 }
 
                 var_store_error_t err =
@@ -237,19 +238,19 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
 
                 if (err != VAR_STORE_ERROR_NONE)
                 {
-                    exec_set_error(executor, "cannot assign variable (error %d)", err);
-                    return EXEC_ERROR;
+                    exec_set_error_printf(executor, "cannot assign variable (error %d)", err);
+                    return (exec_frame_execute_result_t){ .status = EXEC_FRAME_EXECUTE_STATUS_ERROR };
                 }
             }
         }
 
         frame->last_exit_status = 0;
-        return EXEC_OK;
+        return (exec_frame_execute_result_t){ .status = EXEC_FRAME_EXECUTE_STATUS_OK };
     }
 
     /* Swap in temporary variable store */
     frame->saved_variables = frame->variables;
-    variable_store_t *temp_vars = exec_build_temp_store_for_simple_command(frame, node);
+    variable_store_t *temp_vars = build_temp_store_for_siple_command(frame, node);
     frame->variables = temp_vars;
     temp_vars = NULL;
 
@@ -282,11 +283,11 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
     {
         const char *cmd_name = string_cstr(string_list_at(expanded_words, 0));
 
-        builtin_class_t builtin_class = builtin_classify_cstr(cmd_name);
+        builtin_category_t builtin_class = builtin_classify_cstr(cmd_name);
 
         if (token_is_reserved_word(cmd_name))
         {
-            exec_set_error(executor, "%s: syntax error - reserved word in command position",
+            exec_set_error_printf(executor, "%s: syntax error - reserved word in command position",
                            cmd_name);
             cmd_exit_status = 2;
             goto done_execution;
@@ -296,7 +297,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         if (builtin_class == BUILTIN_SPECIAL && assign_tokens && token_list_size(assign_tokens) > 0)
         {
             exec_status_t assign_st =
-                exec_apply_prefix_assignments(frame, frame->saved_variables, node);
+                apply_prefix_assignments(frame, frame->saved_variables, node);
             if (assign_st != EXEC_OK)
             {
                 status = assign_st;
@@ -331,7 +332,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
                 goto done_execution;
             }
 
-            exec_result_t func_result = exec_function(frame, func_body, func_args, func_redirs);
+            exec_frame_execute_result_t func_result = exec_frame_execute_function_body(frame, func_body, func_args, func_redirs);
             cmd_exit_status = func_result.exit_status;
 
             string_list_destroy(&func_args);
@@ -345,14 +346,36 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         {
             is_internal = true;
 
-            builtin_func_t builtin_fn = builtin_get_function_cstr(cmd_name);
+            builtin_fn_t builtin_fn = builtin_get_function_cstr(cmd_name);
             if (builtin_fn != NULL)
             {
-                exec_status_t redir_st =
-                    (exec_status_t)exec_frame_apply_redirections(frame, runtime_redirs);
-                if (redir_st != EXEC_OK)
+                /*
+                    exec_t *executor;
+                exec_frame_t *frame;
+                FILE *stdin_fp;
+                FILE *stdout_fp;
+                FILE *stderr_fp;
+            }
+            exec_builtin_context_t;
+                
+                
+                
+                */
+                exec_builtin_context_t ctx = {
+                    .executor = executor,
+                    .frame = frame,
+#if !defined(POSIX_API) && !defined(UCRT_API)
+                    .stdin_fp = stdin,
+                    .stdout_fp = stdout,
+                    .stderr_fp = stderr
+#endif
+                };
+
+                exec_frame_execute_result_t redir_st =
+                    exec_frame_apply_redirections(frame, runtime_redirs);
+                if (redir_st.status != EXEC_FRAME_EXECUTE_STATUS_OK)
                 {
-                    status = redir_st;
+                    status = redir_st.status;
                     goto done_execution;
                 }
 
@@ -369,7 +392,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         {
             is_internal = true;
 
-            builtin_func_t builtin_fn = builtin_get_function_cstr(cmd_name);
+            builtin_fn_t builtin_fn = builtin_get_function_cstr(cmd_name);
             if (builtin_fn != NULL)
             {
                 exec_status_t redir_st =
@@ -388,7 +411,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
             }
             else
             {
-                exec_set_error(executor, "%s: special builtin not implemented", cmd_name);
+                exec_set_error_printf(executor, "%s: special builtin not implemented", cmd_name);
                 cmd_exit_status = 1;
                 goto done_execution;
             }
@@ -427,7 +450,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         else if (pid == 0) /* child */
         {
             /* Apply redirections in child */
-            exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs);
+            exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs, false);
             if (redir_st != EXEC_OK)
             {
                 _exit(127);
@@ -535,7 +558,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
 
         if (!cmd_name || strlen(cmd_name) == 0)
         {
-            exec_set_error(executor, "empty command name");
+            exec_set_error_cstr(executor, "empty command name");
             cmd_exit_status = 127;
             for (int i = 0; argv[i]; i++)
                 xfree(argv[i]);
@@ -592,12 +615,11 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         {
             int err = errno;
             if (err == ENOENT)
-                exec_set_error(executor, "%s: command not found", cmd_name);
+                exec_set_error_printf(executor, "%s: command not found", cmd_name);
             else if (err == ENOEXEC)
-                exec_set_error(executor, "%s: not executable", cmd_name);
+                exec_set_error_printf(executor, "%s: not executable", cmd_name);
             else
-                exec_set_error(executor, "%s: execution failed (errno=%d)", cmd_name, err);
-
+                exec_set_error_printf(executor, "%s: execution failed (errno=%d)", cmd_name, err);
             cmd_exit_status = 127;
         }
         else
@@ -626,7 +648,7 @@ exec_status_t exec_execute_simple_command(exec_frame_t *frame, const ast_node_t 
         xfree(argv);
         if (cmd_exit_status == 127 && !exec_get_error(executor))
         {
-            exec_set_error(executor, "%s: command not found", cmd_name);
+            exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
 #else
         /* ISO C fallback using system() */
@@ -699,5 +721,5 @@ out_restore_vars:
     frame->variables = frame->saved_variables;
     frame->saved_variables = NULL;
 
-    return status;
+    return (exec_frame_execute_result_t){ .status = status };
 }

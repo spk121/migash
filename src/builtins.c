@@ -30,7 +30,7 @@
 
 #include "builtins.h"
 
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 #include "frame.h"
 #include "func_store.h"
 #include "getopt.h"
@@ -78,7 +78,7 @@
 typedef struct builtin_implemented_function_map_t
 {
     const char *name;
-    builtin_class_t class;
+    builtin_category_t class;
     builtin_func_t func;
 } builtin_implemented_function_map_t;
 
@@ -530,7 +530,7 @@ int builtin_eval(exec_frame_t *frame, const string_list_t *args)
     /* Execute the constructed command in an EXEC_FRAME_EVAL frame
      * This ensures proper control flow handling (return, break, continue
      * pass through to enclosing contexts) */
-    frame_exec_status_t status = frame_execute_eval_string(frame, string_cstr(command));
+    frame_exec_status_t status = frame_execute_string_as_eval(frame, string_cstr(command));
     string_destroy(&command);
 
     /* Get the exit status from the executed command */
@@ -5491,7 +5491,7 @@ int builtin_return(exec_frame_t *frame, const string_list_t *args)
  * Builtin function classification and lookup
  * ============================================================================
  */
-builtin_class_t builtin_classify_cstr(const char *name)
+builtin_category_t builtin_classify_cstr(const char *name)
 {
     if (name == NULL)
         return BUILTIN_NONE;
@@ -5506,7 +5506,7 @@ builtin_class_t builtin_classify_cstr(const char *name)
     return BUILTIN_NONE;
 }
 
-builtin_class_t builtin_classify(const string_t *name)
+builtin_category_t builtin_classify(const string_t *name)
 {
     if (name == NULL)
         return BUILTIN_NONE;

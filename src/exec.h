@@ -29,6 +29,7 @@
 #include "getopt_string.h"
 #include "string_list.h"
 #include "string_t.h"
+#include "exec_types_public.h"
 
 /* ── Platform-specific system headers ────────────────────────────────────── */
 #ifdef POSIX_API
@@ -36,61 +37,6 @@
 #include <sys/types.h>
 #endif
 
-/* ============================================================================
- * Opaque Types
- * ============================================================================
- *
- * The concrete definitions of these structures live in exec_internal.h and are
- * not part of the public API.  All access goes through the functions declared
- * in this header and in frame.h.
- */
-
-typedef struct exec_t exec_t;
-typedef struct exec_frame_t exec_frame_t;
-
-/* ============================================================================
- * Status / Result Types
- * ============================================================================ */
-
-/**
- * Status codes returned by executor operations.
- */
-typedef enum exec_status_t
-{
-    EXEC_OK = 0,
-    EXEC_ERROR = 1,
-    EXEC_NOT_IMPL = 2,
-    EXEC_OK_INTERNAL_FUNCTION_STORED,
-    EXEC_BREAK,            /**< break statement executed */
-    EXEC_CONTINUE,         /**< continue statement executed */
-    EXEC_RETURN,           /**< return statement executed */
-    EXEC_EXIT,             /**< exit statement executed */
-    EXEC_INCOMPLETE_INPUT, /**< input ended but command was incomplete */
-} exec_status_t;
-
-/**
- * Result of executing a command string at top-level.
- * Bundles the execution status together with the exit code that was produced.
- */
-typedef struct exec_result_t
-{
-    exec_status_t status;
-    int exit_code;
-} exec_result_t;
-
-/* ============================================================================
- * Standard Exit Codes
- * ============================================================================
- *
- * POSIX-defined exit status values for use by builtins and the executor.
- * A builtin returns one of these (or any value 0–255) from its function.
- */
-
-#define EXEC_EXIT_SUCCESS 0       /**< Successful completion                    */
-#define EXEC_EXIT_FAILURE 1       /**< General failure / catchall               */
-#define EXEC_EXIT_MISUSE 2        /**< Incorrect usage (bad options / arguments) */
-#define EXEC_EXIT_CANNOT_EXEC 126 /**< Command found but not executable         */
-#define EXEC_EXIT_NOT_FOUND 127   /**< Command not found                        */
 
 /* ============================================================================
  * Executor Lifecycle
@@ -130,18 +76,24 @@ void exec_destroy(exec_t **executor);
 /* ── Startup environment ─────────────────────────────────────────────────── */
 
 bool exec_is_args_set(const exec_t *executor);
-char *const *exec_get_args(const exec_t *executor, int *argc_out);
-bool exec_set_args(exec_t *executor, int argc, char *const *argv);
+const string_list_t *exec_get_args(const exec_t *executor);
+char *const *exec_get_args_cstr(const exec_t *executor, int *argc_out);
+bool exec_set_args(exec_t *executor, const string_list_t *args);
+bool exec_set_args_cstr(exec_t *executor, int argc, char *const *argv);
 
 bool exec_is_envp_set(const exec_t *executor);
-char *const *exec_get_envp(const exec_t *executor);
-bool exec_set_envp(exec_t *executor, char *const *envp);
+const string_list_t *exec_get_envp(const exec_t *executor);
+char *const *exec_get_envp_cstr(const exec_t *executor);
+bool exec_set_envp(exec_t *executor, const string_list_t *envp);
+bool exec_set_envp_cstr(exec_t *executor, char *const *envp);
 
 /* ── Shell identity ──────────────────────────────────────────────────────── */
 
 bool exec_is_shell_name_set(const exec_t *executor);
-const char *exec_get_shell_name(const exec_t *executor);
-bool exec_set_shell_name(exec_t *executor, const char *shell_name);
+const string_t *exec_get_shell_name(const exec_t *executor);
+const char *exec_get_shell_name_cstr(const exec_t *executor);
+bool exec_set_shell_name(exec_t *executor, const string_t *shell_name);
+bool exec_set_shell_name_cstr(exec_t *executor, const char *shell_name);
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
 
@@ -194,14 +146,27 @@ bool exec_set_job_control_enabled(exec_t *executor, bool enabled);
 /* ── Working directory ───────────────────────────────────────────────────── */
 
 bool exec_is_working_directory_set(const exec_t *executor);
-const char *exec_get_working_directory(const exec_t *executor);
-bool exec_set_working_directory(exec_t *executor, const char *path);
+const string_t *exec_get_working_directory(const exec_t *executor);
+const char *exec_get_working_directory_cstr(const exec_t *executor);
+bool exec_set_working_directory(exec_t *executor, const string_t *path);
+bool exec_set_working_directory_cstr(exec_t *executor, const char *path);
 
 /* ── File permissions ────────────────────────────────────────────────────── */
 
 bool exec_is_umask_set(const exec_t *executor);
 int exec_get_umask(const exec_t *executor);
 bool exec_set_umask(exec_t *executor, int mask);
+
+/**
+ * Format a umask value as a symbolic mode string (e.g. "u=rwx,g=rx,o=rx").
+ *
+ * The returned string is heap-allocated.  Caller frees.
+ *
+ * @param mask  The umask value (e.g. 0022).
+ * @return A newly allocated string with the symbolic representation.
+ */
+string_t *exec_format_umask_symbolic(int mask);
+char *exec_format_umask_symbolic_cstr(int mask);
 
 #ifdef POSIX_API
 mode_t exec_get_umask_posix(const exec_t *executor);
@@ -232,12 +197,16 @@ bool exec_get_inhibit_rc_files(const exec_t *executor);
 bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
 
 bool exec_is_system_rc_filename_set(const exec_t *executor);
-const char *exec_get_system_rc_filename(const exec_t *executor);
-bool exec_set_system_rc_filename(exec_t *executor, const char *filename);
+const string_t *exec_get_system_rc_filename(const exec_t *executor);
+const char *exec_get_system_rc_filename_cstr(const exec_t *executor);
+bool exec_set_system_rc_filename(exec_t *executor, const string_t *filename);
+bool exec_set_system_rc_filename_cstr(exec_t *executor, const char *filename);
 
 bool exec_is_user_rc_filename_set(const exec_t *executor);
-const char *exec_get_user_rc_filename(const exec_t *executor);
-bool exec_set_user_rc_filename(exec_t *executor, const char *filename);
+const string_t *exec_get_user_rc_filename(const exec_t *executor);
+const char *exec_get_user_rc_filename_cstr(const exec_t *executor);
+bool exec_set_user_rc_filename(exec_t *executor, const string_t *filename);
+bool exec_set_user_rc_filename_cstr(exec_t *executor, const char *filename);
 
 /* ── Special parameters ──────────────────────────────────────────────────── */
 
@@ -247,8 +216,10 @@ bool exec_set_last_exit_status(exec_t *executor, int status);
 int exec_get_last_background_pid(const exec_t *executor);
 bool exec_set_last_background_pid(exec_t *executor, int pid);
 
-const char *exec_get_last_argument(const exec_t *executor);
-bool exec_set_last_argument(exec_t *executor, const char *arg);
+const string_t *exec_get_last_argument(const exec_t *executor);
+const char *exec_get_last_argument_cstr(const exec_t *executor);
+bool exec_set_last_argument(exec_t *executor, const string_t *arg);
+bool exec_set_last_argument_cstr(exec_t *executor, const char *arg);
 
 /* ============================================================================
  * Frame Access
@@ -290,9 +261,11 @@ typedef struct exec_builtin_context_t
 {
     exec_t *executor;    /**< The executor (global state)           */
     exec_frame_t *frame; /**< The current execution frame           */
+#if !defined(POSIX_API) && !defined(UCRT_API)
     FILE *stdin_fp;      /**< stdin for this invocation (may be redirected)  */
     FILE *stdout_fp;     /**< stdout for this invocation (may be redirected) */
     FILE *stderr_fp;     /**< stderr for this invocation (may be redirected) */
+#endif
 } exec_builtin_context_t;
 
 /**
@@ -339,7 +312,9 @@ typedef enum exec_builtin_category_t
  * @param category  Whether this is a POSIX special or regular builtin.
  * @return true on success, false on failure (e.g. NULL arguments).
  */
-bool exec_register_builtin(exec_t *executor, const char *name, exec_builtin_fn_t fn,
+bool exec_register_builtin(exec_t *executor, const string_t *name, exec_builtin_fn_t fn,
+                           exec_builtin_category_t category);
+bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin_fn_t fn,
                            exec_builtin_category_t category);
 
 /**
@@ -347,12 +322,14 @@ bool exec_register_builtin(exec_t *executor, const char *name, exec_builtin_fn_t
  *
  * @return true if the builtin was found and removed, false otherwise.
  */
-bool exec_unregister_builtin(exec_t *executor, const char *name);
+bool exec_unregister_builtin(exec_t *executor, const string_t *name);
+bool exec_unregister_builtin_cstr(exec_t *executor, const char *name);
 
 /**
  * Check whether a builtin with the given name is registered.
  */
-bool exec_has_builtin(const exec_t *executor, const char *name);
+bool exec_has_builtin(const exec_t *executor, const string_t *name);
+bool exec_has_builtin_cstr(const exec_t *executor, const char *name);
 
 /**
  * Look up a registered builtin by name.
@@ -360,7 +337,8 @@ bool exec_has_builtin(const exec_t *executor, const char *name);
  * @return The function pointer, or NULL if no builtin is registered under
  *         that name.
  */
-exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const char *name);
+exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const string_t *name);
+exec_builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name);
 
 /**
  * Get the category of a registered builtin.
@@ -371,8 +349,75 @@ exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const char *name);
  *                      category.
  * @return true if the builtin exists, false otherwise.
  */
-bool exec_get_builtin_category(const exec_t *executor, const char *name,
+bool exec_get_builtin_category(const exec_t *executor, const string_t *name,
                                exec_builtin_category_t *category_out);
+bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
+                                    exec_builtin_category_t *category_out);
+
+/* ============================================================================
+ * Command Resolution
+ * ============================================================================
+ *
+ * Resolves a command name through the full lookup chain, in the order
+ * prescribed by POSIX:
+ *
+ *   1. Special builtins
+ *   2. Shell functions
+ *   3. Regular builtins
+ *   4. External commands (PATH search)
+ *
+ * Aliases are not included in the default resolution order because alias
+ * expansion happens at the parser level before command lookup.  However,
+ * the `type` builtin needs to report aliases, so a separate flag controls
+ * whether aliases are checked first.
+ *
+ * This is the mechanism by which `command -v`, `command -V`, and `type`
+ * determine what a command name refers to.
+ */
+
+/**
+ * The kind of entity a command name resolved to.
+ */
+typedef enum exec_command_type_t
+{
+    EXEC_COMMAND_NOT_FOUND,      /**< Name did not resolve to anything          */
+    EXEC_COMMAND_ALIAS,          /**< Alias (only when aliases are checked)     */
+    EXEC_COMMAND_SPECIAL_BUILTIN,/**< POSIX special builtin                    */
+    EXEC_COMMAND_FUNCTION,       /**< Shell function                            */
+    EXEC_COMMAND_REGULAR_BUILTIN,/**< POSIX regular builtin                    */
+    EXEC_COMMAND_EXTERNAL        /**< External command found on PATH            */
+} exec_command_type_t;
+
+/**
+ * Result of resolving a command name.
+ */
+typedef struct exec_command_resolution_t
+{
+    exec_command_type_t type;  /**< What the name resolved to                  */
+    string_t *path;            /**< For EXTERNAL: the resolved filesystem path.
+                                    For ALIAS: the alias value.
+                                    NULL for builtins and functions.
+                                    Caller frees.                              */
+} exec_command_resolution_t;
+
+/**
+ * Resolve a command name through the standard lookup chain.
+ *
+ * Aliases are not checked unless @p check_aliases is true.  This matches
+ * the POSIX distinction: `command -v` does not report aliases, but `type`
+ * does.
+ *
+ * @param executor       The executor.
+ * @param name           The command name to resolve.
+ * @param check_aliases  If true, check aliases before everything else.
+ * @return Resolution result.  Caller must free result.path if non-NULL.
+ */
+exec_command_resolution_t exec_resolve_command(const exec_t *executor,
+                                               const string_t *name,
+                                               bool check_aliases);
+exec_command_resolution_t exec_resolve_command_cstr(const exec_t *executor,
+                                                    const char *name,
+                                                    bool check_aliases);
 
 /* ============================================================================
  * Execution Setup
@@ -486,9 +531,12 @@ void exec_partial_state_cleanup(exec_partial_state_t *state);
  * @return EXEC_OK if the command completed, EXEC_INCOMPLETE_INPUT if more
  *         input is needed, or an error / control-flow status.
  */
-exec_status_t exec_execute_command_string_partial(exec_t *executor, const char *command,
-                                                  const char *filename, size_t line_number,
+exec_status_t exec_execute_command_string_partial(exec_t *executor, const string_t *command,
+                                                  const string_t *filename, size_t line_number,
                                                   exec_partial_state_t *partial_state_out);
+exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const char *command,
+                                                       const char *filename, size_t line_number,
+                                                       exec_partial_state_t *partial_state_out);
 
 /* ── Custom line-editor support ──────────────────────────────────────────── */
 
@@ -572,8 +620,12 @@ bool exec_is_exit_requested(const exec_t *executor);
 
 /* ── Error message ───────────────────────────────────────────────────────── */
 
-const char *exec_get_error(const exec_t *executor);
-void exec_set_error(exec_t *executor, const char *format, ...);
+const string_t *exec_get_error(const exec_t *executor);
+const char *exec_get_error_cstr(const exec_t *executor);
+
+void exec_set_error(exec_t *executor, const string_t *message);
+void exec_set_error_cstr(exec_t *executor, const char *message);
+void exec_set_error_printf(exec_t *executor, const char *format, ...);
 void exec_clear_error(exec_t *executor);
 
 /* ── Pipe statuses (PIPESTATUS / pipefail) ───────────────────────────────── */
@@ -588,17 +640,54 @@ void exec_reset_pipe_statuses(exec_t *executor);
  * Get the raw PS1 value from the variable store.
  * Returns a default if PS1 is not set.  Caller frees.
  */
-char *exec_get_ps1(const exec_t *executor);
+string_t *exec_get_ps1(const exec_t *executor);
+char *exec_get_ps1_cstr(const exec_t *executor);
 
 /**
  * Get PS1 with all prompt expansions applied.  Caller frees.
  */
-char *exec_get_rendered_ps1(const exec_t *executor);
+string_t *exec_get_rendered_ps1(const exec_t *executor);
+char *exec_get_rendered_ps1_cstr(const exec_t *executor);
 
 /**
  * Get the raw PS2 value.  PS2 is never expanded.  Caller frees.
  */
-char *exec_get_ps2(const exec_t *executor);
+string_t *exec_get_ps2(const exec_t *executor);
+char *exec_get_ps2_cstr(const exec_t *executor);
+
+/* ── Signal notification ─────────────────────────────────────────────────── */
+
+/**
+ * Signature of a signal-check callback.
+ *
+ * Long-running builtins (e.g. read, wait) need a way to detect that a
+ * signal such as SIGINT was delivered during their execution.  Rather
+ * than exposing the executor's internal signal state, the executor
+ * provides a callback the builtin can poll.
+ *
+ * @param signal_number  The signal that was received.
+ * @param user_data      Opaque context provided at registration time.
+ */
+typedef void (*exec_signal_callback_t)(int signal_number, void *user_data);
+
+/**
+ * Register a callback to be invoked when a signal is received during
+ * execution.
+ *
+ * Only one callback may be active at a time.  Registering a new callback
+ * replaces the previous one.  Pass NULL to clear the callback.
+ *
+ * The callback is invoked synchronously from the executor's signal-safe
+ * bookkeeping path, so it must be async-signal-safe or the caller must
+ * arrange for deferred handling (e.g. setting a flag that the builtin
+ * polls).
+ *
+ * @param executor   The executor.
+ * @param callback   The callback function, or NULL to clear.
+ * @param user_data  Opaque context passed to the callback.
+ */
+void exec_set_signal_callback(exec_t *executor, exec_signal_callback_t callback,
+                              void *user_data);
 
 /* ============================================================================
  * Job Control
@@ -634,7 +723,10 @@ int exec_get_previous_job_id(const exec_t *executor);
 /* ── Per-job queries ─────────────────────────────────────────────────────── */
 
 exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id);
-const char *exec_job_get_command(const exec_t *executor, int job_id);
+
+const string_t *exec_job_get_command(const exec_t *executor, int job_id);
+const char *exec_job_get_command_cstr(const exec_t *executor, int job_id);
+
 bool exec_job_is_background(const exec_t *executor, int job_id);
 
 #ifdef POSIX_API
@@ -662,14 +754,14 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index);
 
 /**
  * Bring a job to the foreground.
- * If `cmd` is provided and if the function returns 'true' indicating
- * that a job was foregrounded, `cmd` will receive a newly allocated copy of
- * the command string of the
- * job that is being foregrounded. This necessary because foregrounded jobs
- * are removed from the job list, so their command strings are freed and no
- * longer accessible.
+ * If @p cmd is provided and if the function returns true indicating
+ * that a job was foregrounded, @p cmd will receive a newly allocated copy of
+ * the command string of the job that is being foregrounded.  This is
+ * necessary because foregrounded jobs are removed from the job list, so their
+ * command strings are freed and no longer accessible.
  */
-bool exec_job_foreground(exec_t *executor, int job_id, char **cmd);
+bool exec_job_foreground(exec_t *executor, int job_id, string_t **cmd);
+bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **cmd);
 
 bool exec_job_background(exec_t *executor, int job_id);
 bool exec_job_kill(exec_t *executor, int job_id, int sig);
@@ -691,7 +783,8 @@ typedef enum exec_jobs_format_t
  *
  * @return Job ID on success, -1 on error.
  */
-int exec_parse_job_id(const exec_t *executor, const char *spec);
+int exec_parse_job_id(const exec_t *executor, const string_t *spec);
+int exec_parse_job_id_cstr(const exec_t *executor, const char *spec);
 
 /**
  * Print a single job.
@@ -710,5 +803,59 @@ void exec_print_all_jobs(const exec_t *executor, exec_jobs_format_t format, FILE
  * Check whether any jobs exist.
  */
 bool exec_has_jobs(const exec_t *executor);
+
+/* ── Waiting ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Wait for a job to complete or be stopped.
+ *
+ * Blocks until the specified job changes to EXEC_JOB_DONE,
+ * EXEC_JOB_TERMINATED, or EXEC_JOB_STOPPED.  If the job is already in
+ * one of those states, returns immediately.
+ *
+ * If a signal interrupt is received while waiting (and a signal callback
+ * is registered), the callback is invoked and the function returns -1
+ * with the job still running.
+ *
+ * @param executor  The executor.
+ * @param job_id    The job to wait for.
+ * @return The exit status of the last process in the job's pipeline,
+ *         or -1 if the job was not found or waiting was interrupted.
+ */
+int exec_wait_for_job(exec_t *executor, int job_id);
+
+/**
+ * Wait for a specific process to complete.
+ *
+ * Blocks until the process with the given PID exits.  The process must
+ * belong to a job known to the executor.  If the PID is not found among
+ * any active jobs, returns -1 immediately.
+ *
+ * If a signal interrupt is received while waiting (and a signal callback
+ * is registered), the callback is invoked and the function returns -1
+ * with the process potentially still running.
+ *
+ * @param executor  The executor.
+ * @param pid       The process ID to wait for.
+ * @return The exit status of the process, or -1 if not found or
+ *         waiting was interrupted.
+ */
+int exec_wait_for_pid(exec_t *executor, int pid);
+
+/**
+ * Wait for all background jobs to complete.
+ *
+ * Blocks until every job known to the executor reaches EXEC_JOB_DONE
+ * or EXEC_JOB_TERMINATED.  If no jobs are active, returns immediately.
+ *
+ * If a signal interrupt is received while waiting (and a signal callback
+ * is registered), the callback is invoked and the function returns -1
+ * with some jobs potentially still running.
+ *
+ * @param executor  The executor.
+ * @return The exit status of the last job that completed, or 0 if there
+ *         were no jobs, or -1 if waiting was interrupted.
+ */
+int exec_wait_for_all(exec_t *executor);
 
 #endif /* EXEC_H */

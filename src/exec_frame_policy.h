@@ -302,6 +302,15 @@ typedef struct exec_frame_policy_t
         bool is_background;
     } classification;
 
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
+    struct
+    {
+        bool inherits_redirected_stdio; // Whether this frame should use the redirected stdin,
+                                        // stdout, stderr FILE* fields of its parents
+    } stdio;
+#endif
+
 } exec_frame_policy_t;
 
 /* ============================================================================
@@ -319,82 +328,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Owns everything, initializes from environment/argv.
      */
     [EXEC_FRAME_TOP_LEVEL] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .init_from_envp = true,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .arg0 = EXEC_ARG0_INIT_SHELL_OR_SCRIPT,
-                    .argn = EXEC_POSITIONAL_INIT_ARGV, // OWN scope: init from command line
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = true,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .init_from_system = true,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .init_from_system = true,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_DISALLOWED,
-                    .loop_control = EXEC_LOOP_DISALLOWED,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = true,
-                    .affects_parent_status = false,
-                },
-            .source =
-                {
-                    .tracks_location = true,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
+        {.process =
+             {
+                 .forks = false,
+                 .pgroup = EXEC_PGROUP_NONE,
+                 .is_pipeline_member = false,
+             },
+         .variables =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .init_from_envp = true,
+                 .copy_exports_only = false,
+                 .has_locals = false,
+             },
+         .positional =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .arg0 = EXEC_ARG0_INIT_SHELL_OR_SCRIPT,
+                 .argn = EXEC_POSITIONAL_INIT_ARGV, // OWN scope: init from command line
+                 .can_override = false,
+             },
+         .fds =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+             },
+         .traps =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .resets_non_ignored = false,
+                 .exit_trap_runs = true,
+             },
+         .options =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .errexit_enabled = true,
+             },
+         .cwd =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .init_from_system = true,
+             },
+         .umask =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .init_from_system = true,
+                 .init_to_0022 = false,
+             },
+         .functions =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+             },
+         .aliases =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .expands = true,
+             },
+         .flow =
+             {
+                 .return_behavior = EXEC_RETURN_DISALLOWED,
+                 .loop_control = EXEC_LOOP_DISALLOWED,
+                 .is_loop = false,
+             },
+         .exit =
+             {
+                 .terminates_process = true,
+                 .affects_parent_status = false,
+             },
+         .source =
+             {
+                 .tracks_location = true,
+             },
+         .classification =
+             {
+                 .is_subshell = false,
+                 .is_background = false,
+             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+         .stdio =
+             {
+                 .inherits_redirected_stdio = true /* top-level builtins see redirections */
+             }
+#endif
         },
 
     /* =========================================================================
@@ -405,82 +419,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Forks, copies everything, traps reset.
      */
     [EXEC_FRAME_SUBSHELL] =
-        {
-            .process =
-                {
-                    .forks = true,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // COPY scope: implicit from parent
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .resets_non_ignored = true,
-                    .exit_trap_runs = true,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_COPY,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_DISALLOWED,
-                    .loop_control = EXEC_LOOP_DISALLOWED,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = true,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = true,
-                },
-            .classification =
-                {
-                    .is_subshell = true,
-                    .is_background = false,
-                },
+        {.process =
+             {
+                 .forks = true,
+                 .pgroup = EXEC_PGROUP_NONE,
+                 .is_pipeline_member = false,
+             },
+         .variables =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .init_from_envp = false,
+                 .copy_exports_only = false,
+                 .has_locals = false,
+             },
+         .positional =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .arg0 = EXEC_ARG0_INHERIT,
+                 .argn = EXEC_POSITIONAL_INIT_NA, // COPY scope: implicit from parent
+                 .can_override = false,
+             },
+         .fds =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+             },
+         .traps =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .resets_non_ignored = true,
+                 .exit_trap_runs = true,
+             },
+         .options =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .errexit_enabled = true,
+             },
+         .cwd =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .init_from_system = false,
+             },
+         .umask =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .init_from_system = false,
+                 .init_to_0022 = false,
+             },
+         .functions =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+             },
+         .aliases =
+             {
+                 .scope = EXEC_SCOPE_COPY,
+                 .expands = true,
+             },
+         .flow =
+             {
+                 .return_behavior = EXEC_RETURN_DISALLOWED,
+                 .loop_control = EXEC_LOOP_DISALLOWED,
+                 .is_loop = false,
+             },
+         .exit =
+             {
+                 .terminates_process = true,
+                 .affects_parent_status = true,
+             },
+         .source =
+             {
+                 .tracks_location = true,
+             },
+         .classification =
+             {
+                 .is_subshell = true,
+                 .is_background = false,
+             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+         .stdio =
+             {
+                 .inherits_redirected_stdio = false /* subshell isolation + no real fork */
+             }
+#endif
         },
 
     /* =========================================================================
@@ -491,82 +510,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Redirections on the group affect all commands within.
      */
     [EXEC_FRAME_BRACE_GROUP] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's directly
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_TRANSPARENT,
-                    .loop_control = EXEC_LOOP_TRANSPARENT,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = false,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
+        {.process =
+             {
+                 .forks = false,
+                 .pgroup = EXEC_PGROUP_NONE,
+                 .is_pipeline_member = false,
+             },
+         .variables =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_envp = false,
+                 .copy_exports_only = false,
+                 .has_locals = false,
+             },
+         .positional =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .arg0 = EXEC_ARG0_INHERIT,
+                 .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's directly
+                 .can_override = false,
+             },
+         .fds =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+             },
+         .traps =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .resets_non_ignored = false,
+                 .exit_trap_runs = false,
+             },
+         .options =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .errexit_enabled = true,
+             },
+         .cwd =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_system = false,
+             },
+         .umask =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_system = false,
+                 .init_to_0022 = false,
+             },
+         .functions =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+             },
+         .aliases =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .expands = true,
+             },
+         .flow =
+             {
+                 .return_behavior = EXEC_RETURN_TRANSPARENT,
+                 .loop_control = EXEC_LOOP_TRANSPARENT,
+                 .is_loop = false,
+             },
+         .exit =
+             {
+                 .terminates_process = false,
+                 .affects_parent_status = true,
+             },
+         .source =
+             {
+                 .tracks_location = false,
+             },
+         .classification =
+             {
+                 .is_subshell = false,
+                 .is_background = false,
+             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+         .stdio =
+             {
+                 .inherits_redirected_stdio = true /* redirs on { ... } affect everything inside */
+             }
+#endif
         },
 
     /* =========================================================================
@@ -577,83 +601,88 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Shares most other state with caller. Is a return target.
      */
     [EXEC_FRAME_FUNCTION] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = true,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_OWN,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn =
-                        EXEC_POSITIONAL_INIT_CALL_ARGS, // OWN scope: init from function arguments
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_TARGET,
-                    .loop_control = EXEC_LOOP_DISALLOWED,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = true,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
+        {.process =
+             {
+                 .forks = false,
+                 .pgroup = EXEC_PGROUP_NONE,
+                 .is_pipeline_member = false,
+             },
+         .variables =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_envp = false,
+                 .copy_exports_only = false,
+                 .has_locals = true,
+             },
+         .positional =
+             {
+                 .scope = EXEC_SCOPE_OWN,
+                 .arg0 = EXEC_ARG0_INHERIT,
+                 .argn = EXEC_POSITIONAL_INIT_CALL_ARGS, // OWN scope: init from function arguments
+                 .can_override = false,
+             },
+         .fds =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+             },
+         .traps =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .resets_non_ignored = false,
+                 .exit_trap_runs = false,
+             },
+         .options =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .errexit_enabled = true,
+             },
+         .cwd =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_system = false,
+             },
+         .umask =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .init_from_system = false,
+                 .init_to_0022 = false,
+             },
+         .functions =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+             },
+         .aliases =
+             {
+                 .scope = EXEC_SCOPE_SHARE,
+                 .expands = true,
+             },
+         .flow =
+             {
+                 .return_behavior = EXEC_RETURN_TARGET,
+                 .loop_control = EXEC_LOOP_DISALLOWED,
+                 .is_loop = false,
+             },
+         .exit =
+             {
+                 .terminates_process = false,
+                 .affects_parent_status = true,
+             },
+         .source =
+             {
+                 .tracks_location = true,
+             },
+         .classification =
+             {
+                 .is_subshell = false,
+                 .is_background = false,
+             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+         .stdio =
+             {
+                 .inherits_redirected_stdio =
+                     true /* core requirement: functions/builtins see redirs */
+             }
+#endif
         },
 
     /* =========================================================================
@@ -662,84 +691,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Loop constructs: for, while, until
      * Shares everything with parent. break/continue are valid here.
      */
-    [EXEC_FRAME_LOOP] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's directly
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_TRANSPARENT,
-                    .loop_control = EXEC_LOOP_TARGET,
-                    .is_loop = true,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = false,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
-        },
+    [EXEC_FRAME_LOOP] = {.process =
+                             {
+                                 .forks = false,
+                                 .pgroup = EXEC_PGROUP_NONE,
+                                 .is_pipeline_member = false,
+                             },
+                         .variables =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_envp = false,
+                                 .copy_exports_only = false,
+                                 .has_locals = false,
+                             },
+                         .positional =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .arg0 = EXEC_ARG0_INHERIT,
+                                 .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's
+                                                                  // directly
+                                 .can_override = false,
+                             },
+                         .fds =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .traps =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .resets_non_ignored = false,
+                                 .exit_trap_runs = false,
+                             },
+                         .options =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .errexit_enabled = true,
+                             },
+                         .cwd =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                             },
+                         .umask =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                                 .init_to_0022 = false,
+                             },
+                         .functions =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .aliases =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .expands = true,
+                             },
+                         .flow =
+                             {
+                                 .return_behavior = EXEC_RETURN_TRANSPARENT,
+                                 .loop_control = EXEC_LOOP_TARGET,
+                                 .is_loop = true,
+                             },
+                         .exit =
+                             {
+                                 .terminates_process = false,
+                                 .affects_parent_status = true,
+                             },
+                         .source =
+                             {
+                                 .tracks_location = false,
+                             },
+                         .classification =
+                             {
+                                 .is_subshell = false,
+                                 .is_background = false,
+                             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+                         .stdio = {.inherits_redirected_stdio = true}
+#endif
+
+    },
 
     /* =========================================================================
      * EXEC_FRAME_TRAP
@@ -748,84 +780,86 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Runs in current shell context but errexit is disabled.
      * Recursive trap invocation for same signal is blocked (handled elsewhere).
      */
-    [EXEC_FRAME_TRAP] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's directly
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = false,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_DISALLOWED,
-                    .loop_control = EXEC_LOOP_DISALLOWED,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = false,
-                },
-            .source =
-                {
-                    .tracks_location = false,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
-        },
+    [EXEC_FRAME_TRAP] = {.process =
+                             {
+                                 .forks = false,
+                                 .pgroup = EXEC_PGROUP_NONE,
+                                 .is_pipeline_member = false,
+                             },
+                         .variables =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_envp = false,
+                                 .copy_exports_only = false,
+                                 .has_locals = false,
+                             },
+                         .positional =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .arg0 = EXEC_ARG0_INHERIT,
+                                 .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's
+                                                                  // directly
+                                 .can_override = false,
+                             },
+                         .fds =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .traps =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .resets_non_ignored = false,
+                                 .exit_trap_runs = false,
+                             },
+                         .options =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .errexit_enabled = false,
+                             },
+                         .cwd =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                             },
+                         .umask =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                                 .init_to_0022 = false,
+                             },
+                         .functions =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .aliases =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .expands = true,
+                             },
+                         .flow =
+                             {
+                                 .return_behavior = EXEC_RETURN_DISALLOWED,
+                                 .loop_control = EXEC_LOOP_DISALLOWED,
+                                 .is_loop = false,
+                             },
+                         .exit =
+                             {
+                                 .terminates_process = false,
+                                 .affects_parent_status = false,
+                             },
+                         .source =
+                             {
+                                 .tracks_location = false,
+                             },
+                         .classification =
+                             {
+                                 .is_subshell = false,
+                                 .is_background = false,
+                             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+                         .stdio = {.inherits_redirected_stdio = true}
+#endif
+    },
 
     /* =========================================================================
      * EXEC_FRAME_BACKGROUND_JOB
@@ -911,6 +945,11 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = true,
                 },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+            .stdio = {.inherits_redirected_stdio =
+                          false} /* system() cannot be redirected in ISO C */
+#endif
+
         },
     /* =========================================================================
      * EXEC_FRAME_PIPELINE
@@ -997,6 +1036,10 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = false,
                     .is_background = false,
                 },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+            .stdio = {.inherits_redirected_stdio = false} /* too complicated */
+#endif
+
         },
 
     /* =========================================================================
@@ -1083,6 +1126,10 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = false,
                 },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+            .stdio = {.inherits_redirected_stdio = false} /* too complicated */
+#endif
+
         },
 
     /* =========================================================================
@@ -1093,85 +1140,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Can temporarily override positional params if args given.
      * Is a return target.
      */
-    [EXEC_FRAME_DOT_SCRIPT] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .arg0 = EXEC_ARG0_SET_TO_SOURCED_SCRIPT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: can_override handles
-                                                     // replacement
-                    .can_override = true,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_TARGET,
-                    .loop_control = EXEC_LOOP_DISALLOWED,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = true,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
-        },
+    [EXEC_FRAME_DOT_SCRIPT] = {.process =
+                                   {
+                                       .forks = false,
+                                       .pgroup = EXEC_PGROUP_NONE,
+                                       .is_pipeline_member = false,
+                                   },
+                               .variables =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .init_from_envp = false,
+                                       .copy_exports_only = false,
+                                       .has_locals = false,
+                                   },
+                               .positional =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .arg0 = EXEC_ARG0_SET_TO_SOURCED_SCRIPT,
+                                       .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: can_override
+                                                                        // handles replacement
+                                       .can_override = true,
+                                   },
+                               .fds =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                   },
+                               .traps =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .resets_non_ignored = false,
+                                       .exit_trap_runs = false,
+                                   },
+                               .options =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .errexit_enabled = true,
+                                   },
+                               .cwd =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .init_from_system = false,
+                                   },
+                               .umask =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .init_from_system = false,
+                                       .init_to_0022 = false,
+                                   },
+                               .functions =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                   },
+                               .aliases =
+                                   {
+                                       .scope = EXEC_SCOPE_SHARE,
+                                       .expands = true,
+                                   },
+                               .flow =
+                                   {
+                                       .return_behavior = EXEC_RETURN_TARGET,
+                                       .loop_control = EXEC_LOOP_DISALLOWED,
+                                       .is_loop = false,
+                                   },
+                               .exit =
+                                   {
+                                       .terminates_process = false,
+                                       .affects_parent_status = true,
+                                   },
+                               .source =
+                                   {
+                                       .tracks_location = true,
+                                   },
+                               .classification =
+                                   {
+                                       .is_subshell = false,
+                                       .is_background = false,
+                                   },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+                               .stdio = {.inherits_redirected_stdio = true}
+#endif
+
+    },
 
     /* =========================================================================
      * EXEC_FRAME_EVAL
@@ -1180,84 +1229,87 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
      * Parses and executes string in current shell context.
      * Shares everything with parent. Control flow passes through.
      */
-    [EXEC_FRAME_EVAL] =
-        {
-            .process =
-                {
-                    .forks = false,
-                    .pgroup = EXEC_PGROUP_NONE,
-                    .is_pipeline_member = false,
-                },
-            .variables =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_envp = false,
-                    .copy_exports_only = false,
-                    .has_locals = false,
-                },
-            .positional =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .arg0 = EXEC_ARG0_INHERIT,
-                    .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's directly
-                    .can_override = false,
-                },
-            .fds =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .traps =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .resets_non_ignored = false,
-                    .exit_trap_runs = false,
-                },
-            .options =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .errexit_enabled = true,
-                },
-            .cwd =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                },
-            .umask =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .init_from_system = false,
-                    .init_to_0022 = false,
-                },
-            .functions =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                },
-            .aliases =
-                {
-                    .scope = EXEC_SCOPE_SHARE,
-                    .expands = true,
-                },
-            .flow =
-                {
-                    .return_behavior = EXEC_RETURN_TRANSPARENT,
-                    .loop_control = EXEC_LOOP_TRANSPARENT,
-                    .is_loop = false,
-                },
-            .exit =
-                {
-                    .terminates_process = false,
-                    .affects_parent_status = true,
-                },
-            .source =
-                {
-                    .tracks_location = true,
-                },
-            .classification =
-                {
-                    .is_subshell = false,
-                    .is_background = false,
-                },
-        },
+    [EXEC_FRAME_EVAL] = {.process =
+                             {
+                                 .forks = false,
+                                 .pgroup = EXEC_PGROUP_NONE,
+                                 .is_pipeline_member = false,
+                             },
+                         .variables =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_envp = false,
+                                 .copy_exports_only = false,
+                                 .has_locals = false,
+                             },
+                         .positional =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .arg0 = EXEC_ARG0_INHERIT,
+                                 .argn = EXEC_POSITIONAL_INIT_NA, // SHARE scope: using parent's
+                                                                  // directly
+                                 .can_override = false,
+                             },
+                         .fds =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .traps =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .resets_non_ignored = false,
+                                 .exit_trap_runs = false,
+                             },
+                         .options =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .errexit_enabled = true,
+                             },
+                         .cwd =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                             },
+                         .umask =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .init_from_system = false,
+                                 .init_to_0022 = false,
+                             },
+                         .functions =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                             },
+                         .aliases =
+                             {
+                                 .scope = EXEC_SCOPE_SHARE,
+                                 .expands = true,
+                             },
+                         .flow =
+                             {
+                                 .return_behavior = EXEC_RETURN_TRANSPARENT,
+                                 .loop_control = EXEC_LOOP_TRANSPARENT,
+                                 .is_loop = false,
+                             },
+                         .exit =
+                             {
+                                 .terminates_process = false,
+                                 .affects_parent_status = true,
+                             },
+                         .source =
+                             {
+                                 .tracks_location = true,
+                             },
+                         .classification =
+                             {
+                                 .is_subshell = false,
+                                 .is_background = false,
+                             },
+#if !defined(POSIX_API) && !defined(UCRT_API)
+                         .stdio = {.inherits_redirected_stdio = true}
+#endif
+
+    },
 };
 
 #endif /* EXEC_FRAME_POLICY_H */

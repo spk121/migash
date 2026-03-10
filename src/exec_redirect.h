@@ -3,7 +3,7 @@
 
 #include "ast.h"
 #include "exec_expander.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 
 /**
  * Platform-specific redirection application functions.
@@ -26,13 +26,19 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame,
 void exec_restore_redirections_ucrt_c(exec_frame_t *frame);
 #else
 /**
- * ISO C redirection support is limited to file redirections (< > >> <>)
- * on the three standard streams (stdin/stdout/stderr) only. FD-to-FD
- * duplication, explicit closes, and heredocs are not supported and will
- * return EXEC_NOT_IMPL. Restoration uses freopen() back to the platform
- * standard device paths (/dev/stdin etc.) since ISO C has no dup().
+ * ISO C redirection support is not possible, but, it does provide a workaround
+ * for internal functions (builtins and functions defined in the current script).
+ * For ISO C only, exec_apply_redirections_iso_c() accepts an optional exec_builtin_context_t*
+ * argument, and will apply redirections by setting the FILE* fd_stdin, fd_stdout, and fd_stderr fields of
+ * that struct.
  */
 exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redirections_t *redirs);
+/**
+ * This stub version of redirections merely closes any non-NULL FILE* pointers in the
+ * exec_builtin_context_t struct, which will cause builtins that use those fields to see EOF on the
+ * corresponding stream. This is a very limited form of redirection, but it's the best we can do in
+ * ISO C mode.
+ */
 void exec_restore_redirections_iso_c(exec_frame_t *frame);
 #endif
 

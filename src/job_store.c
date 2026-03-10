@@ -646,7 +646,11 @@ size_t job_process_count(const job_t *job)
     return count;
 }
 
-intptr_t job_get_process_pid(const job_t *job, size_t index)
+#ifdef POSIX_API
+pid_t job_get_process_pid(const job_t *job, size_t index)
+#else
+int job_get_process_pid(const job_t *job, size_t index)
+#endif
 {
     if (!job)
         return -1;

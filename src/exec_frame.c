@@ -3,6 +3,10 @@
  *
  * This file implements frame creation (push), destruction (pop), and execution.
  * The behavior is driven by the policy table defined in exec_frame_policy.h.
+ * 
+ * The exec_frame.c module provides functions that may be used by any other part
+ * of the executor.  The frame.c module, however, is intended as a thin wrapper
+ * around frame-level operations that are exposed to builtins and library consumers.
  */
 
 #ifdef _MSC_VER
@@ -19,7 +23,8 @@
 #include "ast.h"
 #include "exec.h"
 #include "exec_frame_policy.h"
-#include "exec_internal.h"
+#include "exec_types_internal.h"
+#include "exec_types_public.h"
 #include "fd_table.h"
 #include "func_store.h"
 #include "job_store.h"
@@ -35,6 +40,39 @@
 #include <io.h>
 #include <process.h>
 #endif
+
+exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t *frame,
+                                                                    exec_params_t *params);
+static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame,
+                                                                     exec_params_t *params);
+exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *frame,
+                                                              exec_params_t *params);
+exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame,
+                                                             const ast_node_t *list);
+exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, ast_node_t *list);
+exec_frame_execute_result_t exec_frame_execute_pipeline(exec_frame_t *frame, ast_node_t *list);
+exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame,
+                                                              ast_node_t *node);
+
+exec_frame_execute_result_t exec_frame_execute_subshell(exec_frame_t *frame,
+                                                              ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_brace_group(exec_frame_t *frame, ast_node_t *node,
+                                                           exec_redirections_t *redirs);
+exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *frame,
+                                                                  ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t *frame,
+                                                                   ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *frame, ast_node_list_t *node, bool is_negated);
+exec_frame_execute_result_t exec_frame_execute_while_loop(exec_frame_t *frame, ast_node_t *condition, ast_node_t *node, bool is_negated);
+exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name, string_list_t *words, ast_node_t *body);
+
+
+
+
 
 /* ============================================================================
  * Helper Functions - System Queries
@@ -377,6 +415,14 @@ exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec
     init_umask(frame);
     init_functions(frame);
     init_aliases(frame);
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->policy->stdio.inherits_redirected_stdio)
+    {
+        frame->fd_stdin = parent ? parent->fd_stdin : NULL;
+        frame->fd_stdout = parent ? parent->fd_stdout : NULL;
+        frame->fd_stderr = parent ? parent->fd_stderr : NULL;
+    }
+#endif
 
     /* Initialize frame-local state */
     frame->loop_depth = parent ? parent->loop_depth : 0;
@@ -593,6 +639,28 @@ static void cleanup_frame_resources(exec_frame_t *frame)
     {
         string_destroy(&frame->source_name);
     }
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    // It is a coding error if these aren't properly closed. They
+    // should have been closed/destroyed when the redirections closed up.
+    if (*frame->fd_stdin && (!frame->parent || *frame->parent->fd_stdin != *frame->fd_stdin))
+    {
+        log_error("Redirected stdin not closed properly");
+        fclose(*frame->fd_stdin);
+        *frame->fd_stdin = NULL;
+    }
+    if (*frame->fd_stdout && (!frame->parent || *frame->parent->fd_stdout != *frame->fd_stdout))
+    {
+        log_error("Redirected stdout not closed properly");
+        fclose(*frame->fd_stdout);
+        *frame->fd_stdout = NULL;
+    }
+    if (*frame->fd_stderr && (!frame->parent || *frame->parent->fd_stderr != *frame->fd_stderr))
+    {
+        log_error("Redirected stderr not closed properly");
+        fclose(*frame->fd_stderr);
+        *frame->fd_stderr = NULL;
+    }
+#endif
 }
 
 exec_frame_t *exec_frame_pop(exec_frame_t **frame_ptr)
@@ -678,7 +746,7 @@ static void setup_process_group(exec_frame_t *frame, exec_params_t *params)
 /**
  * Handle control flow based on policy.
  */
-static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t result)
+static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame, exec_frame_execute_result_t result)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -693,7 +761,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
         {
         case EXEC_RETURN_TARGET:
             /* We're the target; return completes here */
-            return (exec_result_t){.exit_status = result.exit_status,
+            return (exec_frame_execute_result_t){.exit_status = result.exit_status,
                                    .has_exit_status = true,
                                    .flow = EXEC_FLOW_NORMAL,
                                    .flow_depth = 0};
@@ -703,7 +771,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
         case EXEC_RETURN_DISALLOWED:
             /* Error: shouldn't happen if AST validation is correct */
             log_error("return: not valid in this context");
-            return (exec_result_t){.exit_status = 1,
+            return (exec_frame_execute_result_t){.exit_status = 1,
                                    .has_exit_status = true,
                                    .flow = EXEC_FLOW_NORMAL,
                                    .flow_depth = 0};
@@ -722,7 +790,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
                 if (result.flow == EXEC_FLOW_BREAK)
                 {
                     /* Break: exit loop with current status */
-                    return (exec_result_t){.exit_status = result.exit_status,
+                    return (exec_frame_execute_result_t){.exit_status = result.exit_status,
                                            .has_exit_status = result.has_exit_status,
                                            .flow = EXEC_FLOW_NORMAL,
                                            .flow_depth = 0};
@@ -730,7 +798,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
                 else
                 {
                     /* Continue: signal to continue loop iteration */
-                    return (exec_result_t){
+                    return (exec_frame_execute_result_t){
                         .exit_status = 0,
                         .has_exit_status = true,
                         .flow = EXEC_FLOW_CONTINUE,
@@ -741,7 +809,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
             else
             {
                 /* Decrement depth and propagate */
-                return (exec_result_t){.exit_status = result.exit_status,
+                return (exec_frame_execute_result_t){.exit_status = result.exit_status,
                                        .has_exit_status = result.has_exit_status,
                                        .flow = result.flow,
                                        .flow_depth = result.flow_depth - 1};
@@ -752,7 +820,7 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
         case EXEC_LOOP_DISALLOWED:
             /* Error: can't break/continue from here */
             log_error("break/continue: not valid in this context");
-            return (exec_result_t){.exit_status = 1,
+            return (exec_frame_execute_result_t){.exit_status = 1,
                                    .has_exit_status = true,
                                    .flow = EXEC_FLOW_NORMAL,
                                    .flow_depth = 0};
@@ -763,12 +831,13 @@ static exec_result_t handle_control_flow(exec_frame_t *frame, exec_result_t resu
     return result;
 }
 
+
 /**
  * Execute the frame's body based on params.
  */
-static exec_result_t execute_frame_body(exec_frame_t *frame, exec_params_t *params)
+static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_params_t *params)
 {
-    exec_result_t result = {
+    exec_frame_execute_result_t result = {
         .exit_status = 0, .has_exit_status = true, .flow = EXEC_FLOW_NORMAL, .flow_depth = 0};
 
     if (!params)
@@ -822,22 +891,22 @@ static exec_result_t execute_frame_body(exec_frame_t *frame, exec_params_t *para
     /* Execute body based on what's provided */
     if (params->body)
     {
-        result = exec_execute_dispatch(frame, params->body);
+        result = exec_frame_execute_dispatch(frame, params->body);
     }
     else if (params->condition)
     {
         /* While/until loop */
-        result = exec_condition_loop(frame, params);
+        result = exec_frame_execute_condition_loop(frame, params);
     }
     else if (params->iteration_words)
     {
         /* For loop */
-        result = exec_iteration_loop(frame, params);
+        result = exec_frame_execute_iteration_loop(frame, params);
     }
     else if (params->pipeline_commands)
     {
         /* Pipeline orchestration */
-        result = exec_pipeline_orchestrate(frame, params);
+        result = exec_frame_execute_pipeline_orchestrate(frame, params);
     }
 
     /* Handle control flow */
@@ -847,6 +916,111 @@ static exec_result_t execute_frame_body(exec_frame_t *frame, exec_params_t *para
     if (params->redirections)
     {
         exec_restore_redirections(frame, params->redirections);
+    }
+
+    return result;
+}
+
+/**
+ * Execute a while/until loop from within an EXEC_FRAME_LOOP frame.
+ *
+ * This function performs the actual loop iteration logic for while and until
+ * constructs. It must be called from within an EXEC_FRAME_LOOP frame (created
+ * by exec_while_loop() in exec_frame.c) so that break/continue semantics work
+ * correctly.
+ *
+ * The EXEC_FRAME_LOOP frame provides:
+ * - loop_depth tracking for nested loops
+ * - EXEC_LOOP_TARGET policy for handling break/continue with proper depth
+ * - EXEC_RETURN_TRANSPARENT policy so return statements propagate up to functions
+ *
+ * This function evaluates the condition on each iteration and executes the body
+ * when appropriate (condition succeeds for while, fails for until). Control flow
+ * statements (break, continue, return) in the body are handled by checking the
+ * flow field in the result and responding accordingly.
+ *
+ * @param frame The current execution frame (must be EXEC_FRAME_LOOP)
+ * @param params Parameters including condition, body, and until_mode flag
+ * @return exec_frame_execute_result_t with final loop status and any pending control flow
+ */
+static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame, exec_params_t *params)
+{
+    Expects_not_null(frame);
+    Expects_not_null(params);
+    Expects_not_null(params->condition);
+    Expects_not_null(params->body);
+
+    exec_frame_execute_result_t result = {
+        .exit_status = 0, .has_exit_status = true, .flow = EXEC_FLOW_NORMAL, .flow_depth = 0};
+    bool is_until = params->until_mode;
+
+    while (true)
+    {
+        // Execute condition
+        exec_frame_execute_result_t cond_result = exec_frame_execute_dispatch(frame, params->condition);
+        if (cond_result.status != EXEC_OK)
+        {
+            return cond_result;
+        }
+
+        // Check if we should exit the loop
+        bool condition_met = (cond_result.exit_status == 0);
+        if (is_until ? condition_met : !condition_met)
+        {
+            // Exit loop
+            break;
+        }
+
+        // Execute body
+        exec_frame_execute_result_t body_result;
+        if (params->body->type == AST_COMMAND_LIST)
+            body_result = exec_frame_execute_iteration_loop(frame, params);
+        else
+            body_result = exec_frame_execute_dispatch(frame, params->body);
+
+        // Handle control flow
+        if (body_result.flow == EXEC_FLOW_BREAK)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Breaking to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            else
+            {
+                // Breaking this loop
+                result.exit_status = body_result.exit_status;
+                result.has_exit_status = body_result.has_exit_status;
+                break;
+            }
+        }
+        else if (body_result.flow == EXEC_FLOW_CONTINUE)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Continuing to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            // Continue this loop - just continue to next iteration
+            result.exit_status = body_result.exit_status;
+            result.has_exit_status = body_result.has_exit_status;
+            continue;
+        }
+        else if (body_result.flow == EXEC_FLOW_RETURN)
+        {
+            // Return propagates up
+            return body_result;
+        }
+        else if (body_result.status != EXEC_OK)
+        {
+            return body_result;
+        }
+
+        // Update exit status from body
+        result.exit_status = body_result.exit_status;
+        result.has_exit_status = body_result.has_exit_status;
     }
 
     return result;
@@ -951,12 +1125,12 @@ fail:
 /**
  * Main entry point for frame execution.
  */
-exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_params_t *params)
+exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_params_t *params)
 {
     Expects_not_null(parent);
     exec_t *exec = parent->executor;
     const exec_frame_policy_t *policy = &EXEC_FRAME_POLICIES[type];
-    exec_result_t result = {0};
+    exec_frame_execute_result_t result = {0};
 
     /* Handle forking if required */
     if (policy->process.forks)
@@ -966,7 +1140,7 @@ exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_p
         if (pid < 0)
         {
             /* Fork failed */
-            return (exec_result_t){.exit_status = 1,
+            return (exec_frame_execute_result_t){.exit_status = 1,
                                    .has_exit_status = true,
                                    .flow = EXEC_FLOW_NORMAL,
                                    .flow_depth = 0};
@@ -982,7 +1156,7 @@ exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_p
                     params ? string_list_join(params->command_args) : string_create_from_cstr("");
                 job_store_add(exec->jobs, pid, cmdline);
                 string_destroy(&cmdline);
-                return (exec_result_t){.exit_status = 0,
+                return (exec_frame_execute_result_t){.exit_status = 0,
                                        .has_exit_status = true,
                                        .flow = EXEC_FLOW_NORMAL,
                                        .flow_depth = 0};
@@ -993,7 +1167,7 @@ exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_p
                 int status;
                 waitpid(pid, &status, 0);
                 int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-                return (exec_result_t){.exit_status = exit_status,
+                return (exec_frame_execute_result_t){.exit_status = exit_status,
                                        .has_exit_status = true,
                                        .flow = EXEC_FLOW_NORMAL,
                                        .flow_depth = 0};
@@ -1005,7 +1179,7 @@ exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_p
          * in UCRT, we can't get a handle until when the command is spawned.
          * In POSIX, because of fork, you handle both background and foreground
          * here based on PID, but, in UCRT, this block is all forground execution, and the
-         * background task is handled in the spawn call in exec_simple_command.
+         * background task is handled in the spawn call in exec_frame_execute_simple_command_impl.
          * 
          * So, basically, we do nothing here. But when we create and initialize the frame,
          * below, it will have the background policy flag set, which will be used later.
@@ -1048,122 +1222,6 @@ exec_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type, exec_p
     }
 
     return result;
-}
-
-/* ============================================================================
- * Convenience Wrappers
- * ============================================================================ */
-
-exec_result_t exec_subshell(exec_frame_t *parent, const ast_node_t *body)
-{
-    exec_params_t params = {
-        .body = body,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_SUBSHELL, &params);
-}
-
-exec_result_t exec_brace_group(exec_frame_t *parent, const ast_node_t *body,
-                               const exec_redirections_t *redirections)
-{
-    exec_params_t params = {
-        .body = body,
-        .redirections = redirections,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_BRACE_GROUP, &params);
-}
-
-exec_result_t exec_function(exec_frame_t *parent, const ast_node_t *body, string_list_t *arguments,
-                            const exec_redirections_t *redirections)
-{
-    exec_params_t params = {
-        .body = body,
-        .arguments = arguments,
-        .redirections = redirections,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_FUNCTION, &params);
-}
-
-exec_result_t exec_for_loop(exec_frame_t *parent, string_t *var_name,
-                            string_list_t *words, const ast_node_t *body)
-{
-    exec_params_t params = {
-        .body = body,
-        .loop_var_name = var_name,
-        .iteration_words = words,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_LOOP, &params);
-}
-
-exec_result_t exec_while_loop(exec_frame_t *parent, const ast_node_t *condition,
-                              const ast_node_t *body, bool until_mode)
-{
-    exec_params_t params = {
-        .body = body,
-        .condition = condition,
-        .until_mode = until_mode,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_LOOP, &params);
-}
-
-exec_result_t exec_dot_script(exec_frame_t *parent, string_t *script_path,
-                              const ast_node_t *body, string_list_t *arguments)
-{
-    exec_params_t params = {
-        .body = body,
-        .script_path = script_path,
-        .arguments = arguments,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_DOT_SCRIPT, &params);
-}
-
-exec_result_t exec_trap_handler(exec_frame_t *parent, const ast_node_t *body)
-{
-    exec_params_t params = {
-        .body = body,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_TRAP, &params);
-}
-
-exec_result_t exec_background_job(exec_frame_t *parent, const ast_node_t *body,
-                                  string_list_t *command_args)
-{
-    exec_params_t params = {
-        .body = body,
-        .command_args = command_args,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_BACKGROUND_JOB, &params);
-}
-
-exec_result_t exec_pipeline_group(exec_frame_t *parent, ast_node_list_t *commands, bool negated)
-{
-    exec_params_t params = {
-        .pipeline_commands = commands,
-        .pipeline_negated = negated,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_PIPELINE, &params);
-}
-
-#ifdef POSIX_API
-exec_result_t exec_pipeline_cmd(exec_frame_t *parent, const ast_node_t *body,
-                                pid_t pipeline_pgid)
-#else
-exec_result_t exec_pipeline_cmd(exec_frame_t *parent, const ast_node_t *body,
-                                int pipeline_pgid)
-#endif
-{
-    exec_params_t params = {
-        .body = body,
-        .pipeline_pgid = pipeline_pgid,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_PIPELINE_CMD, &params);
-}
-
-exec_result_t exec_eval(exec_frame_t *parent, const ast_node_t *body)
-{
-    exec_params_t params = {
-        .body = body,
-    };
-    return exec_in_frame(parent, EXEC_FRAME_EVAL, &params);
 }
 
 /* ============================================================================
@@ -1275,4 +1333,1270 @@ int exec_frame_declare_local(exec_frame_t* frame, const string_t* name,
 
     var_store_error_t result = variable_store_add(frame->local_variables, name, value, false, false);
     return (result == VAR_STORE_ERROR_NONE) ? 0 : -1;
+}
+
+
+/* ============================================================================
+ * Frame-level execution operations
+ * ============================================================================ */
+
+
+/**
+ * Update the LINENO variable in the frame's variable store.
+ *
+ * POSIX says LINENO is set by the shell "to a decimal number representing the
+ * current sequential line number (numbered starting with 1) within a script or
+ * function before it executes each command."
+ *
+ * LINENO is a regular variable — the user can unset or reset it. If they do,
+ * it will be recreated or updated again when the next command executes.
+ *
+ * We only update when we have a valid source line (> 0) from the AST, and
+ * only when executing within a script or function context.
+ */
+static void exec_frame_update_lineno(exec_frame_t *frame, const ast_node_t *node)
+{
+    if (!frame || !node)
+        return;
+
+    /* Only update for valid source lines (parser-assigned, 1-based) */
+    if (node->first_line <= 0)
+        return;
+
+    /* Update the frame's internal line tracker */
+    frame->source_line = node->first_line;
+
+    /* Write LINENO into the variable store as a regular variable */
+    variable_store_t *vars = exec_frame_get_variables(frame);
+    if (!vars)
+        return;
+
+    if (variable_store_has_name_cstr(vars, "LINENO") &&
+        variable_store_is_read_only_cstr(vars, "LINENO"))
+        /* You can't make LINENO readonly, permanently. Muhuhuwahaha! */
+        variable_store_set_read_only_cstr(vars, "LINENO", false);
+
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%d", node->first_line);
+    variable_store_add_cstr(vars, "LINENO", buf, false, false);
+}
+
+exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame, const ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    exec_frame_execute_result_t result = {
+        .status = EXEC_FRAME_EXECUTE_STATUS_OK, .has_exit_status = false, .exit_status = 0};
+
+    /* Update LINENO before executing this command */
+    exec_frame_update_lineno(frame, node);
+
+    switch (node->type)
+    {
+    case AST_COMMAND_LIST:
+        result = exec_frame_execute_compound_list(frame, (ast_node_t *)node);
+        break;
+
+    case AST_AND_OR_LIST:
+        result = exec_frame_execute_and_or_list(frame, (ast_node_t *)node);
+        break;
+
+    case AST_PIPELINE:
+        result = exec_frame_execute_pipeline(frame, (ast_node_t *)node);
+        break;
+
+    case AST_SIMPLE_COMMAND:
+        result = exec_frame_execute_simple_command(frame, (ast_node_t *)node);
+        break;
+
+    case AST_SUBSHELL:
+        result = exec_frame_execute_subshell(frame, node->data.compound.body);
+        break;
+
+    case AST_BRACE_GROUP:
+        result = exec_frame_execute_brace_group(frame, node->data.compound.body, NULL);
+        break;
+
+    case AST_IF_CLAUSE:
+        result = exec_frame_execute_if_clause(frame, (ast_node_t *)node);
+        break;
+
+    case AST_WHILE_CLAUSE:
+    case AST_UNTIL_CLAUSE:
+        result = exec_frame_execute_while_clause(frame, (ast_node_t *)node);
+        break;
+
+    case AST_FOR_CLAUSE:
+        result = exec_frame_execute_for_clause(frame, (ast_node_t *)node);
+        break;
+
+    case AST_REDIRECTED_COMMAND:
+        result = exec_frame_execute_redirected_command(frame, (ast_node_t *)node);
+        break;
+
+    case AST_CASE_CLAUSE:
+        result = exec_frame_execute_case_clause(frame, (ast_node_t *)node);
+        break;
+
+    case AST_FUNCTION_DEF:
+        result = exec_frame_execute_function_def_clause(frame, (ast_node_t *)node);
+        break;
+
+    default:
+        exec_set_error_printf(frame->executor, "Unsupported AST node type: %d %s", node->type,
+                       ast_node_type_to_string(node->type));
+        result.status = EXEC_NOT_IMPL;
+        return result;
+    }
+
+    /* Update executor's exit status */
+    if (result.has_exit_status)
+    {
+        frame->executor->last_exit_status = result.exit_status;
+        frame->executor->last_exit_status_set = true;
+        frame->last_exit_status = result.exit_status;
+    }
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame, const ast_node_t *list)
+{
+    Expects_not_null(frame);
+    Expects_not_null(list);
+    Expects(list->type == AST_COMMAND_LIST);
+
+    exec_frame_execute_result_t result = {
+        .status = EXEC_FRAME_EXECUTE_STATUS_OK, .has_exit_status = false, .exit_status = 0};
+
+    // Access the command list data
+    ast_node_list_t *items = list->data.command_list.items;
+    cmd_separator_list_t *separators = list->data.command_list.separators;
+
+    if (!items || items->size == 0)
+    {
+        // Empty list: no commands to execute, exit status 0
+        result.has_exit_status = true;
+        result.exit_status = 0;
+        return result;
+    }
+
+    // Iterate through each command in the list
+    for (int i = 0; i < items->size; i++)
+    {
+        ast_node_t *cmd = items->nodes[i];
+        if (!cmd)
+            continue; // Skip null commands (shouldn't happen, but defensive)
+
+        /* Update LINENO before executing this command */
+        exec_update_lineno(frame, cmd);
+
+        cmd_separator_t sep = cmd_separator_list_get(separators, i);
+        if (sep == CMD_EXEC_BACKGROUND)
+        {
+            /* For POSIX, UCRT, and ISO_C, we'll just call exec_background_job,
+             * but that doesn't mean this will actually run in the background.
+             * We'll handle platform-specific limitations inside exec_background_job.
+             *
+             * In POSIX, though, exec_background_job will return quickly.
+             * For the others, it depends.
+             */
+            string_t *command_line = ast_node_to_command_line_full(cmd);
+            // Since we're not sending this to spawn, we can keep this as a single string_t
+            string_list_t *argv_list = string_list_create();
+            string_list_move_push_back(argv_list, &command_line);
+            exec_background_job(frame, cmd, argv_list);
+            continue;
+        }
+
+        // Execute the command based on its type
+        exec_frame_execute_result_t cmd_result;
+        switch (cmd->type)
+        {
+        case AST_PIPELINE:
+            cmd_result = exec_frame_execute_pipeline(frame, cmd);
+            break;
+        case AST_AND_OR_LIST:
+            cmd_result = exec_frame_execute_and_or_list(frame, cmd);
+            break;
+        case AST_COMMAND_LIST:
+            cmd_result = exec_frame_execute_compound_list(frame, cmd);
+            break;
+        case AST_SIMPLE_COMMAND:
+            cmd_result = exec_frame_execute_simple_command(frame, cmd);
+            break;
+        case AST_BRACE_GROUP:
+            cmd_result = exec_frame_execute_brace_group(frame, cmd->data.compound.body, NULL);
+            break;
+        case AST_SUBSHELL:
+            cmd_result = exec_frame_execute_subshell(frame, cmd->data.compound.body);
+            break;
+        case AST_IF_CLAUSE:
+            cmd_result = exec_frame_execute_if_clause(frame, cmd);
+            break;
+        case AST_WHILE_CLAUSE:
+        case AST_UNTIL_CLAUSE:
+            cmd_result = exec_frame_execute_while_clause(frame, cmd);
+            break;
+        case AST_FOR_CLAUSE:
+            cmd_result = exec_frame_execute_for_clause(frame, cmd);
+            break;
+        case AST_CASE_CLAUSE:
+            cmd_result = exec_frame_execute_case_clause(frame, cmd);
+            break;
+        case AST_REDIRECTED_COMMAND:
+            cmd_result = exec_frame_execute_redirected_command(frame, cmd);
+            break;
+        case AST_FUNCTION_DEF:
+            cmd_result = exec_frame_execute_function_def_clause(frame, cmd);
+            break;
+        default:
+            exec_set_error_printf(frame->executor, "Unsupported command type in compound list: %d (%s)",
+                           cmd->type, ast_node_type_to_string(cmd->type));
+            result.status = EXEC_NOT_IMPL;
+            return result;
+        }
+
+        // Propagate errors from command execution
+        if (cmd_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+        {
+            result.status = cmd_result.status;
+            if (cmd_result.has_exit_status)
+            {
+                result.has_exit_status = true;
+                result.exit_status = cmd_result.exit_status;
+            }
+            return result; // Stop on error (unless background)
+        }
+
+        // Update the frame's exit status from the command
+        if (cmd_result.has_exit_status)
+        {
+            frame->last_exit_status = cmd_result.exit_status;
+            result.has_exit_status = true;
+            result.exit_status = cmd_result.exit_status;
+        }
+
+        // Handle the separator after this command
+        // cmd_separator_t sep = ast_node_command_list_get_separator(list, i);
+        if (sep == CMD_EXEC_BACKGROUND)
+        {
+            // Run in background: Add to job store and continue without waiting
+            // Note: This assumes the command spawned processes; integrate with job control
+            // For simplicity, assume exec_pipeline/exec_and_or_list handle process creation
+            // In a full impl, extract PIDs from cmd_result and add to job_store
+            // Example: job_store_add(frame->executor->jobs, command_line, true);
+            // For now, just log or skip detailed job management
+            // TODO: Implement full background job tracking
+        }
+        else if (sep == CMD_EXEC_SEQUENTIAL)
+        {
+            // Wait for completion (already done above), then proceed to next
+        }
+        else if (sep == CMD_EXEC_END)
+        {
+            // End of list: No more commands
+            break;
+        }
+        // Invalid separators are handled by the parser, so no need to check
+    }
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, ast_node_t *list)
+{
+    Expects_not_null(frame);
+    Expects_not_null(list);
+    Expects(list->type == AST_AND_OR_LIST);
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK, .has_exit_status = false, .exit_status = 0};
+
+    ast_node_t *left = list->data.andor_list.left;
+    ast_node_t *right = list->data.andor_list.right;
+    andor_operator_t op = list->data.andor_list.op;
+
+    /* Update LINENO for left side */
+    exec_frame_update_lineno(frame, left);
+
+    // Execute left command
+    exec_frame_execute_result_t left_result;
+    switch (left->type)
+    {
+    case AST_COMMAND_LIST:
+        left_result = exec_frame_execute_compound_list(frame, left);
+        break;
+    case AST_AND_OR_LIST:
+        left_result = exec_frame_execute_and_or_list(frame, left);
+        break;
+    case AST_PIPELINE:
+        left_result = exec_frame_execute_pipeline(frame, left);
+        break;
+    case AST_SIMPLE_COMMAND:
+        left_result = exec_frame_execute_simple_command(frame, left);
+        break;
+    default:
+        exec_set_error_printf(frame->executor, "Unsupported AST node type in and_or_list: %d (%s)", left->type, ast_node_type_to_string(left->type));
+        result.status = EXEC_FRAME_EXECUTE_STATUS_NOT_IMPL;
+        return result;
+    }
+
+    if (left_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+    {
+        result = left_result;
+        return result;
+    }
+
+    // Determine if right command should be executed
+    bool execute_right = false;
+    if (op == ANDOR_OP_AND)
+    {
+        if (left_result.exit_status == 0)
+        {
+            execute_right = true;
+        }
+    }
+    else if (op == ANDOR_OP_OR)
+    {
+        if (left_result.exit_status != 0)
+        {
+            execute_right = true;
+        }
+    }
+
+    if (execute_right)
+    {
+        /* Update LINENO for right side (only if we're going to execute it) */
+        exec_frame_update_lineno(frame, right);
+
+        // Execute right command
+        exec_frame_execute_result_t right_result;
+        switch (right->type)
+        {
+        case AST_COMMAND_LIST:
+            right_result = exec_frame_execute_compound_list(frame, right);
+            break;
+        case AST_AND_OR_LIST:
+            right_result = exec_frame_execute_and_or_list(frame, right);
+            break;
+        case AST_PIPELINE:
+            right_result = exec_frame_execute_pipeline(frame, right);
+            break;
+        case AST_SIMPLE_COMMAND:
+            right_result = exec_frame_execute_simple_command(frame, right);
+            break;
+        default:
+            exec_set_error_printf(frame->executor, "Unsupported AST node type in and_or_list: %d (%s)", right->type, ast_node_type_to_string(right->type));
+            result.status = EXEC_FRAME_EXECUTE_STATUS_NOT_IMPL;
+            return result;
+        }
+
+        if (right_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+        {
+            result = right_result;
+            return result;
+        }
+
+        result = right_result;
+    }
+    else
+    {
+        result = left_result;
+    }
+
+    // Update frame's last exit status
+    frame->last_exit_status = result.exit_status;
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_pipeline(exec_frame_t *frame, ast_node_t *list)
+{
+    Expects_not_null(frame);
+    Expects_not_null(list);
+    Expects(list->type == AST_PIPELINE);
+
+    ast_node_list_t *commands = list->data.pipeline.commands;
+    bool is_negated = list->data.pipeline.is_negated;
+
+    // Execute the pipeline using the frame system
+    exec_frame_execute_result_t result = exec_frame_execute_pipeline_group(frame, commands, is_negated);
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame, ast_node_t *node)
+{
+    /* Executing a simple command is so complicated, it gets
+     * its own module, lol. Simple, my butt. */
+    exec_frame_execute_status_t status = exec_frame_execute_simple_command_impl(frame, node);
+    exec_frame_execute_result_t result;
+    if (status == EXEC_FRAME_EXECUTE_STATUS_OK)
+    {
+        result.status = EXEC_OK;
+        result.has_exit_status = true;
+        result.exit_status = frame->last_exit_status;
+    }
+    else
+    {
+        result.status = status;
+        result.has_exit_status = false;
+        result.exit_status = 0;
+    }
+
+    /* Check if a builtin set pending control flow (return, break, continue) */
+    // TODO? FIXME? Is it right to put pending control flow in the frame itself?
+    // Or is it a property to be returned from all exec_frame_execute_* functions and
+    // then handled by the caller?
+    result.flow = frame->pending_control_flow;
+    result.flow_depth = frame->pending_flow_depth;
+
+    /* Reset pending flow for next command */
+    frame->pending_control_flow = EXEC_FLOW_NORMAL;
+    frame->pending_flow_depth = 0;
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects(node->type == AST_IF_CLAUSE);
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK, .has_exit_status = false, .exit_status = 0};
+
+    // Execute the main condition
+    exec_frame_execute_result_t cond_result = exec_frame_execute_dispatch(frame, node->data.if_clause.condition);
+    if (cond_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+    {
+        result = cond_result;
+        return result;
+    }
+
+    // If condition succeeds (exit status 0), execute then_body
+    if (cond_result.has_exit_status && cond_result.exit_status == 0)
+    {
+        exec_frame_execute_result_t then_result = exec_frame_execute_dispatch(frame, node->data.if_clause.then_body);
+        if (then_result.status != EXEC_OK)
+        {
+            result = then_result;
+            return result;
+        }
+        result = then_result;
+        return result;
+    }
+
+    // Check elif clauses
+    if (node->data.if_clause.elif_list)
+    {
+        for (int i = 0; i < node->data.if_clause.elif_list->size; i++)
+        {
+            ast_node_t *elif_node = node->data.if_clause.elif_list->nodes[i];
+            if (!elif_node || elif_node->type != AST_IF_CLAUSE)
+            {
+                // Assuming elif is also AST_IF_CLAUSE with condition and then_body
+                continue;
+            }
+            exec_frame_execute_result_t elif_cond_result =
+                exec_frame_execute_dispatch(frame, elif_node->data.if_clause.condition);
+            if (elif_cond_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+            {
+                result = elif_cond_result;
+                return result;
+            }
+            if (elif_cond_result.has_exit_status && elif_cond_result.exit_status == 0)
+            {
+                exec_frame_execute_result_t elif_then_result =
+                    exec_frame_execute_dispatch(frame, elif_node->data.if_clause.then_body);
+                if (elif_then_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+                {
+                    result = elif_then_result;
+                    return result;
+                }
+                result = elif_then_result;
+                return result;
+            }
+        }
+    }
+
+    // Execute else_body if present
+    if (node->data.if_clause.else_body)
+    {
+        exec_frame_execute_result_t else_result = exec_frame_execute_dispatch(frame, node->data.if_clause.else_body);
+        if (else_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+        {
+            result = else_result;
+            return result;
+        }
+        result = else_result;
+    }
+    else
+    {
+        // No else, exit status 0
+        result.has_exit_status = true;
+        result.exit_status = 0;
+    }
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects(node->type == AST_WHILE_CLAUSE || node->type == AST_UNTIL_CLAUSE);
+
+    // Extract the loop components
+    ast_node_t *condition = node->data.loop_clause.condition;
+    ast_node_t *body = node->data.loop_clause.body;
+    bool is_until = (node->type == AST_UNTIL_CLAUSE);
+
+    // Execute the while/until loop using the frame system
+    exec_frame_execute_result_t result = exec_frame_execute_while_loop(frame, condition, body, is_until);
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects(node->type == AST_FOR_CLAUSE);
+
+    // Extract the for loop components
+    string_t *var_name = node->data.for_clause.variable;
+    token_list_t *word_tokens = node->data.for_clause.words;
+    ast_node_t *body = node->data.for_clause.body;
+
+    // Build the word list via proper POSIX expansion or positional parameters
+    string_list_t *words;
+    if (word_tokens && token_list_size(word_tokens) > 0)
+    {
+        // Perform full word expansion: tilde, parameter, command substitution,
+        // arithmetic, field splitting, and pathname expansion
+        words = expand_words(frame, word_tokens);
+        if (!words)
+        {
+            words = string_list_create(); // Treat expansion failure as empty list
+        }
+    }
+    else
+    {
+        // No words provided: iterate over positional parameters ("$@")
+        positional_params_t *params = frame->positional_params;
+        words = positional_params_get_all(params);
+    }
+
+    // Execute the for loop using the frame system
+    exec_frame_execute_result_t result = exec_frame_execute_for_loop(frame, var_name, words, body);
+
+    // Clean up
+    string_list_destroy(&words);
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects_eq(node->type, AST_FUNCTION_DEF);
+
+    ast_node_t *body = node->data.function_def.body;
+    ast_node_list_t *ast_redirections = node->data.function_def.redirections;
+    string_t *name = node->data.function_def.name;
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
+
+    // Convert AST redirections to exec_redirections_t format
+    exec_redirections_t *redirections = NULL;
+    if (ast_redirections && ast_node_list_size(ast_redirections) > 0)
+    {
+        redirections = exec_redirections_from_ast(frame, ast_redirections);
+        if (!redirections)
+        {
+            exec_set_error_printf(frame->executor, "Failed to convert redirections for function '%s'",
+                           string_cstr(name));
+            result.status = EXEC_ERROR;
+            result.exit_status = 1;
+            return result;
+        }
+    }
+
+    func_store_t *func_store = frame->functions;
+    func_store_insert_result_t ret = func_store_add_ex(func_store, name, body, redirections);
+
+    if (ret.error != FUNC_STORE_ERROR_NONE)
+    {
+        exec_set_error_printf(frame->executor, "Failed to define function '%s'", string_cstr(name));
+        // Clean up redirections on failure
+        if (redirections)
+            exec_redirections_destroy(&redirections);
+        result.status = EXEC_ERROR;
+        result.exit_status = 1;
+        return result;
+    }
+
+    return result;
+}
+
+exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects(node->type == AST_REDIRECTED_COMMAND);
+
+    ast_node_t *command = node->data.redirected_command.command;
+    ast_node_list_t *ast_redirections = node->data.redirected_command.redirections;
+
+    // Convert AST redirections to exec_redirections_t format
+    exec_redirections_t *redirections = exec_redirections_from_ast(frame, ast_redirections);
+    if (!redirections && ast_redirections && ast_node_list_size(ast_redirections) > 0)
+    {
+        // Conversion failed
+        exec_frame_execute_result_t error_result = {.status = EXEC_FRAME_EXECUTE_STATUS_ERROR,
+                                      .has_exit_status = true,
+                                      .exit_status = 1,
+                                      .flow = EXEC_FLOW_NORMAL,
+                                      .flow_depth = 0};
+        return error_result;
+    }
+
+    // Execute the command with redirections using the brace group frame
+    // (which shares state but applies/restores redirections)
+    exec_frame_execute_result_t result = exec_frame_execute_brace_group(frame, command, redirections);
+
+    // Clean up
+    if (redirections)
+        exec_redirections_destroy(&redirections);
+
+    return result;
+}
+
+#if DUPLICATE_CODE
+/**
+ * Execute a while/until loop from within an EXEC_FRAME_LOOP frame.
+ *
+ * This function performs the actual loop iteration logic for while and until
+ * constructs. It must be called from within an EXEC_FRAME_LOOP frame (created
+ * by exec_while_loop() in exec_frame.c) so that break/continue semantics work
+ * correctly.
+ *
+ * The EXEC_FRAME_LOOP frame provides:
+ * - loop_depth tracking for nested loops
+ * - EXEC_LOOP_TARGET policy for handling break/continue with proper depth
+ * - EXEC_RETURN_TRANSPARENT policy so return statements propagate up to functions
+ *
+ * This function evaluates the condition on each iteration and executes the body
+ * when appropriate (condition succeeds for while, fails for until). Control flow
+ * statements (break, continue, return) in the body are handled by checking the
+ * flow field in the result and responding accordingly.
+ *
+ * @param frame The current execution frame (must be EXEC_FRAME_LOOP)
+ * @param params Parameters including condition, body, and until_mode flag
+ * @return exec_frame_execute_result_t with final loop status and any pending control flow
+ */
+exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame, exec_params_t *params)
+{
+    Expects_not_null(frame);
+    Expects_not_null(params);
+    Expects_not_null(params->condition);
+    Expects_not_null(params->body);
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
+
+    bool is_until = params->until_mode;
+
+    while (true)
+    {
+        // Execute condition
+        exec_frame_execute_result_t cond_result = exec_frame_execute_dispatch(frame, params->condition);
+        if (cond_result.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+        {
+            return cond_result;
+        }
+
+        // Check if we should exit the loop
+        bool condition_met = (cond_result.exit_status == 0);
+        if (is_until ? condition_met : !condition_met)
+        {
+            // Exit loop
+            break;
+        }
+
+        // Execute body
+        exec_frame_execute_result_t body_result;
+        if (params->body->type == AST_COMMAND_LIST)
+            body_result = exec_frame_execute_compound_list(frame, params->body);
+        else
+            body_result = exec_frame_execute_dispatch(frame, params->body);
+
+        // Handle control flow
+        if (body_result.flow == EXEC_FLOW_BREAK)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Breaking to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            else
+            {
+                // Breaking this loop
+                result.exit_status = body_result.exit_status;
+                result.has_exit_status = body_result.has_exit_status;
+                break;
+            }
+        }
+        else if (body_result.flow == EXEC_FLOW_CONTINUE)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Continuing to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            // Continue this loop - just continue to next iteration
+            result.exit_status = body_result.exit_status;
+            result.has_exit_status = body_result.has_exit_status;
+            continue;
+        }
+        else if (body_result.flow == EXEC_FLOW_RETURN)
+        {
+            // Return propagates up
+            return body_result;
+        }
+        else if (body_result.status != EXEC_OK)
+        {
+            return body_result;
+        }
+
+        // Update exit status from body
+        result.exit_status = body_result.exit_status;
+        result.has_exit_status = body_result.has_exit_status;
+    }
+
+    return result;
+}
+#endif
+
+/**
+ * Execute a for loop from within an EXEC_FRAME_LOOP frame.
+ *
+ * This function performs the actual loop iteration logic for for constructs.
+ * It must be called from within an EXEC_FRAME_LOOP frame (created by
+ * exec_for_loop() in exec_frame.c) so that break/continue semantics work
+ * correctly.
+ *
+ * The EXEC_FRAME_LOOP frame provides:
+ * - loop_depth tracking for nested loops
+ * - EXEC_LOOP_TARGET policy for handling break/continue with proper depth
+ * - EXEC_RETURN_TRANSPARENT policy so return statements propagate up to functions
+ *
+ * This function iterates over the word list, setting the loop variable to each
+ * word in turn and executing the body. Control flow statements (break, continue,
+ * return) in the body are handled by checking the flow field in the result and
+ * responding accordingly.
+ *
+ * @param frame The current execution frame (must be EXEC_FRAME_LOOP)
+ * @param params Parameters including loop_var_name, iteration_words, and body
+ * @return exec_frame_execute_result_t with final loop status and any pending control flow
+ */
+exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *frame, exec_params_t *params)
+{
+    Expects_not_null(frame);
+    Expects_not_null(params);
+    Expects_not_null(params->loop_var_name);
+    Expects_not_null(params->iteration_words);
+    Expects_not_null(params->body);
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
+
+    // Iterate over each word
+    for (size_t i = 0; i < string_list_size(params->iteration_words); i++)
+    {
+        const string_t *word = string_list_at(params->iteration_words, i);
+
+        // Set loop variable
+        variable_store_add(frame->variables, params->loop_var_name, word, false, false);
+
+        // Execute body
+        exec_frame_execute_result_t body_result;
+        if (params->body->type == AST_COMMAND_LIST)
+            body_result = exec_frame_execute_compound_list(frame, params->body);
+        else
+            body_result = exec_frame_execute_dispatch(frame, params->body);
+
+        // Handle control flow
+        if (body_result.flow == EXEC_FLOW_BREAK)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Breaking to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            else
+            {
+                // Breaking this loop
+                result.exit_status = body_result.exit_status;
+                result.has_exit_status = body_result.has_exit_status;
+                break;
+            }
+        }
+        else if (body_result.flow == EXEC_FLOW_CONTINUE)
+        {
+            if (body_result.flow_depth > 1)
+            {
+                // Continuing to outer loop
+                body_result.flow_depth--;
+                return body_result;
+            }
+            // Continue this loop - just continue to next iteration
+            result.exit_status = body_result.exit_status;
+            result.has_exit_status = body_result.has_exit_status;
+            continue;
+        }
+        else if (body_result.flow == EXEC_FLOW_RETURN)
+        {
+            // Return propagates up
+            return body_result;
+        }
+        else if (body_result.status != EXEC_OK)
+        {
+            return body_result;
+        }
+
+        // Update exit status from body
+        result.exit_status = body_result.exit_status;
+        result.has_exit_status = body_result.has_exit_status;
+    }
+
+    return result;
+}
+
+/* ============================================================================
+ * Helper: EINTR-safe waitpid
+ * ============================================================================ */
+
+#ifdef POSIX_API
+/**
+ * waitpid wrapper that retries on EINTR.
+ * Returns the pid on success, -1 on real error (with errno set).
+ */
+static pid_t waitpid_eintr(pid_t pid, int *status, int options)
+{
+    pid_t ret;
+    do
+    {
+        ret = waitpid(pid, status, options);
+    } while (ret == -1 && errno == EINTR);
+    return ret;
+}
+#endif
+
+/* ============================================================================
+ * Pipeline Orchestration
+ * ============================================================================ */
+
+/**
+ * Execute a pipeline from within an EXEC_FRAME_PIPELINE frame.
+ *
+ * This function orchestrates the execution of multiple commands connected by
+ * pipes. It creates pipes, forks child processes for each command, sets up
+ * pipe plumbing, and waits for all children to complete.
+ *
+ * Process group handling follows the standard POSIX practice of calling
+ * setpgid() in both parent and child to avoid race conditions. The first
+ * child's PID becomes the pipeline's process group ID; subsequent children
+ * join that group. Both parent and child call setpgid() because:
+ *   - The child might run before the parent records pipeline_pgid
+ *   - The parent might run before the child calls setpgid() on itself
+ * One of the two calls will succeed; the other will get EACCES/ESRCH
+ * harmlessly.
+ *
+ * @param frame  The current execution frame (must be EXEC_FRAME_PIPELINE)
+ * @param params Parameters including pipeline_commands and pipeline_negated
+ * @return exec_frame_execute_result_t with final pipeline status
+ */
+exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t *frame, exec_params_t *params)
+{
+    Expects_not_null(frame);
+    Expects_not_null(params);
+    Expects_not_null(params->pipeline_commands);
+
+    ast_node_list_t *commands = params->pipeline_commands;
+    bool is_negated = params->pipeline_negated;
+    int ncmds = commands->size;
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
+
+    if (ncmds == 0)
+    {
+        result.exit_status = is_negated ? 1 : 0;
+        return result;
+    }
+
+    if (ncmds == 1)
+    {
+        /* Single command — no pipes needed, just execute directly */
+        ast_node_t *cmd = commands->nodes[0];
+        exec_frame_execute_result_t cmd_result = exec_frame_execute_dispatch(frame, cmd);
+        if (is_negated && cmd_result.has_exit_status)
+        {
+            cmd_result.exit_status = (cmd_result.exit_status == 0) ? 1 : 0;
+        }
+        return cmd_result;
+    }
+
+#ifdef POSIX_API
+    /*
+     * Allocate pipes and PID array on the heap to avoid VLA stack overflow
+     * with pathological input. We need (ncmds - 1) pipes, each being 2 fds.
+     */
+    int num_pipes = ncmds - 1;
+    int *pipes = xcalloc(2 * num_pipes, sizeof(int));
+    pid_t *pids = xcalloc(ncmds, sizeof(pid_t));
+
+    /* Initialize all pipe fds to -1 so cleanup knows which were opened */
+    for (int i = 0; i < 2 * num_pipes; i++)
+    {
+        pipes[i] = -1;
+    }
+
+    /* Create all pipes up front */
+    for (int i = 0; i < num_pipes; i++)
+    {
+        if (pipe(pipes + 2 * i) == -1)
+        {
+            exec_set_error(frame->executor, "pipe() failed: %s", strerror(errno));
+            result.status = EXEC_ERROR;
+            result.exit_status = 1;
+            goto cleanup;
+        }
+    }
+
+    /* Initialize all PIDs to -1 so cleanup knows which children were forked */
+    for (int i = 0; i < ncmds; i++)
+    {
+        pids[i] = -1;
+    }
+
+    pid_t pipeline_pgid = 0;
+
+    /* Fork and execute each command */
+    for (int i = 0; i < ncmds; i++)
+    {
+        ast_node_t *cmd = commands->nodes[i];
+
+        pid_t pid = fork();
+        if (pid == -1)
+        {
+            exec_set_error(frame->executor, "fork() failed in pipeline: %s", strerror(errno));
+
+            /* Kill and reap all children we already forked */
+            for (int j = 0; j < i; j++)
+            {
+                kill(pids[j], SIGTERM);
+            }
+            for (int j = 0; j < i; j++)
+            {
+                int discard;
+                waitpid_eintr(pids[j], &discard, 0);
+            }
+
+            result.status = EXEC_ERROR;
+            result.exit_status = 1;
+            goto cleanup;
+        }
+        else if (pid == 0)
+        {
+            /* ---- Child process ---- */
+
+            /*
+             * Set up process group (child side).
+             * For the first child (i == 0), pipeline_pgid is 0, so
+             * setpgid(0, 0) creates a new group with this child as leader.
+             * For subsequent children, pipeline_pgid was set by the parent
+             * before this fork, so we join the existing group.
+             *
+             * Errors are ignored: EACCES means the parent already called
+             * setpgid for us (or the child has already exec'd), and ESRCH
+             * is similarly benign in this context.
+             */
+            setpgid(0, pipeline_pgid);
+
+            /* Set up stdin from previous pipe */
+            if (i > 0)
+            {
+                dup2(pipes[2 * (i - 1)], STDIN_FILENO);
+            }
+
+            /* Set up stdout to next pipe */
+            if (i < ncmds - 1)
+            {
+                dup2(pipes[2 * i + 1], STDOUT_FILENO);
+            }
+
+            /* Close all pipe FDs in the child */
+            for (int j = 0; j < 2 * num_pipes; j++)
+            {
+                close(pipes[j]);
+            }
+
+            /* Execute the command */
+            exec_result_t cmd_result = exec_execute_dispatch(frame, cmd);
+
+            /* Exit the child with the command's exit status */
+            _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
+        }
+
+        /* ---- Parent process ---- */
+        pids[i] = pid;
+
+        if (i == 0)
+        {
+            /* First child is the group leader */
+            pipeline_pgid = pid;
+        }
+
+        /*
+         * Set up process group (parent side).
+         * We call setpgid() here as well to eliminate the race condition
+         * where the parent proceeds to fork the next child (which needs
+         * pipeline_pgid) before the first child has called setpgid() on
+         * itself. One of the parent/child setpgid calls will succeed;
+         * the other will get EACCES (child already exec'd) which is fine.
+         */
+        setpgid(pid, pipeline_pgid);
+
+        /*
+         * Eagerly close pipe ends that the parent no longer needs.
+         * After forking child i:
+         *   - The write end of pipe i (pipes[2*i+1]) has been dup2'd into
+         *     child i's stdout. Parent doesn't need it.
+         *   - The read end of pipe i-1 (pipes[2*(i-1)]) has been dup2'd
+         *     into child i's stdin. Parent doesn't need it.
+         * Closing eagerly ensures that:
+         *   - Children see EOF on their stdin when the upstream writer exits
+         *   - We don't accumulate open fds across the fork loop
+         */
+        if (i < ncmds - 1)
+        {
+            close(pipes[2 * i + 1]);
+            pipes[2 * i + 1] = -1;
+        }
+        if (i > 0)
+        {
+            close(pipes[2 * (i - 1)]);
+            pipes[2 * (i - 1)] = -1;
+        }
+    }
+
+    /* Close any remaining pipe fds the parent still holds */
+    for (int i = 0; i < 2 * num_pipes; i++)
+    {
+        if (pipes[i] >= 0)
+        {
+            close(pipes[i]);
+            pipes[i] = -1;
+        }
+    }
+
+    /* Wait for all children (collect every status for future pipefail support) */
+    int last_status = 0;
+    for (int i = 0; i < ncmds; i++)
+    {
+        int status;
+        pid_t waited = waitpid_eintr(pids[i], &status, 0);
+        if (waited < 0)
+        {
+            /*
+             * ECHILD means the child was already reaped (e.g. by a signal
+             * handler). Treat as exit status 127. For any other error,
+             * report but continue waiting for remaining children.
+             */
+            if (errno != ECHILD)
+            {
+                exec_set_error(frame->executor, "waitpid() failed for pid %d: %s", (int)pids[i],
+                               strerror(errno));
+            }
+            if (i == ncmds - 1)
+            {
+                last_status = 127;
+            }
+            continue;
+        }
+
+        int child_status;
+        if (WIFEXITED(status))
+        {
+            child_status = WEXITSTATUS(status);
+        }
+        else if (WIFSIGNALED(status))
+        {
+            child_status = 128 + WTERMSIG(status);
+        }
+        else
+        {
+            child_status = 127;
+        }
+
+        /*
+         * TODO: Store child_status in frame->executor->pipe_statuses[i]
+         * for pipefail / $PIPESTATUS support.
+         */
+
+        if (i == ncmds - 1)
+        {
+            last_status = child_status;
+        }
+    }
+
+    result.exit_status = is_negated ? (last_status == 0 ? 1 : 0) : last_status;
+    frame->last_exit_status = result.exit_status;
+
+cleanup:
+    /* Free heap-allocated arrays */
+    for (int i = 0; i < 2 * num_pipes; i++)
+    {
+        if (pipes[i] >= 0)
+        {
+            close(pipes[i]);
+        }
+    }
+    xfree(pipes);
+    xfree(pids);
+
+    return result;
+
+#else
+    /* For non-POSIX systems, multi-command pipelines are not supported */
+    exec_set_error_cstr(frame->executor, "Pipelines not supported on this platform");
+    result.status = EXEC_NOT_IMPL;
+    result.exit_status = 1;
+    return result;
+#endif
+}
+
+exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, ast_node_t *node)
+{
+    Expects_not_null(frame);
+    Expects_not_null(node);
+    Expects(node->type == AST_CASE_CLAUSE);
+
+    exec_frame_execute_result_t result = {.status = EXEC_FRAME_EXECUTE_STATUS_OK,
+                            .has_exit_status = true,
+                            .exit_status = 0,
+                            .flow = EXEC_FLOW_NORMAL,
+                            .flow_depth = 0};
+
+    /* Get the word to match against */
+    token_t *word_token = node->data.case_clause.word;
+    if (!word_token)
+    {
+        return result;
+    }
+
+    /*
+     * POSIX XCU 2.9.4.3: The case word undergoes tilde expansion, parameter
+     * expansion, command substitution, and arithmetic expansion — but NOT
+     * field splitting or pathname expansion.
+     */
+    string_t *word = expand_word_nosplit(frame, word_token);
+    if (!word)
+    {
+        exec_set_error_cstr(frame->executor, "Failed to expand case word");
+        result.status = EXEC_ERROR;
+        result.exit_status = 1;
+        return result;
+    }
+
+    /* Iterate through case items */
+    ast_node_list_t *case_items = node->data.case_clause.case_items;
+    if (!case_items)
+    {
+        string_destroy(&word);
+        return result;
+    }
+
+    bool matched = false;
+    for (int i = 0; i < case_items->size && !matched; i++)
+    {
+        ast_node_t *item = case_items->nodes[i];
+        if (!item || item->type != AST_CASE_ITEM)
+        {
+            continue;
+        }
+
+        token_list_t *patterns = item->data.case_item.patterns;
+        if (!patterns)
+        {
+            continue;
+        }
+
+        for (int j = 0; j < token_list_size(patterns); j++)
+        {
+            const token_t *pattern_token = token_list_get(patterns, j);
+
+            /*
+             * POSIX XCU 2.9.4.3: Each pattern undergoes the same expansions
+             * as the case word (tilde, parameter, command subst, arithmetic)
+             * but NOT field splitting or pathname expansion. The pattern
+             * metacharacters (*, ?, [...]) retain their special meaning for
+             * fnmatch-style matching against the case word — they are NOT
+             * used for filesystem globbing.
+             */
+            string_t *pattern = expand_word_nosplit(frame, pattern_token);
+            if (!pattern)
+            {
+                continue;
+            }
+
+            /* Match pattern against word */
+            bool pattern_matches = false;
+#ifdef POSIX_API
+            pattern_matches = (fnmatch(string_cstr(pattern), string_cstr(word), 0) == 0);
+#else
+            pattern_matches = glob_util_match(string_cstr(pattern), string_cstr(word), 0);
+#endif
+
+            string_destroy(&pattern);
+
+            if (pattern_matches)
+            {
+                matched = true;
+
+                /* Execute the body of this case item */
+                ast_node_t *body = item->data.case_item.body;
+                if (body)
+                {
+                    result = exec_frame_execute_dispatch(frame, body);
+                }
+
+                break;
+            }
+        }
+    }
+
+    string_destroy(&word);
+
+    /* If no match found, exit status remains 0 */
+    return result;
 }

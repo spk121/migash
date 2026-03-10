@@ -1,6 +1,19 @@
-#pragma once
+#ifndef EXEC_COMMAND_H
+#define EXEC_COMMAND_H
 
-#include "exec_frame.h"
+/**
+ * exec_command.h - Simple command execution for mgsh
+ *
+ * This file declares the interface for executing simple commands within an
+ * execution frame. It handles assignment-only commands, variable expansion,
+ * redirection setup, command lookup, and external command execution.
+ * 
+ * Simple commands are so complicated, they get their own module, lol.
+ */
+
+#include "ast.h"
+#include "exec_types_public.h"
+#include "exec_types_internal.h"
 
 /* Forward declarations */
 struct ast_node_t;
@@ -19,4 +32,7 @@ struct ast_node_t;
  * - Command lookup (special builtins, functions, regular builtins, external commands)
  * - External command execution (fork/exec, spawn, or system)
  */
-exec_status_t exec_execute_simple_command(exec_frame_t *frame, const struct ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t *frame, const struct ast_node_t *node);
+
+#endif /* EXEC_COMMAND_H */
+

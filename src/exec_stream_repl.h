@@ -1,7 +1,7 @@
 #ifndef EXEC_STREAM_REPL_H
 #define EXEC_STREAM_REPL_H
 
-#include "exec_internal.h"
+#include "exec_types_internal.h"
 
 /* Reads a single physical line from @p fp, hands it to exec_string_core(),
  * and maps the result to a frame_exec_status_t.
