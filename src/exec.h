@@ -402,7 +402,7 @@ exec_status_t exec_setup_interactive(exec_t *executor);
  *
  * @return EXEC_OK on success, EXEC_ERROR on failure.
  */
-exec_status_t exec_setup_non_interactive(exec_t *executor);
+exec_status_t exec_setup_noninteractive(exec_t *executor);
 
 /*
  * NOTE: If execution begins without calling one of the setup functions above,

@@ -62,9 +62,11 @@
 #elif defined(_WIN32)
 #define _X86_
 #endif
+#include <handleapi.h>
 #include <io.h>
 #include <process.h>
 #include <processthreadsapi.h> // GetProcessId, OpenProcess, GetExitCodeProcess, etc.
+#include <synchapi.h>          // WaitForSingleObject
 #endif
 
 /* ============================================================================
@@ -2484,20 +2486,20 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
             exec_frame_t *trap_frame =
                 exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
-            exec_frame_execute_result_t trap_result =
-                exec_frame_execute_command_string(trap_frame, trap_action->action);
+            exec_status_t trap_result =
+                frame_execute_string(trap_frame, trap_action->action);
 
             exec_frame_pop(&executor->current_frame);
 
             executor->last_exit_status = saved_exit_status;
 
-            if (trap_result.status == EXEC_EXIT)
+            if (trap_result == EXEC_EXIT)
             {
                 final_result = EXEC_EXIT;
                 goto done;
             }
 
-            if (trap_result.status == EXEC_ERROR && interactive)
+            if (trap_result == EXEC_ERROR && interactive)
             {
                 const char *err = exec_get_error_cstr(executor);
                 if (err)
@@ -2670,7 +2672,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     /* ------------------------------------------------------------------
      * Ensure the frame stack is initialized.
      * For -c invocations the caller should have called
-     * exec_setup_non_interactive() beforehand, but handle the lazy case.
+     * exec_setup_noninteractive() beforehand, but handle the lazy case.
      * ------------------------------------------------------------------ */
     if (!executor->top_frame_initialized)
     {
@@ -3361,7 +3363,7 @@ void exec_clear_error(exec_t *executor)
 int exec_get_pipe_status_count(const exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->pipe_status_count;
+    return (int)(executor->pipe_status_count);
 }
 
 const int *exec_get_pipe_statuses(const exec_t *executor)
@@ -3707,10 +3709,10 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
             // Using the shortcut that we know there can only be one process
             // in a UCRT job.
             handle = job->processes->handle;
-            if (handle && TerminateProcess(handle, 1))
+            if (handle && TerminateProcess((HANDLE)handle, 1))
             {
-                CloseHandle(handle);
-                job->processes->handle = NULL;
+                CloseHandle((HANDLE)handle);
+                job->processes->handle = 0;
             }
             else
             {
@@ -3732,8 +3734,8 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
 
 #else
     exec_set_error_cstr(executor, "kill: job control not supported on this platform");
-    return false;
 #endif
+    return false;
 }
 
 void exec_print_jobs(const exec_t *executor, FILE *output)
@@ -3791,6 +3793,13 @@ int exec_parse_job_id_cstr(const exec_t *executor, const char *spec)
         }
         return (int)id;
     }
+}
+
+int exec_parse_job_id(const exec_t* executor, const string_t* spec)
+{
+    Expects_not_null(executor);
+    Expects_not_null(spec);
+    return exec_parse_job_id_cstr(executor, string_cstr(spec));
 }
 
 /**

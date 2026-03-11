@@ -59,6 +59,8 @@ shell_t *shell_create(const shell_cfg_t *cfg)
     }
 
     sh->executor = exec_create();
+    if (cfg->command_name)
+        exec_set_shell_name_cstr(sh->executor, cfg->command_name);
     if (cfg->arguments)
         exec_set_args_cstr(sh->executor, cfg->argument_count, cfg->arguments);
     if (cfg->envp)
@@ -193,7 +195,7 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
         return SH_RUNTIME_ERROR;
     }
 
-    exec_status_t setup_status = exec_setup_non_interactive(sh->executor);
+    exec_status_t setup_status = exec_setup_noninteractive(sh->executor);
     if (setup_status != EXEC_OK)
     {
         fprintf(stderr, "Failed to parse RC file: %s\n", exec_get_error_cstr(sh->executor));

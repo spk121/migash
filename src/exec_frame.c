@@ -1053,6 +1053,47 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
      return exec_in_frame(parent, EXEC_FRAME_BACKGROUND_JOB, &params);
  }
 
+ exec_frame_execute_result_t exec_frame_execute_subshell(exec_frame_t *parent, ast_node_t *body)
+ {
+     exec_params_t params = {
+         .body = body,
+     };
+     return exec_in_frame(parent, EXEC_FRAME_SUBSHELL, &params);
+ }
+
+exec_frame_execute_result_t exec_frame_execute_brace_group(exec_frame_t *parent, ast_node_t *node,
+                                                            exec_redirections_t *redirs)
+{
+    exec_params_t params = {
+        .body = node,
+        .redirections = redirs,
+    };
+    return exec_in_frame(parent, EXEC_FRAME_BRACE_GROUP, &params);
+}
+
+exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *parent,
+                                                              ast_node_list_t *pipeline_commands,
+                                                              bool is_negated)
+{
+     exec_params_t params = {
+        .pipeline_commands = pipeline_commands,
+         .pipeline_negated = is_negated,
+     };
+     return exec_in_frame(parent, EXEC_FRAME_PIPELINE, &params);
+}
+
+exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name,
+                                                        string_list_t *words, ast_node_t *body)
+{
+    exec_params_t params = {
+        .iteration_words = words,
+        .loop_var_name = var_name,
+        .body = body,
+    };
+    return exec_in_frame(frame, EXEC_FRAME_LOOP, &params);
+}
+
+
 #ifdef UCRT_API
 
 // Returns number of arguments parsed, or -1 on error
@@ -1877,8 +1918,12 @@ exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame,
     bool is_until = (node->type == AST_UNTIL_CLAUSE);
 
     // Execute the while/until loop using the frame system
-    exec_frame_execute_result_t result =
-        exec_frame_execute_while_loop(frame, condition, body, is_until);
+    exec_params_t params = {
+        .condition = condition,
+        .body = body,
+        .until_mode = is_until,
+    };
+    exec_frame_execute_result_t result = exec_frame_execute_condition_loop(frame, &params);
 
     return result;
 }
