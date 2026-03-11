@@ -595,8 +595,7 @@ CTEST(test_parser_braced_io_invalid_redirection)
 
 CTEST(test_exec_create_destroy)
 {
-    exec_cfg_t cfg = { 0 };
-    exec_t *executor = exec_create(&cfg);
+    exec_t *executor = exec_create();
     CTEST_ASSERT_NOT_NULL(ctest, executor, "executor created");
     CTEST_ASSERT_EQ(ctest, exec_get_exit_status(executor), 0, "initial exit status is 0");
     exec_destroy(&executor);

@@ -1,13 +1,15 @@
-// ============================================================================
+﻿// ============================================================================
 // trap_store.c
 // ============================================================================
 
+#include <signal.h>
+#include <string.h>
+
 #include "trap_store.h"
+
+#include "logging.h"
 #include "sig_act.h"
 #include "xalloc.h"
-#include <string.h>
-#include "logging.h"
-#include <errno.h>
 
 // Platform-specific signal support gates
 #ifdef TRAP_USE_POSIX_SIGNALS

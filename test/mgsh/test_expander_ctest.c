@@ -195,7 +195,7 @@ CTEST(test_expander_ifs)
     // But to test setting, set IFS in vars
     variable_store_add_cstr(vars, "IFS", ":", false, false);
 
-    // For expansion, IFS is checked in expand_word
+    // For expansion, IFS is checked in exec_frame_expander_expand_word
     // Create a word that needs splitting
     token_t *word = token_create_word();
     token_add_literal_part(word, string_create_from_cstr("a:b:c"));
