@@ -74,7 +74,7 @@ typedef enum expand_flags_t
  * @param tok    Token to expand (must be TOKEN_WORD)
  * @return       List of expanded strings, or NULL on error
  */
-string_list_t *expand_word(exec_frame_t *frame, const token_t *tok);
+string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok);
 
 /**
  * Expand multiple word tokens.
@@ -240,43 +240,5 @@ string_t *expand_special_param(const exec_frame_t *frame, const string_t *name);
  * @return      true if it's a special parameter
  */
 bool is_special_param(const string_t *name);
-
-/* ============================================================================
- * Legacy/Compatibility Functions
- * ============================================================================
- * These functions take exec_t* for backward compatibility with code that
- * hasn't been updated to use frames. They delegate to the frame-based
- * functions using the executor's current frame.
- */
-
-/**
- * @deprecated Use expand_word() with frame instead.
- */
-string_list_t *exec_expand_word(exec_t *executor, const token_t *tok);
-
-/**
- * @deprecated Use expand_words() with frame instead.
- */
-string_list_t *exec_expand_words(exec_t *executor, const token_list_t *tokens);
-
-/**
- * @deprecated Use expand_redirection_target() with frame instead.
- */
-string_t *exec_expand_redirection_target(exec_t *executor, const token_t *tok);
-
-/**
- * @deprecated Use expand_assignment_value() with frame instead.
- */
-string_t *exec_expand_assignment_value(exec_t *executor, const token_t *tok);
-
-/**
- * @deprecated Use expand_heredoc() with frame instead.
- */
-string_t *exec_expand_heredoc(exec_t *executor, const string_t *body, bool is_quoted);
-
-/**
- * @deprecated Use expand_tilde() with frame instead.
- */
-string_t *exec_expand_tilde(exec_t *executor, const string_t *text);
 
 #endif /* EXEC_EXPANDER_H */

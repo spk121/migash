@@ -1,16 +1,14 @@
 #include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-#include "alias_store.h"
+
 #include "arithmetic.h"
-#include "frame.h"
+
+#include "alias_store.h"
+#include "exec_frame_expander.h"
 #include "lexer.h"
 #include "logging.h"
-#include "parser.h"
 #include "string_t.h"
 #include "string_list.h"
 #include "tokenizer.h"
-#include "variable_store.h"
 #include "xalloc.h"
 
 // Ignore warning 4061: enumerator in switch of enum is not explicitly handled by a case label
@@ -173,7 +171,7 @@ static math_token_t get_token(math_parser_t *parser) {
         return token;
     }
 
-    if (isalpha(c) || c == '_')
+    if (is_alpha_or_underscore(c))
     {
         int endpos = string_find_first_not_of_predicate_at(parser->input, is_alnum_or_underscore,
                                                            parser->pos);
@@ -784,7 +782,7 @@ static string_t *arithmetic_expand_expression(exec_frame_t *frame, const string_
 
         if (tok_type == TOKEN_WORD) {
             // Expand the word using the frame-based API
-            string_list_t *expanded_words = frame_expand_word_token(frame, tok);
+            string_list_t *expanded_words = exec_frame_expander_expand_word(frame, tok);
 
             if (!expanded_words) {
                 continue;

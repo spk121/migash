@@ -848,8 +848,8 @@ static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_
     /* Apply redirections */
     if (params->redirections)
     {
-        int redir_result = exec_frame_apply_redirections(frame, params->redirections);
-        if (redir_result != 0)
+        exec_status_t redir_result = exec_frame_apply_redirections(frame, params->redirections);
+        if (redir_result != EXEC_OK)
         {
             result.exit_status = 1;
             return result;

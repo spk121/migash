@@ -2,7 +2,7 @@
 #define EXEC_REDIRECT_H
 
 #include "ast.h"
-#include "exec_expander.h"
+#include "exec_frame_expander.h"
 #include "exec_types_internal.h"
 
 /**
@@ -46,7 +46,7 @@ void exec_restore_redirections_iso_c(exec_frame_t *frame);
  * Platform-agnostic wrappers that dispatch to the correct platform variant.
  * exec_frame_apply_redirections() returns 0 on success, -1 on error.
  */
-int exec_frame_apply_redirections(exec_frame_t *frame, const exec_redirections_t *redirections);
+exec_status_t exec_frame_apply_redirections(exec_frame_t *frame, const exec_redirections_t *redirections);
 void exec_restore_redirections(exec_frame_t *frame, const exec_redirections_t *redirections);
 
 /**

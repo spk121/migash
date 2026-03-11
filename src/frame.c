@@ -26,7 +26,7 @@
 #include "alias_store.h"
 #include "ast.h"
 #include "exec.h"
-#include "exec_expander.h"
+#include "exec_frame_expander.h"
 #include "exec_frame.h"
 #include "exec_types_internal.h"
 #include "exec_types_public.h"
@@ -1802,6 +1802,8 @@ frame_exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *co
     return frame_execute_string_cstr(frame, string_cstr(command));
 }
 
+exec_result_t exec_command_string(exec_frame_t *frame, const char *command);
+
 frame_exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
@@ -1827,6 +1829,8 @@ frame_exec_status_t frame_execute_string_as_eval(exec_frame_t *frame, const stri
     return frame_execute_eval_string_cstr(frame, string_cstr(command));
 }
 
+exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_node_t **out_ast);
+
 frame_exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
@@ -1850,7 +1854,7 @@ frame_exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const ch
         return FRAME_EXEC_OK;
 
     /* Execute via exec_eval which uses EXEC_FRAME_EVAL */
-    exec_result_t result = exec_eval(frame, ast);
+    exec_frame_result_t result = exec_eval(frame, ast);
     ast_node_destroy(&ast);
 
     /* Update frame's exit status */

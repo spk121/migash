@@ -59,9 +59,8 @@ typedef struct fd_table_t
 } fd_table_t;
 
 // Stub declarations for linker errors
-#include "string_t.h"
-string_t *fd_table_generate_saved_fd_name(int backup, int fd, fd_flags_t flags);
-fd_table_t *fd_table_get_global(void);
+// string_t *fd_table_generate_saved_fd_name(int backup, int fd, fd_flags_t flags);
+// fd_table_t *fd_table_get_global(void);
 
 /*
  * ============================================================================

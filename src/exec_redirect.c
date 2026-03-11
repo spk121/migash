@@ -26,7 +26,7 @@
 #include "exec_redirect.h"
 
 #include "ast.h"
-#include "exec_expander.h"
+#include "exec_frame_expander.h"
 #include "exec_frame.h"
 #include "exec_types_internal.h"
 #include "lib.h"
@@ -1729,7 +1729,7 @@ exec_redirections_t *exec_redirections_clone(const exec_redirections_t *redirs)
  * @param redirections The runtime redirection structure
  * @return 0 on success, -1 on error
  */
-int exec_frame_apply_redirections(exec_frame_t *frame, const exec_redirections_t *redirections)
+exec_status_t exec_frame_apply_redirections(exec_frame_t *frame, const exec_redirections_t *redirections)
 {
 #ifdef POSIX_API
     exec_status_t st = exec_apply_redirections_posix(frame, redirections);
@@ -1738,7 +1738,7 @@ int exec_frame_apply_redirections(exec_frame_t *frame, const exec_redirections_t
 #else
     exec_status_t st = exec_apply_redirections_iso_c(frame, redirections);
 #endif
-    return st == EXEC_OK ? 0 : -1;
+    return st;
 }
 
 /* ============================================================================

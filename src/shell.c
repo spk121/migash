@@ -62,15 +62,15 @@ shell_t *shell_create(const shell_cfg_t *cfg)
     if (cfg->arguments)
         exec_set_args(sh->executor, cfg->arguments);
     if (cfg->envp)
-        exec_set_env(sh->executor, cfg->envp);
+        exec_set_envp_cstr(sh->executor, cfg->envp);
     if (cfg->flags.allexport)
         exec_set_flag_allexport(sh->executor, true);
     if (cfg->flags.errexit)
         exec_set_flag_errexit(sh->executor, true);
     if (cfg->flags.ignoreeof)
         exec_set_flag_ignoreeof(sh->executor, true);
-    if (cfg->flags.monitor)
-        exec_set_flag_monitor(sh->executor, true);
+    //if (cfg->flags.monitor)
+    //    exec_set_flag_monitor(sh->executor, true);
     if (cfg->flags.noclobber)
         exec_set_flag_noclobber(sh->executor, true);
     if (cfg->flags.noexec)
@@ -303,66 +303,20 @@ static bool read_line(char *static_buf, size_t static_size, char **out_buf, size
 static sh_status_t shell_execute_interactive(shell_t *sh)
 {
     Expects_not_null(sh);
-    extern char *frame_render_ps1(const exec_frame_t *frame);
 
-    char *ps1_prompt = exec_get_rendered_ps1_cstr(sh->executor);
-    fprintf(stdout, "%s", ps1_prompt);
-    fflush(stdout);
+    exec_status_t status = exec_execute_stream_repl(sh->executor, stdin, true);
 
-    exec_reap_background_jobs(sh->executor, true);
-
-    /* Static buffer handles the common case (lines < 4 KB) without any
-     * heap allocation.  read_line() falls back to malloc for longer input. */
-    char line_buf[4096];
-    char *line = NULL;
-    size_t line_len = 0;
-
-    while (read_line(line_buf, sizeof(line_buf), &line, &line_len))
+    switch (status)
     {
-        /* Feed the line to the executor via a memory-backed FILE*. */
-        FILE *mem = open_mem_stream(line, line_len);
-        if (!mem)
-        {
-            fprintf(stderr, "Failed to create memory stream for command\n");
-        }
-        else
-        {
-            exec_execute_stream(sh->executor, mem);
-            fclose(mem);
-        }
-
-        /* Free the line only if it was dynamically allocated (not the
-         * static stack buffer). */
-        if (line != line_buf)
-            xfree(line);
-
-        /* Report errors */
-        const char *error = exec_get_error_cstr(sh->executor);
-        if (error && error[0])
-        {
-            fprintf(stderr, "%s\n", error);
-            exec_clear_error(sh->executor);
-        }
-        else if (sh->executor && exec_get_last_exit_status(sh->executor) == 127)
-        {
-            fprintf(stderr, "command not found\n");
-            exec_clear_error(sh->executor);
-        }
-
-        /* Reap background jobs */
-        exec_reap_background_jobs(sh->executor, true);
-
-        /* Print next prompt */
-        xfree(ps1_prompt);
-        ps1_prompt = exec_get_rendered_ps1_cstr(sh->executor);
-        if (!ps1_prompt)
-            ps1_prompt = xstrdup("$ ");
-        fprintf(stdout, "%s", ps1_prompt);
-        fflush(stdout);
+    case EXEC_OK:
+        return SH_OK;
+    case EXEC_ERROR:
+        return SH_RUNTIME_ERROR;
+    case EXEC_NOT_IMPL:
+    case EXEC_OK_INTERNAL_FUNCTION_STORED:
+    default:
+        return SH_INTERNAL_ERROR;
     }
-
-    xfree(ps1_prompt);
-    return SH_OK;
 }
 
 sh_status_t shell_execute_stdin(shell_t *sh)

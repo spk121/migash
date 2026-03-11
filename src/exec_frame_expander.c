@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #include "arithmetic.h"
-#include "exec_expander.h"
+#include "exec_frame_expander.h"
 #include "exec_frame.h"
 #include "exec_types_internal.h"
 #include "glob_util.h"
@@ -1031,7 +1031,7 @@ static string_t *remove_quotes(const string_t *text)
  * Expands a single WORD token into a list of strings, applying all relevant expansions.
  * This may have side effects from parameter expansions with modifiers and command substitutions.
  */
-string_list_t *expand_word(exec_frame_t *frame, const token_t *tok)
+string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok)
 {
     if (!tok || tok->type != TOKEN_WORD)
     {
@@ -1125,7 +1125,7 @@ string_list_t *expand_words(exec_frame_t *frame, const token_list_t *tokens)
     for (int i = 0; i < token_list_size(tokens); i++)
     {
         const token_t *tok = token_list_get(tokens, i);
-        string_list_t *expanded = expand_word(frame, tok);
+        string_list_t *expanded = exec_expander_expand_word(frame, tok);
 
         if (expanded)
         {
@@ -1330,7 +1330,7 @@ string_list_t *exec_expand_word(exec_t *executor, const token_t *tok)
 {
     if (!executor)
         return NULL;
-    return expand_word(executor->current_frame, tok);
+    return exec_expander_expand_word(executor->current_frame, tok);
 }
 
 string_list_t *exec_expand_words(exec_t *executor, const token_list_t *tokens)

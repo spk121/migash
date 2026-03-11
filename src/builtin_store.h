@@ -20,19 +20,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "exec_types_internal.h"
+#include "exec_types_public.h"
+#include "string_list.h"
+
  /* ── Forward declarations ────────────────────────────────────────────────── */
 
- /* The function pointer type and category enum are defined in exec.h.
-    We forward-declare the types here to avoid a circular include so that
-    the store can be compiled independently. */
-typedef struct exec_builtin_context_t exec_builtin_context_t;
-struct string_list_t;
 
 /**
  * Builtin function pointer (matches exec_builtin_fn_t in exec.h).
  */
-typedef int (*builtin_fn_t)(exec_builtin_context_t* ctx,
-    struct string_list_t* args);
+typedef int (*builtin_fn_t)(exec_frame_t *frame, struct string_list_t* args);
 
 /**
  * Builtin category (mirrors exec_builtin_category_t in exec.h).

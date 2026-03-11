@@ -466,6 +466,13 @@ exec_status_t exec_setup_non_interactive(exec_t *executor);
 exec_status_t exec_execute_stream(exec_t *executor, FILE *fp);
 
 /**
+ * Used primarily for the built-in `source` / `.` command to execute a file in the current context.
+ * This is a simplified version of exec_execute_stream() that does not support interactive features.
+ * State does not persist across multiple calls to this function, so it is not suitable for interactive use.
+ */
+exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp);
+
+/**
  * Execute commands from a stream, using the given filename for error messages
  * instead of "stdin".
  *

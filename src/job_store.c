@@ -666,6 +666,50 @@ int job_get_process_pid(const job_t *job, size_t index)
     return -1;
 }
 
+#ifdef UCRT_API
+intptr_t job_get_process_handle(const job_t *job, size_t index)
+{
+    if (!job)
+        return -1;
+    size_t i = 0;
+    for (const process_t *proc = job->processes; proc; proc = proc->next)
+    {
+        if (i == index)
+            return (intptr_t)proc->handle;
+        i++;
+    }
+    return -1;
+}
+#endif
+
+job_state_t job_get_process_state(const job_t* job, size_t index)
+{
+    if (!job)
+        return JOB_DONE; // Safe default for invalid job
+    size_t i = 0;
+    for (const process_t *proc = job->processes; proc; proc = proc->next)
+    {
+        if (i == index)
+            return proc->state;
+        i++;
+    }
+    return JOB_DONE; // Safe default if index is out of bounds
+}
+
+int job_get_process_exit_status(const job_t* job, size_t index)
+{
+    if (!job)
+        return -1; // Safe default for invalid job
+    size_t i = 0;
+    for (const process_t *proc = job->processes; proc; proc = proc->next)
+    {
+        if (i == index)
+            return proc->exit_status;
+        i++;
+    }
+    return -1; // Safe default if index is out of bounds
+}
+
 int job_store_get_job_ids(const job_store_t *store, int *job_ids, size_t max_jobs)
 {
     if (!store || !job_ids || max_jobs == 0)

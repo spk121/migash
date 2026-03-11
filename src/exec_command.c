@@ -14,7 +14,7 @@
 // #include "builtins.h"
 #include "builtin_store.h"
 #include "exec.h"
-#include "exec_expander.h"
+#include "exec_frame_expander.h"
 #include "exec_frame_policy.h"
 #include "exec_types_internal.h"
 #include "exec_redirect.h"
@@ -349,18 +349,6 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *fram
             builtin_fn_t builtin_fn = builtin_get_function_cstr(cmd_name);
             if (builtin_fn != NULL)
             {
-                /*
-                    exec_t *executor;
-                exec_frame_t *frame;
-                FILE *stdin_fp;
-                FILE *stdout_fp;
-                FILE *stderr_fp;
-            }
-            exec_builtin_context_t;
-                
-                
-                
-                */
                 exec_builtin_context_t ctx = {
                     .executor = executor,
                     .frame = frame,
@@ -371,14 +359,14 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *fram
 #endif
                 };
 
-                exec_frame_execute_result_t redir_st =
+                exec_status_t redir_st =
                     exec_frame_apply_redirections(frame, runtime_redirs);
-                if (redir_st.status != EXEC_FRAME_EXECUTE_STATUS_OK)
+                if (redir_st != EXEC_OK)
                 {
-                    status = redir_st.status;
+                    status = redir_st;
                     goto done_execution;
                 }
-
+                
                 cmd_exit_status = (*builtin_fn)(frame, expanded_words);
 
                 exec_restore_redirections(frame, runtime_redirs);
@@ -543,9 +531,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *fram
         for (int i = 0; argv[i]; i++)
             xfree(argv[i]);
         xfree(argv);
-        if (cmd_exit_status == 127 && !exec_get_error(executor))
+        if (cmd_exit_status == 127 && !exec_get_error_cstr(executor))
         {
-            exec_set_error(executor, "%s: command not found", cmd_name);
+            exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
 #elifdef UCRT_API
         int argc = string_list_size(expanded_words);

@@ -212,6 +212,23 @@ char *const *exec_get_args_cstr(const exec_t *executor, int *argc_out)
     return executor->argv;
 }
 
+bool exec_set_args(exec_t *executor, const string_list_t *args)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    if (args && string_list_size(args) > 0)
+    {
+        executor->argv = string_list_to_cstr_array(args, &executor->argc);
+    }
+    else
+    {
+        executor->argc = 0;
+        executor->argv = NULL;
+    }
+    return true;
+}
+
 bool exec_set_args_cstr(exec_t *executor, int argc, char *const *argv)
 {
     Expects_not_null(executor);
@@ -951,7 +968,9 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     if (!e->signals_installed)
     {
         sig_act_store_t *original_signals = sig_act_store_create();
-        sig_act_store_install_default_signal_handlers(original_signals);
+        // FIXME: what should be the behavior when a POSIX shell executor is created
+        // with default signal handling? What does it mean to have "default signal handling"?
+        // sig_act_store_install_default_signal_handlers(original_signals);
         e->original_signals = original_signals;
         e->signals_installed = true;
     }
@@ -1717,6 +1736,15 @@ char *frame_render_ps1(const exec_frame_t *frame)
     }
 
     return string_release(&out);
+}
+
+char *exec_get_rendered_ps1_cstr(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    if (executor->current_frame)
+        return frame_render_ps1(executor->current_frame);
+    else
+        return frame_render_ps1(executor->top_frame);
 }
 
 /**
@@ -2519,6 +2547,96 @@ exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp, const char *
     return status;
 }
 
+exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
+{
+    Expects_not_null(executor);
+    Expects_not_null(fp);
+
+    /* Ensure we have a top-level frame */
+    if (!executor->top_frame_initialized)
+    {
+        executor->top_frame = exec_frame_create_top_level(executor);
+        executor->top_frame_initialized = true;
+    }
+    if (!executor->current_frame)
+    {
+        executor->current_frame = executor->top_frame;
+    }
+
+    /* Create a transient parse session for this stream.
+     * Unlike the REPL, this session does not persist across calls. */
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
+    {
+        exec_set_error_cstr(executor, "Failed to create parse session");
+        return EXEC_ERROR;
+    }
+
+    exec_status_t raw_status = exec_stream_core_ex(executor->current_frame, fp, session);
+
+    /* Tear down the transient session. */
+    exec_parse_session_destroy(&session);
+
+    /* Map INCOMPLETE to OK — a non-interactive stream that ends mid-construct
+     * is not an error for existing callers (exec_execute_stream,
+     * frame_execute_stream). */
+    exec_status_t status;
+    switch (raw_status)
+    {
+    case EXEC_OK:
+    case EXEC_INCOMPLETE_INPUT:
+        status = EXEC_OK;
+        break;
+    case EXEC_ERROR:
+        status = EXEC_ERROR;
+        break;
+    default:
+        status = raw_status;
+        break;
+    }
+
+    if (status == EXEC_OK)
+    {
+        /* Process any pending trap handlers */
+        for (int signo = 1; signo < NSIG; signo++)
+        {
+            if (executor->trap_pending[signo])
+            {
+                executor->trap_pending[signo] = 0;
+
+                /* Get trap action from current trap store */
+                const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
+                if (!trap_action || !trap_action->action)
+                    continue;
+
+                /* Save exit status - POSIX says $? should be preserved across trap execution */
+                int saved_exit_status = executor->last_exit_status;
+
+                /* Push EXEC_FRAME_TRAP and execute the trap action string */
+                exec_frame_t *trap_frame =
+                    exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
+
+                exec_result_t trap_result =
+                    exec_command_string(trap_frame, string_cstr(trap_action->action));
+
+                exec_frame_pop(&executor->current_frame);
+
+                /* Restore exit status */
+                executor->last_exit_status = saved_exit_status;
+
+                if (trap_result.status == EXEC_ERROR)
+                {
+                    status = EXEC_ERROR;
+                    break;
+                }
+            }
+        }
+    }
+
+    return status;
+}
+
+
 /* this version is for executing -c complete strings. Incomplete inputs are errors */
 exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
 {
@@ -2705,7 +2823,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
         if (frame->source_name)
             string_set(frame->source_name, session->filename);
         else
-            frame->source_name = string_clone(session->filename);
+            frame->source_name = string_create_from(session->filename);
     }
 
     if (line_number >= 1)
@@ -3000,7 +3118,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
          * contract says the returned string has NO trailing newline,
          * so we append one.
          */
-        string_t *input = string_clone(line);
+        string_t *input = string_create_from(line);
         string_append_char(input, '\n');
 
         exec_string_status_t str_status =
@@ -3162,10 +3280,29 @@ bool exec_is_exit_requested(const exec_t *executor)
 
 /* ── Error message ───────────────────────────────────────────────────────── */
 
+const string_t *exec_get_error(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    return executor->error_msg;
+}
+
 const char *exec_get_error_cstr(const exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->error_msg ? string_cstr(executor->error_msg) : NULL;
+}
+
+void exec_set_error_cstr(exec_t *executor, const char *error)
+{
+    Expects_not_null(executor);
+    Expects_not_null(error);
+    if (!executor->error_msg)
+        executor->error_msg = string_create_from_cstr(error);
+    else
+    {
+        string_clear(executor->error_msg);
+        string_append_cstr(executor->error_msg, error);
+    }
 }
 
 void exec_set_error_printf(exec_t *executor, const char *format, ...)
@@ -3224,19 +3361,6 @@ void exec_reset_pipe_statuses(exec_t *executor)
 /* exec_job_state_t is defined in exec.h.
  * We use EXEC_JOB_RUNNING as a fallback for unknown internal states.
  */
-
-/* ── Reaping ─────────────────────────────────────────────────────────────── */
-
-void exec_reap_background_jobs(exec_t *executor, bool notify)
-{
-    Expects_not_null(executor);
-
-    bool any_completed = job_store_update_status(executor->jobs, false);
-    if (notify && any_completed)
-    {
-        job_store_print_completed_jobs(executor->jobs, stdout);
-    }
-}
 
 /* ── Enumeration ─────────────────────────────────────────────────────────── */
 
@@ -3728,7 +3852,7 @@ bool exec_has_jobs(const exec_t *executor)
     return job_store_count(executor->jobs) > 0;
 }
 
-#ifdef KEEP_JUNK
+#if 0
 
 /**
  * Execute a complete command string.
@@ -3981,94 +4105,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     return result;
 }
 
-exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
-{
-    Expects_not_null(executor);
-    Expects_not_null(fp);
-
-    /* Ensure we have a top-level frame */
-    if (!executor->top_frame_initialized)
-    {
-        executor->top_frame = exec_frame_create_top_level(executor);
-        executor->top_frame_initialized = true;
-    }
-    if (!executor->current_frame)
-    {
-        executor->current_frame = executor->top_frame;
-    }
-
-    /* Create a transient parse session for this stream.
-     * Unlike the REPL, this session does not persist across calls. */
-    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
-    if (!session)
-    {
-        exec_set_error(executor, "Failed to create parse session");
-        return EXEC_ERROR;
-    }
-
-    exec_status_t raw_status = exec_stream_core_ex(executor->current_frame, fp, session);
-
-    /* Tear down the transient session. */
-    exec_parse_session_destroy(&session);
-
-    /* Map INCOMPLETE to OK — a non-interactive stream that ends mid-construct
-     * is not an error for existing callers (exec_execute_stream,
-     * frame_execute_stream). */
-    exec_status_t status;
-    switch (raw_status)
-    {
-    case EXEC_OK:
-    case EXEC_INCOMPLETE_INPUT:
-        status = EXEC_OK;
-        break;
-    case EXEC_ERROR:
-        status = EXEC_ERROR;
-        break;
-    default:
-        status = raw_status;
-        break;
-    }
-
-    if (status == EXEC_OK)
-    {
-        /* Process any pending trap handlers */
-        for (int signo = 1; signo < NSIG; signo++)
-        {
-            if (executor->trap_pending[signo])
-            {
-                executor->trap_pending[signo] = 0;
-
-                /* Get trap action from current trap store */
-                const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-                if (!trap_action || !trap_action->action)
-                    continue;
-
-                /* Save exit status - POSIX says $? should be preserved across trap execution */
-                int saved_exit_status = executor->last_exit_status;
-
-                /* Push EXEC_FRAME_TRAP and execute the trap action string */
-                exec_frame_t *trap_frame =
-                    exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-                exec_result_t trap_result =
-                    exec_command_string(trap_frame, string_cstr(trap_action->action));
-
-                exec_frame_pop(&executor->current_frame);
-
-                /* Restore exit status */
-                executor->last_exit_status = saved_exit_status;
-
-                if (trap_result.status == EXEC_ERROR)
-                {
-                    status = EXEC_ERROR;
-                    break;
-                }
-            }
-        }
-    }
-
-    return status;
-}
+#endif
 
 /* ============================================================================
  * Job Control
@@ -4140,4 +4177,3 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
 #endif
 }
 
-#endif

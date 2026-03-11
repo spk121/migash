@@ -15,27 +15,22 @@
 
 #include <signal.h>
 #include <stdbool.h>
-#include <stdio.h>
 
 /* ── Public API headers (for the types they define) ──────────────────────── */
 #include "exec.h"
-#include "frame.h"
 
 /* ── Internal module headers ─────────────────────────────────────────────── */
 #include "alias_store.h"
 #include "ast.h"
-#include "builtin_store.h" /* New: registry of builtin_fn_t entries    */
-#include "exec_expander.h"
-#include "exec_frame.h"
-#include "exec_parse_session.h"
+#include "builtin_store.h"
+#include "exec_frame_policy.h"
+#include "fd_table.h"
 #include "func_store.h"
 #include "job_store.h"
-#include "lexer_t.h"
 #include "positional_params.h"
 #include "sig_act.h"
 #include "string_list.h"
 #include "string_t.h"
-#include "tokenizer.h"
 #include "trap_store.h"
 #include "variable_store.h"
 
@@ -159,13 +154,13 @@ struct exec_t
     bool exit_requested;
 
     /* Builtin registry */
-    builtin_store_t *builtins;
+    struct builtin_store_t *builtins;
 
     /* ─── Top-frame initialisation data ───────────────────────────────── */
 
     int argc;
-    char **argv;
-    char **envp;
+    char * const *argv;
+    char * const *envp;
 
     string_t *shell_name;
     string_list_t *shell_args;
@@ -315,8 +310,20 @@ typedef enum exec_frame_execute_status_t
     EXEC_FRAME_EXECUTE_STATUS_UNKNOWN
 } exec_frame_execute_status_t;
 
-// FIXME? TODO? is exec_control_flow_t a frame-level concept?
-// or should it remain at the exec level?
+/* ============================================================================
+ * Control Flow State
+ * ============================================================================ */
+
+/**
+ * Control flow state after executing a frame or command.
+ */
+typedef enum exec_control_flow_t
+{
+    EXEC_FLOW_NORMAL,  /* Normal execution */
+    EXEC_FLOW_RETURN,  /* 'return' executed */
+    EXEC_FLOW_BREAK,   /* 'break' executed */
+    EXEC_FLOW_CONTINUE /* 'continue' executed */
+} exec_control_flow_t;
 
 typedef struct exec_frame_execute_result_t
 {
@@ -326,9 +333,147 @@ typedef struct exec_frame_execute_result_t
     int exit_status; // valid if has_exit_status is true
 
     bool has_control_flow;
-    enum exec_control_flow_t
-        flow;       // for break/continue/return: what control flow is pending from this execution
+    enum exec_control_flow_t flow;       // for break/continue/return: what control flow is pending from this execution
     int flow_depth; // for break/continue: how many nested loops to break/continue out of
 } exec_frame_execute_result_t;
+
+/* ============================================================================
+ * Execution Frame Structure
+ * ============================================================================ */
+
+/**
+ * An execution frame represents a single execution context in the shell.
+ * Frames form a stack, with each frame potentially sharing or owning
+ * various pieces of state (variables, file descriptors, traps, etc.)
+ * based on its policy.
+ */
+typedef struct exec_frame_t
+{
+    /* Frame identity */
+    exec_frame_type_t type;
+    const exec_frame_policy_t *policy;
+
+    /* Parent frame (NULL for top-level) */
+    struct exec_frame_t *parent;
+
+    /* Back-reference to executor. Canonically, frames are owned by the executor. */
+    exec_t *executor;
+
+    /* -------------------------------------------------------------------------
+     * Scope-dependent storage
+     * -------------------------------------------------------------------------
+     * Ownership depends on the frame's policy:
+     * - EXEC_SCOPE_SHARE: Points to parent's instance, must NOT be freed
+     * - EXEC_SCOPE_OWN/COPY: Owned by this frame, must be freed on pop
+     */
+    variable_store_t *variables;
+    variable_store_t *saved_variables;
+    variable_store_t *local_variables; /* Only for frames with has_locals=true */
+    positional_params_t *positional_params;
+    positional_params_t *saved_positional_params; /* For dot script override restore */
+    func_store_t *functions;
+    alias_store_t *aliases;
+    fd_table_t *open_fds;
+    trap_store_t *traps;
+    exec_opt_flags_t *opt_flags;
+    string_t *working_directory;
+#ifdef POSIX_API
+    mode_t *umask;
+#else
+    int *umask;
+#endif
+
+    /* -------------------------------------------------------------------------
+     * Frame-local state (always owned by this frame)
+     * -------------------------------------------------------------------------
+     */
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
+    FILE **stdin_fp;
+    FILE **stdout_fp;
+    FILE **stderr_fp;
+#endif
+    int loop_depth;       /* 0 if not in loop, else depth of nested loops */
+    int last_exit_status; /* $? */
+    int last_bg_pid;      /* $! */
+
+    /* Control flow state (set by builtins like return, break, continue) */
+    exec_control_flow_t pending_control_flow;
+    int pending_flow_depth; /* For 'break N' / 'continue N' */
+
+    /* Source tracking */
+    string_t *source_name; /* $BASH_SOURCE / script name */
+    int source_line;       /* $LINENO */
+    bool lineno_active;    /* false if user has unset/reset LINENO */
+
+    /* Trap handler state */
+    bool in_trap_handler; /* Prevents recursive trap handling */
+} exec_frame_t;
+
+/* ============================================================================
+ * Execution Parameters
+ * ============================================================================ */
+
+/**
+ * Parameters passed when creating/executing a frame.
+ * Different fields are used depending on the frame type.
+ */
+typedef struct exec_params_t
+{
+    /* Body to execute */
+    const ast_node_t *body;
+
+    /* Redirections to apply */
+    const exec_redirections_t *redirections;
+
+    /* For functions and dot scripts: arguments to set $1, $2, ... */
+    string_list_t *arguments;
+
+    /* For dot scripts: the script path (for $0 and source tracking) */
+    string_t *script_path;
+
+    /* For loops */
+    const ast_node_t *condition;    /* while/until condition */
+    bool until_mode;                /* true for until, false for while */
+    string_list_t *iteration_words; /* for loop word list */
+    string_t *loop_var_name;        /* for loop variable */
+
+    /* For pipelines (EXEC_FRAME_PIPELINE) */
+    ast_node_list_t *pipeline_commands; /* List of commands in pipeline */
+    bool pipeline_negated;              /* true for ! pipeline */
+
+    /* For pipeline commands (EXEC_FRAME_PIPELINE_CMD) */
+#ifdef POSIX_API
+    pid_t pipeline_pgid; /* Process group to join (0 = create new) */
+#else
+    int pipeline_pgid;
+#endif
+    int stdin_pipe_fd;      /* -1 if not piped, else fd to dup2 to stdin */
+    int stdout_pipe_fd;     /* -1 if not piped, else fd to dup2 to stdout */
+    int *pipe_fds_to_close; /* Array of all pipe FDs to close */
+    int pipe_fds_count;     /* Count of pipe FDs to close */
+
+    /* For background jobs / debugging */
+    string_list_t *command_args; /* Original command text for job display */
+
+    /* Source location */
+    int source_line;
+} exec_params_t;
+
+/* ============================================================================
+ * Execution Result
+ * ============================================================================ */
+
+/**
+ * Result of executing a frame or command.
+ */
+typedef struct exec_frame_result_t
+{
+    enum exec_status_t status; /* Execution status (EXEC_OK, EXEC_ERROR, etc.) */
+    int exit_status;           /* The exit status ($?) */
+    bool has_exit_status;      /* Whether exit_status is valid */
+    exec_control_flow_t flow;  /* Control flow state */
+    int flow_depth;            /* For 'break N' / 'continue N' */
+} exec_frame_result_t;
 
 #endif /* EXEC_TYPES_INTERNAL_H */

@@ -31,6 +31,7 @@
 #include "builtins.h"
 
 #include "exec_types_internal.h"
+#include "exec.h"
 #include "frame.h"
 #include "func_store.h"
 #include "getopt.h"
@@ -135,6 +136,54 @@ builtin_implemented_function_map_t builtin_implemented_functions[] = {
     {"mgsh_cat", BUILTIN_REGULAR, builtin_mgsh_cat},
     {NULL, BUILTIN_NONE, NULL} // Sentinel
 };
+
+static FILE *builtin_stdin(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stdin_fp && *frame->stdin_fp)
+    {
+        return *frame->stdin_fp;
+    }
+    else
+    {
+        return stdin;
+    }
+#else
+    return stdin;
+#endif
+}
+
+static FILE *builtin_stdout(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stdout_fp && *frame->stdout_fp)
+    {
+        return *frame->stdout_fp;
+    }
+    else
+    {
+        return stdout;
+    }
+#else
+    return stdout;
+#endif
+}
+
+static FILE *builtin_stderr(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stderr_fp && *frame->stderr_fp)
+    {
+        return *frame->stderr_fp;
+    }
+    else
+    {
+        return stderr;
+    }
+#else
+    return stderr;
+#endif
+}
 
 /* ============================================================================
  * colon - do nothing builtin
@@ -449,7 +498,7 @@ int builtin_dot(exec_frame_t *frame, const string_list_t *args)
         string_list_destroy(&new_params);
     }
 
-    frame_exec_status_t status = frame_execute_stream(frame, fp);
+    exec_status_t status = exec_execute_stream_once(frame->executor, fp);
     fclose(fp);
     int exit_status = frame_get_last_exit_status(frame);
 
@@ -461,7 +510,7 @@ int builtin_dot(exec_frame_t *frame, const string_list_t *args)
 
     string_destroy(&resolved_path);
 
-    if (status == FRAME_EXEC_ERROR && exit_status == 0)
+    if (status == EXEC_ERROR && exit_status == 0)
         return 1;
     return exit_status;
 }
@@ -530,7 +579,7 @@ int builtin_eval(exec_frame_t *frame, const string_list_t *args)
     /* Execute the constructed command in an EXEC_FRAME_EVAL frame
      * This ensures proper control flow handling (return, break, continue
      * pass through to enclosing contexts) */
-    frame_exec_status_t status = frame_execute_string_as_eval(frame, string_cstr(command));
+    frame_exec_status_t status = frame_execute_string_as_eval(frame, command);
     string_destroy(&command);
 
     /* Get the exit status from the executed command */
@@ -642,7 +691,7 @@ int builtin_exit(exec_frame_t *frame, const string_list_t *args)
     }
 
     // Run EXIT trap if set
-    frame_run_exit_traps(frame->traps, frame);
+    frame_run_exit_traps(frame);
 
     // Reap background jobs
     if (frame->executor)
@@ -685,7 +734,8 @@ int builtin_export(exec_frame_t *frame, const string_list_t *args)
     /* No arguments → print exported variables */
     if (string_list_size(args) == 1)
     {
-        frame_print_exported_variables_in_export_format(frame);
+        /* On non-POSIX/UCRT platforms, we don't have a real environment to export */
+        frame_print_exported_variables_in_export_format(frame, builtin_stdout(frame));
         return 0;
     }
 
@@ -829,9 +879,9 @@ int builtin_readonly(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* No arguments or -p only: print readonly variables */
-    if (first_operand >= argc)
+    if (print_mode || argc == 1)
     {
-        frame_print_readonly_variables(frame);
+        frame_print_readonly_variables(frame, builtin_stdout(frame));
         return 0;
     }
 
@@ -1729,7 +1779,7 @@ int builtin_set(exec_frame_t *frame, const string_list_t *args)
         if (!any_flags)
         {
             /* Pure "set" with no arguments - print all variables */
-            frame_print_variables(frame, true);
+            frame_print_variables(frame, true, builtin_stdout(frame));
             xfree(argv);
             return 0;
         }
@@ -2764,13 +2814,13 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
         return 1;
 
     /* Check if there are any jobs */
-    if (!frame_has_jobs(frame))
+    if (!exec_has_jobs(frame->executor))
     {
         /* No jobs - nothing to show */
         return 0;
     }
 
-    frame_jobs_format_t format = FRAME_JOBS_FORMAT_DEFAULT;
+    exec_jobs_format_t format = EXEC_JOBS_FORMAT_DEFAULT;
     int first_operand = 1; /* Index of first non-option argument */
     int exit_status = 0;
 
@@ -2798,10 +2848,10 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
             switch (*p)
             {
             case 'l':
-                format = FRAME_JOBS_FORMAT_LONG;
+                format = EXEC_JOBS_FORMAT_LONG;
                 break;
             case 'p':
-                format = FRAME_JOBS_FORMAT_PID_ONLY;
+                format = EXEC_JOBS_FORMAT_PID_ONLY;
                 break;
             default:
                 fprintf(stderr, "jobs: -%c: invalid option\n", *p);
@@ -2819,7 +2869,7 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
         for (int i = first_operand; i < argc; i++)
         {
             const string_t *arg_str = string_list_at(args, i);
-            int job_id = frame_parse_job_id(frame, arg_str);
+            int job_id = exec_parse_job_id(frame->executor, arg_str);
 
             if (job_id < 0)
             {
@@ -2828,7 +2878,7 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
                 continue;
             }
 
-            if (!frame_print_job_by_id(frame, job_id, format))
+            if (!exec_print_job_by_id(frame->executor, job_id, format, builtin_stdout(frame)))
             {
                 fprintf(stderr, "jobs: %s: no such job\n", string_cstr(arg_str));
                 exit_status = 1;
@@ -2838,7 +2888,7 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
     else
     {
         /* No job_ids specified - show all jobs */
-        frame_print_all_jobs(frame, format);
+        exec_print_all_jobs(frame->executor, format, builtin_stdout(frame));
     }
 
     return exit_status;
@@ -3403,7 +3453,7 @@ int builtin_kill(exec_frame_t *frame, const string_list_t *args)
         /* Check if it's a job specification */
         if (target[0] == '%')
         {
-            int job_id = frame_parse_job_id(frame, arg_str);
+            int job_id = exec_parse_job_id(frame->executor, arg_str);
             if (job_id < 0)
             {
                 fprintf(stderr, "kill: %s: no such job\n", target);
@@ -3787,7 +3837,7 @@ int builtin_wait(exec_frame_t *frame, const string_list_t *args)
         /* Check if it's a job specification */
         if (target[0] == '%')
         {
-            int job_id = frame_parse_job_id(frame, arg_str);
+            int job_id = exec_parse_job_id(frame->executor, arg_str);
             if (job_id < 0)
             {
                 fprintf(stderr, "wait: %s: no such job\n", target);
@@ -3845,7 +3895,7 @@ int builtin_fg(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* Check if there are any jobs */
-    if (!frame_has_jobs(frame))
+    if (!exec_has_jobs(frame->executor))
     {
         fprintf(stderr, "fg: no current job\n");
         return 1;
@@ -3864,7 +3914,7 @@ int builtin_fg(exec_frame_t *frame, const string_list_t *args)
     if (argc == 2)
     {
         const string_t *arg_str = string_list_at(args, 1);
-        job_id = frame_parse_job_id(frame, arg_str);
+        job_id = exec_parse_job_id(frame->executor, arg_str);
         if (job_id < 0)
         {
             fprintf(stderr, "fg: %s: no such job\n", string_cstr(arg_str));
@@ -4037,7 +4087,7 @@ int builtin_bg(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* Check if there are any jobs */
-    if (!frame_has_jobs(frame))
+    if (!exec_has_jobs(frame->executor))
     {
         fprintf(stderr, "bg: no current job\n");
         return 1;
@@ -4088,7 +4138,7 @@ int builtin_bg(exec_frame_t *frame, const string_list_t *args)
         for (int i = 1; i < argc; i++)
         {
             const string_t *arg_str = string_list_at(args, i);
-            int job_id = frame_parse_job_id(frame, arg_str);
+            int job_id = exec_parse_job_id(frame->executor, arg_str);
 
             if (job_id < 0)
             {
@@ -4303,7 +4353,7 @@ static int ls_list_directory(const string_t *dir_path, int flag_a, int flag_A, i
     struct _finddata_t find_data; // _finddata64i32_t
     intptr_t find_handle;
 
-    /* Build search pattern: "dir_path/*" or "dir_path\*" */
+    // Build search pattern: "dir_path/*" or "dir_path\*"
     string_t *pattern = string_create_from(dir_path);
     int len = string_length(pattern);
     if (len > 0)
