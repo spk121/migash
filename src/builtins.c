@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #endif
 
+#include "builtin_store.h"
 #include "builtins.h"
 
 #include "exec.h"
@@ -74,115 +75,6 @@
 #define PATH_MAX 1024
 #endif
 #endif
-
-typedef struct builtin_implemented_function_map_t
-{
-    const char *name;
-    builtin_category_t class;
-    builtin_func_t func;
-} builtin_implemented_function_map_t;
-
-builtin_implemented_function_map_t builtin_implemented_functions[] = {
-    {"break", BUILTIN_SPECIAL, builtin_break},
-    {":", BUILTIN_SPECIAL, builtin_colon},
-    {"continue", BUILTIN_SPECIAL, builtin_continue},
-    {".", BUILTIN_SPECIAL, builtin_dot},
-    {"eval", BUILTIN_SPECIAL, builtin_eval},
-    {"exec", BUILTIN_SPECIAL, builtin_exec},
-    {"exit", BUILTIN_SPECIAL, builtin_exit},
-    {"export", BUILTIN_SPECIAL, builtin_export},
-    {"readonly", BUILTIN_SPECIAL, builtin_readonly},
-    {"return", BUILTIN_SPECIAL, builtin_return},
-    {"set", BUILTIN_SPECIAL, builtin_set},
-    {"shift", BUILTIN_SPECIAL, builtin_shift},
-    {"times", BUILTIN_SPECIAL, builtin_times},
-    {"trap", BUILTIN_SPECIAL, builtin_trap},
-    {"unset", BUILTIN_SPECIAL, builtin_unset},
-
-#ifdef UCRT_API
-    {"cd", BUILTIN_REGULAR, builtin_cd},
-    {"pwd", BUILTIN_REGULAR, builtin_pwd},
-#endif
-    /* { "cd", BUILTIN_REGULAR, builtin_cd}, */
-    /* { "pwd", BUILTIN_REGULAR, builtin_pwd}, */
-    {"echo", BUILTIN_REGULAR, builtin_echo},
-    {"printf", BUILTIN_REGULAR, builtin_printf},
-    /* { "test", BUILTIN_REGULAR, builtin_test}, */
-    {"[", BUILTIN_REGULAR, builtin_bracket},
-    /* { "read", BUILTIN_REGULAR, builtin_read}, */
-    {"alias", BUILTIN_REGULAR, builtin_alias},
-    {"unalias", BUILTIN_REGULAR, builtin_unalias},
-    /* { "type", BUILTIN_REGULAR, builtin_type}, */
-    /* { "command", BUILTIN_REGULAR, builtin_command}, */
-    {"getopts", BUILTIN_REGULAR, builtin_getopts},
-    /* { "hash", BUILTIN_REGULAR, builtin_hash}, */
-    /* { "umask", BUILTIN_REGULAR, builtin_umask}, */
-    /* { "ulimit", BUILTIN_REGULAR, builtin_ulimit}, */
-    {"jobs", BUILTIN_REGULAR, builtin_jobs},
-    {"kill", BUILTIN_REGULAR, builtin_kill},
-    {"wait", BUILTIN_REGULAR, builtin_wait},
-    {"fg", BUILTIN_REGULAR, builtin_fg},
-    {"bg", BUILTIN_REGULAR, builtin_bg},
-#ifdef UCRT_API
-    {"ls", BUILTIN_REGULAR, builtin_ls},
-#endif
-    {"basename", BUILTIN_REGULAR, builtin_basename},
-    {"dirname", BUILTIN_REGULAR, builtin_dirname},
-    {"true", BUILTIN_REGULAR, builtin_true},
-    {"false", BUILTIN_REGULAR, builtin_false},
-    {"mgsh_dirnamevar", BUILTIN_REGULAR, builtin_mgsh_dirnamevar},
-    {"mgsh_printfvar", BUILTIN_REGULAR, builtin_mgsh_printfvar},
-    {"mgsh_cat", BUILTIN_REGULAR, builtin_mgsh_cat},
-    {NULL, BUILTIN_NONE, NULL} // Sentinel
-};
-
-static FILE *builtin_stdin(exec_frame_t *frame)
-{
-#if !defined(POSIX_API) && !defined(UCRT_API)
-    if (frame->stdin_fp && *frame->stdin_fp)
-    {
-        return *frame->stdin_fp;
-    }
-    else
-    {
-        return stdin;
-    }
-#else
-    return stdin;
-#endif
-}
-
-static FILE *builtin_stdout(exec_frame_t *frame)
-{
-#if !defined(POSIX_API) && !defined(UCRT_API)
-    if (frame->stdout_fp && *frame->stdout_fp)
-    {
-        return *frame->stdout_fp;
-    }
-    else
-    {
-        return stdout;
-    }
-#else
-    return stdout;
-#endif
-}
-
-static FILE *builtin_stderr(exec_frame_t *frame)
-{
-#if !defined(POSIX_API) && !defined(UCRT_API)
-    if (frame->stderr_fp && *frame->stderr_fp)
-    {
-        return *frame->stderr_fp;
-    }
-    else
-    {
-        return stderr;
-    }
-#else
-    return stderr;
-#endif
-}
 
 /* ============================================================================
  * colon - do nothing builtin
@@ -5534,83 +5426,6 @@ int builtin_return(exec_frame_t *frame, const string_list_t *args)
     frame_set_pending_control_flow(frame, FRAME_FLOW_RETURN, 0);
 
     return exit_status;
-}
-
-/* ============================================================================
- * Builtin function classification and lookup
- * ============================================================================
- */
-builtin_category_t builtin_classify_cstr(const char *name)
-{
-    if (name == NULL)
-        return BUILTIN_NONE;
-
-    for (builtin_implemented_function_map_t *p = builtin_implemented_functions; p->name != NULL;
-         p++)
-    {
-        if (strcmp(name, p->name) == 0)
-            return p->class;
-    }
-
-    return BUILTIN_NONE;
-}
-
-builtin_category_t builtin_classify(const string_t *name)
-{
-    if (name == NULL)
-        return BUILTIN_NONE;
-
-    return builtin_classify_cstr(string_cstr(name));
-}
-
-bool builtin_is_special_cstr(const char *name)
-{
-    return builtin_classify_cstr(name) == BUILTIN_SPECIAL;
-}
-
-bool builtin_is_special(const string_t *name)
-{
-    return builtin_classify(name) == BUILTIN_SPECIAL;
-}
-
-bool builtin_is_defined_cstr(const char *name)
-{
-    if (name == NULL)
-        return false;
-    for (builtin_implemented_function_map_t *p = builtin_implemented_functions; p->name != NULL;
-         p++)
-    {
-        if (strcmp(name, p->name) == 0)
-            return true;
-    }
-    return false;
-}
-
-bool builtin_is_defined(const string_t *name)
-{
-    if (name == NULL)
-        return false;
-    return builtin_is_defined_cstr(string_cstr(name));
-}
-
-builtin_func_t builtin_get_function_cstr(const char *name)
-{
-    if (name == NULL)
-        return NULL;
-    for (builtin_implemented_function_map_t *p = builtin_implemented_functions; p->name != NULL;
-         p++)
-    {
-        if (strcmp(name, p->name) == 0)
-            return p->func;
-    }
-    return NULL;
-}
-
-builtin_func_t builtin_get_function(const string_t *name)
-{
-    if (name == NULL)
-        return NULL;
-    return builtin_get_function_cstr(string_cstr(name));
 }
 
 /* ============================================================================

@@ -1,49 +1,10 @@
 #ifndef BUILTINS_H
 #define BUILTINS_H
 
-#include "frame.h"
-#include "string_t.h"
-#include "string_list.h"
-#include "exec_types_internal.h"
 #include "exec_types_public.h"
-
-/**
- * Builtin command classification
- */
-#if 0
-typedef enum
-{
-    BUILTIN_NONE,    /* Not a builtin - external command */
-    BUILTIN_SPECIAL, /* POSIX special builtin */
-    BUILTIN_REGULAR  /* Regular (non-special) builtin */
-} builtin_category_t;
-#endif
-
-typedef int (*builtin_func_t)(exec_frame_t *frame, const string_list_t *args);
-
-/**
- * Classify a command name as a builtin type.
- *
- * @param name  The command name to classify
- * @return      BUILTIN_SPECIAL, BUILTIN_REGULAR, or BUILTIN_NONE
- */
-builtin_category_t builtin_classify(const string_t *name);
-builtin_category_t builtin_classify_cstr(const char *name);
-
-bool builtin_is_special(const string_t *name);
-bool builtin_is_special_cstr(const char *name);
-
-bool builtin_is_defined(const string_t *name);
-bool builtin_is_defined_cstr(const char *name);
-
-/**
- * Get the function pointer for a builtin command.
- *
- * @param name  The command name
- * @return      The function pointer, or NULL if not a builtin
- */
-builtin_func_t builtin_get_function(const string_t *name);
-builtin_func_t builtin_get_function_cstr(const char *name);
+#include "frame.h"
+#include "string_list.h"
+#include "string_t.h"
 
 /* ============================================================================
  * Builtin Commands
@@ -128,6 +89,5 @@ int builtin_mgsh_cat(exec_frame_t *frame, const string_list_t *args);
 
 int builtin_true(exec_frame_t *frame, const string_list_t *args);
 int builtin_false(exec_frame_t *frame, const string_list_t *args);
-
 
 #endif /* BUILTINS_H */

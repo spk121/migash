@@ -1,6 +1,7 @@
 ﻿#ifndef EXEC_TYPES_PUBLIC_H
 #define EXEC_TYPES_PUBLIC_H
 
+#include "string_list.h"
 /* ============================================================================
  * Opaque Types
  * ============================================================================
@@ -58,6 +59,33 @@ typedef struct exec_result_t
 #define EXEC_EXIT_MISUSE 2        /**< Incorrect usage (bad options / arguments) */
 #define EXEC_EXIT_CANNOT_EXEC 126 /**< Command found but not executable         */
 #define EXEC_EXIT_NOT_FOUND 127   /**< Command not found                        */
+
+/* ============================================================================
+ * Builtin Types
+ * ============================================================================ */
+
+/**
+ * Builtin category per POSIX XCU 2.14.
+ *
+ * The distinction matters for error handling and variable assignment
+ * semantics.  Special builtins cause prefix assignments to persist and
+ * errors in a non-interactive shell to exit; regular builtins do not.
+ */
+typedef enum builtin_category_t
+{
+    BUILTIN_NONE = 0,    /**< Not a builtin (used internally) */
+    BUILTIN_SPECIAL = 1, /**< POSIX special builtin           */
+    BUILTIN_REGULAR = 2  /**< POSIX regular builtin           */
+} builtin_category_t;
+
+/**
+ * Builtin function signature.
+ *
+ * @param frame  The current execution frame.
+ * @param args   Argument list (first element is the builtin name).
+ * @return       Exit status (0 = success).
+ */
+typedef int (*builtin_fn_t)(exec_frame_t *frame, string_list_t *args);
 
 /* ============================================================================
  * Frame Opaque Type

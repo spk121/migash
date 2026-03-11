@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_store.c
  * @brief Hash-based builtin command registry implementation.
  *
@@ -353,4 +353,106 @@ void builtin_store_for_each(const builtin_store_t *store, builtin_store_iter_fn_
         if (e->state == BUILTIN_SLOT_OCCUPIED)
             callback(e->name, e->fn, e->category, context);
     }
+}
+
+/* ============================================================================
+ * Stream Accessors
+ * ============================================================================ */
+
+#include <stdio.h>
+
+FILE *builtin_stdin(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stdin_fp && *frame->stdin_fp)
+        return *frame->stdin_fp;
+#endif
+    (void)frame;
+    return stdin;
+}
+
+FILE *builtin_stdout(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stdout_fp && *frame->stdout_fp)
+        return *frame->stdout_fp;
+#endif
+    (void)frame;
+    return stdout;
+}
+
+FILE *builtin_stderr(exec_frame_t *frame)
+{
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    if (frame->stderr_fp && *frame->stderr_fp)
+        return *frame->stderr_fp;
+#endif
+    (void)frame;
+    return stderr;
+}
+
+/* ============================================================================
+ * Default Builtin Registration
+ * ============================================================================ */
+
+#include "builtins.h"
+
+bool builtins_init_default(builtin_store_t *store)
+{
+    if (!store)
+        return false;
+
+    bool ok = true;
+
+    /* -- POSIX special builtins ------------------------------------------- */
+    ok = ok && builtin_store_set(store, "break", (builtin_fn_t)builtin_break, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, ":", (builtin_fn_t)builtin_colon, BUILTIN_SPECIAL);
+    ok =
+        ok && builtin_store_set(store, "continue", (builtin_fn_t)builtin_continue, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, ".", (builtin_fn_t)builtin_dot, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "eval", (builtin_fn_t)builtin_eval, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "exec", (builtin_fn_t)builtin_exec, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "exit", (builtin_fn_t)builtin_exit, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "export", (builtin_fn_t)builtin_export, BUILTIN_SPECIAL);
+    ok =
+        ok && builtin_store_set(store, "readonly", (builtin_fn_t)builtin_readonly, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "return", (builtin_fn_t)builtin_return, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "set", (builtin_fn_t)builtin_set, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "shift", (builtin_fn_t)builtin_shift, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "times", (builtin_fn_t)builtin_times, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "trap", (builtin_fn_t)builtin_trap, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "unset", (builtin_fn_t)builtin_unset, BUILTIN_SPECIAL);
+
+    /* -- Regular builtins ------------------------------------------------- */
+#ifdef UCRT_API
+    ok = ok && builtin_store_set(store, "cd", (builtin_fn_t)builtin_cd, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "pwd", (builtin_fn_t)builtin_pwd, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "ls", (builtin_fn_t)builtin_ls, BUILTIN_REGULAR);
+#endif
+    ok = ok && builtin_store_set(store, "echo", (builtin_fn_t)builtin_echo, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "printf", (builtin_fn_t)builtin_printf, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "[", (builtin_fn_t)builtin_bracket, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "alias", (builtin_fn_t)builtin_alias, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "unalias", (builtin_fn_t)builtin_unalias, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "getopts", (builtin_fn_t)builtin_getopts, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "jobs", (builtin_fn_t)builtin_jobs, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "kill", (builtin_fn_t)builtin_kill, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "wait", (builtin_fn_t)builtin_wait, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "fg", (builtin_fn_t)builtin_fg, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "bg", (builtin_fn_t)builtin_bg, BUILTIN_REGULAR);
+    ok =
+        ok && builtin_store_set(store, "basename", (builtin_fn_t)builtin_basename, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "dirname", (builtin_fn_t)builtin_dirname, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "true", (builtin_fn_t)builtin_true, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "false", (builtin_fn_t)builtin_false, BUILTIN_REGULAR);
+
+    /* -- mgsh extensions -------------------------------------------------- */
+    ok = ok && builtin_store_set(store, "mgsh_dirnamevar", (builtin_fn_t)builtin_mgsh_dirnamevar,
+                                 BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "mgsh_printfvar", (builtin_fn_t)builtin_mgsh_printfvar,
+                                 BUILTIN_REGULAR);
+    ok =
+        ok && builtin_store_set(store, "mgsh_cat", (builtin_fn_t)builtin_mgsh_cat, BUILTIN_REGULAR);
+
+    return ok;
 }

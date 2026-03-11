@@ -14,6 +14,7 @@
 // #include "builtins.h"
 #include "builtin_store.h"
 #include "exec.h"
+#include "exec_frame.h"
 #include "exec_frame_expander.h"
 #include "exec_frame_policy.h"
 #include "exec_redirect.h"
@@ -283,8 +284,6 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
     {
         const char *cmd_name = string_cstr(string_list_at(expanded_words, 0));
 
-        builtin_category_t builtin_class = builtin_classify_cstr(cmd_name);
-
         if (token_is_reserved_word(cmd_name))
         {
             exec_set_error_printf(executor, "%s: syntax error - reserved word in command position",
@@ -293,8 +292,14 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
             goto done_execution;
         }
 
+        builtin_category_t builtin_category;
+        builtin_fn_t builtin_fn = NULL;
+        bool builtin_found = builtin_store_lookup(frame->executor->builtins, cmd_name, &builtin_fn,
+                                                  &builtin_category);
+
         /* Special builtins: persist assignments */
-        if (builtin_class == BUILTIN_SPECIAL && assign_tokens && token_list_size(assign_tokens) > 0)
+        if (builtin_found && builtin_category == BUILTIN_SPECIAL && assign_tokens &&
+            token_list_size(assign_tokens) > 0)
         {
             exec_status_t assign_st = apply_prefix_assignments(frame, frame->saved_variables, node);
             if (assign_st != EXEC_OK)
@@ -307,6 +312,8 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         /* ────────────────────────────────────────────────
            Internal commands (builtins + functions)
            ──────────────────────────────────────────────── */
+        // Even if we know we have a regular builtin, we have to check for a function of the same
+        // name first, because functions take precedence over regular builtins.
         bool is_internal = false;
 
         /* Shell function */
@@ -342,65 +349,42 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         }
 
         /* Regular builtin */
-        if (builtin_class == BUILTIN_REGULAR)
+        if (builtin_found && builtin_category == BUILTIN_REGULAR)
         {
             is_internal = true;
 
-            builtin_fn_t builtin_fn = builtin_get_function_cstr(cmd_name);
-            if (builtin_fn != NULL)
+            exec_status_t redir_st = exec_frame_apply_redirections(frame, runtime_redirs);
+            if (redir_st != EXEC_OK)
             {
-                exec_builtin_context_t ctx = {.executor = executor,
-                                              .frame = frame,
-#if !defined(POSIX_API) && !defined(UCRT_API)
-                                              .stdin_fp = stdin,
-                                              .stdout_fp = stdout,
-                                              .stderr_fp = stderr
-#endif
-                };
-
-                exec_status_t redir_st = exec_frame_apply_redirections(frame, runtime_redirs);
-                if (redir_st != EXEC_OK)
-                {
-                    status = redir_st;
-                    goto done_execution;
-                }
-
-                cmd_exit_status = (*builtin_fn)(frame, expanded_words);
-
-                exec_restore_redirections(frame, runtime_redirs);
-
+                status = redir_st;
                 goto done_execution;
             }
+
+            cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+
+            exec_restore_redirections(frame, runtime_redirs);
+
+            goto done_execution;
         }
 
         /* Special builtins (non-assignment case) */
-        if (builtin_class == BUILTIN_SPECIAL)
+        if (builtin_found && builtin_category == BUILTIN_SPECIAL)
         {
             is_internal = true;
 
-            builtin_fn_t builtin_fn = builtin_get_function_cstr(cmd_name);
-            if (builtin_fn != NULL)
+            exec_status_t redir_st =
+                (exec_status_t)exec_frame_apply_redirections(frame, runtime_redirs);
+            if (redir_st != EXEC_OK)
             {
-                exec_status_t redir_st =
-                    (exec_status_t)exec_frame_apply_redirections(frame, runtime_redirs);
-                if (redir_st != EXEC_OK)
-                {
-                    status = redir_st;
-                    goto done_execution;
-                }
-
-                cmd_exit_status = (*builtin_fn)(frame, expanded_words);
-
-                exec_restore_redirections(frame, runtime_redirs);
-
+                status = redir_st;
                 goto done_execution;
             }
-            else
-            {
-                exec_set_error_printf(executor, "%s: special builtin not implemented", cmd_name);
-                cmd_exit_status = 1;
-                goto done_execution;
-            }
+
+            cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+
+            exec_restore_redirections(frame, runtime_redirs);
+
+            goto done_execution;
         }
     }
 
@@ -412,7 +396,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
 #ifdef POSIX_API
         if (!cmd_name || *cmd_name == '\0')
         {
-            exec_set_error(executor, "empty command name");
+            exec_set_error_cstr(executor, "empty command name");
             cmd_exit_status = 127;
             goto done_execution;
         }
@@ -430,7 +414,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         pid_t pid = fork();
         if (pid == -1)
         {
-            exec_set_error(executor, "fork failed: %s", strerror(errno));
+            exec_set_error_printf(executor, "fork failed: %s", strerror(errno));
             cmd_exit_status = 127;
         }
         else if (pid == 0) /* child */
@@ -640,7 +624,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         /* ISO C fallback using system() */
         if (!cmd_name || *cmd_name == '\0')
         {
-            exec_set_error(executor, "empty command name");
+            exec_set_error_cstr(executor, "empty command name");
             cmd_exit_status = 127;
             goto done_execution;
         }
@@ -667,7 +651,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
 
         if (rc == -1)
         {
-            exec_set_error(executor, "system() failed: %s", strerror(errno));
+            exec_set_error_printf(executor, "system() failed: %s", strerror(errno));
             cmd_exit_status = 127;
         }
         else
@@ -677,7 +661,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
 
         if (cmd_exit_status == 127 && !exec_get_error(executor))
         {
-            exec_set_error(executor, "%s: command not found", cmd_name);
+            exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
 #endif
     } // end of has_words == true
@@ -708,4 +692,36 @@ out_restore_vars:
     frame->saved_variables = NULL;
 
     return (exec_frame_execute_result_t){.status = status};
+}
+
+/* ============================================================================
+ * Function Body Execution
+ * ============================================================================ */
+
+/**
+ * Execute a shell function body in a new EXEC_FRAME_FUNCTION frame.
+ *
+ * Pushes a function frame with the given arguments and redirections,
+ * executes the AST body, handles control flow, and pops the frame.
+ *
+ * @param frame       The calling frame (becomes the parent).
+ * @param func_body   The AST node for the function body.
+ * @param func_args   Positional parameters ($1, $2, ...) for the function.
+ * @param func_redirs Redirections from the function definition (may be NULL).
+ * @return            Execution result with status, exit code, and control flow.
+ */
+exec_frame_execute_result_t exec_frame_execute_function_body(exec_frame_t *frame,
+                                                             const ast_node_t *func_body,
+                                                             string_list_t *func_args,
+                                                             const exec_redirections_t *func_redirs)
+{
+    Expects_not_null(frame);
+    Expects_not_null(func_body);
+
+    exec_params_t params = {0};
+    params.body = func_body;
+    params.arguments = func_args;
+    params.redirections = func_redirs;
+
+    return exec_in_frame(frame, EXEC_FRAME_FUNCTION, &params);
 }

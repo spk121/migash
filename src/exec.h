@@ -195,6 +195,16 @@ bool exec_set_shell_ppid(exec_t *executor, int ppid);
 bool exec_get_inhibit_rc_files(const exec_t *executor);
 bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
 
+/**
+ * When set, exec_setup_core() will not register the default builtin
+ * commands.  The caller is responsible for registering any builtins
+ * it needs via exec_register_builtin() before execution begins.
+ *
+ * Must be called before the top frame is initialized.
+ */
+bool exec_get_flag_nobuiltins(const exec_t *executor);
+bool exec_set_flag_nobuiltins(exec_t *executor, bool value);
+
 bool exec_is_system_rc_filename_set(const exec_t *executor);
 const string_t *exec_get_system_rc_filename(const exec_t *executor);
 const char *exec_get_system_rc_filename_cstr(const exec_t *executor);
@@ -242,63 +252,15 @@ exec_frame_t *exec_get_current_frame(const exec_t *executor);
  * Builtin Registration
  * ============================================================================
  *
- * A builtin receives a context that provides access to both the executor
- * (for global state such as jobs, exit status, PIDs) and the current frame
- * (for variables, positional parameters, traps, etc.), plus the redirected
- * I/O streams for the command invocation.
+ * A builtin receives the current execution frame (which provides access to
+ * variables, positional parameters, traps, I/O streams, and the parent
+ * executor for global state) and an argument list whose first element is
+ * the builtin name.
  *
- * The args list includes argv[0] (the builtin name) as its first element.
- * Use the getopt_string API to parse options from the list.
- *
- * The builtin returns an integer exit status (0 for success).
+ * The builtin_fn_t signature and builtin_category_t enum are defined in
+ * exec_types_public.h so they can be shared between the public API and
+ * the internal builtin store.
  */
-
-/**
- * Context passed to every builtin invocation.
- */
-typedef struct exec_builtin_context_t
-{
-    exec_t *executor;    /**< The executor (global state)           */
-    exec_frame_t *frame; /**< The current execution frame           */
-#if !defined(POSIX_API) && !defined(UCRT_API)
-    FILE *stdin_fp;  /**< stdin for this invocation (may be redirected)  */
-    FILE *stdout_fp; /**< stdout for this invocation (may be redirected) */
-    FILE *stderr_fp; /**< stderr for this invocation (may be redirected) */
-#endif
-} exec_builtin_context_t;
-
-/**
- * Builtin function signature.
- *
- * @param ctx   Builtin context (executor, frame, I/O streams).
- * @param args  Argument list.  The first element is the builtin name.
- * @return      Exit status (0 = success).
- */
-typedef int (*exec_builtin_fn_t)(exec_builtin_context_t *ctx, string_list_t *args);
-
-/**
- * Builtin category per POSIX XCU 2.14.
- *
- * The distinction matters for error handling and variable assignment
- * semantics:
- *
- *   SPECIAL builtins (break, continue, return, exit, export, readonly,
- *   set, unset, eval, exec, dot/source, shift, times, trap):
- *     - Variable assignments from the command prefix persist after the
- *       builtin completes.
- *     - A usage or redirection error in a special builtin causes a
- *       non-interactive shell to exit.
- *
- *   REGULAR builtins (cd, read, command, type, etc.):
- *     - Variable assignments from the command prefix are temporary
- *       (scoped to the command).
- *     - Errors do not cause the shell to exit.
- */
-typedef enum exec_builtin_category_t
-{
-    EXEC_BUILTIN_SPECIAL, /**< POSIX special builtin  */
-    EXEC_BUILTIN_REGULAR  /**< POSIX regular builtin  */
-} exec_builtin_category_t;
 
 /**
  * Register a builtin command.
@@ -311,10 +273,10 @@ typedef enum exec_builtin_category_t
  * @param category  Whether this is a POSIX special or regular builtin.
  * @return true on success, false on failure (e.g. NULL arguments).
  */
-bool exec_register_builtin(exec_t *executor, const string_t *name, exec_builtin_fn_t fn,
-                           exec_builtin_category_t category);
-bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin_fn_t fn,
-                                exec_builtin_category_t category);
+bool exec_register_builtin(exec_t *executor, const string_t *name, builtin_fn_t fn,
+                           builtin_category_t category);
+bool exec_register_builtin_cstr(exec_t *executor, const char *name, builtin_fn_t fn,
+                                builtin_category_t category);
 
 /**
  * Unregister a previously registered builtin command.
@@ -336,22 +298,22 @@ bool exec_has_builtin_cstr(const exec_t *executor, const char *name);
  * @return The function pointer, or NULL if no builtin is registered under
  *         that name.
  */
-exec_builtin_fn_t exec_get_builtin(const exec_t *executor, const string_t *name);
-exec_builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name);
+builtin_fn_t exec_get_builtin(const exec_t *executor, const string_t *name);
+builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name);
 
 /**
  * Get the category of a registered builtin.
  *
- * @param executor  The executor.
- * @param name      The builtin name.
+ * @param executor      The executor.
+ * @param name          The builtin name.
  * @param category_out  If non-NULL and the builtin exists, receives the
  *                      category.
  * @return true if the builtin exists, false otherwise.
  */
 bool exec_get_builtin_category(const exec_t *executor, const string_t *name,
-                               exec_builtin_category_t *category_out);
+                               builtin_category_t *category_out);
 bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
-                                    exec_builtin_category_t *category_out);
+                                    builtin_category_t *category_out);
 
 /* ============================================================================
  * Command Resolution

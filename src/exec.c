@@ -700,6 +700,21 @@ bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit)
     return true;
 }
 
+bool exec_get_flag_nobuiltins(const exec_t *executor)
+{
+    Expects_not_null(executor);
+    return executor->nobuiltins;
+}
+
+bool exec_set_flag_nobuiltins(exec_t *executor, bool value)
+{
+    Expects_not_null(executor);
+    if (exec_is_top_frame_initialized(executor))
+        return false;
+    executor->nobuiltins = value;
+    return true;
+}
+
 bool exec_is_system_rc_filename_set(const exec_t *executor)
 {
     Expects_not_null(executor);
@@ -837,8 +852,8 @@ exec_frame_t *exec_get_current_frame(const exec_t *executor)
  * Builtin Registration (delegates to builtin_store)
  * ============================================================================ */
 
-bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin_fn_t fn,
-                                exec_builtin_category_t category)
+bool exec_register_builtin_cstr(exec_t *executor, const char *name, builtin_fn_t fn,
+                                builtin_category_t category)
 {
     Expects_not_null(executor);
 
@@ -858,7 +873,7 @@ bool exec_register_builtin_cstr(exec_t *executor, const char *name, exec_builtin
        deliberately kept in sync (both start at 0 for SPECIAL), but
        we do an explicit conversion for type safety. */
     builtin_category_t internal_cat =
-        (category == EXEC_BUILTIN_SPECIAL) ? BUILTIN_SPECIAL : BUILTIN_REGULAR;
+        (category == BUILTIN_SPECIAL) ? BUILTIN_SPECIAL : BUILTIN_REGULAR;
 
     return builtin_store_set(executor->builtins, name, (builtin_fn_t)fn, internal_cat);
 }
@@ -883,18 +898,18 @@ bool exec_has_builtin_cstr(const exec_t *executor, const char *name)
     return builtin_store_has(executor->builtins, name);
 }
 
-exec_builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name)
+builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name)
 {
     Expects_not_null(executor);
 
     if (!name || !executor->builtins)
         return NULL;
 
-    return (exec_builtin_fn_t)builtin_store_get(executor->builtins, name);
+    return (builtin_fn_t)builtin_store_get(executor->builtins, name);
 }
 
 bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
-                                    exec_builtin_category_t *category_out)
+                                    builtin_category_t *category_out)
 {
     Expects_not_null(executor);
 
@@ -905,8 +920,7 @@ bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
     bool found = builtin_store_lookup(executor->builtins, name, NULL, &internal_cat);
     if (found && category_out)
     {
-        *category_out =
-            (internal_cat == BUILTIN_SPECIAL) ? EXEC_BUILTIN_SPECIAL : EXEC_BUILTIN_REGULAR;
+        *category_out = (internal_cat == BUILTIN_SPECIAL) ? BUILTIN_SPECIAL : BUILTIN_REGULAR;
     }
 
     return found;
@@ -1023,6 +1037,14 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     if (!e->builtins)
     {
         e->builtins = builtin_store_create();
+    }
+
+    /* Register the default set of builtin commands unless suppressed.
+     * builtins_init_default uses builtin_store_set which replaces duplicates,
+     * so this is safe even if the caller pre-registered some builtins. */
+    if (!e->nobuiltins)
+    {
+        builtins_init_default(e->builtins);
     }
 
     // e->env_vars is only used for debugging and for keeping a permanent record of the
@@ -3853,51 +3875,42 @@ bool exec_has_jobs(const exec_t *executor)
     return job_store_count(executor->jobs) > 0;
 }
 
-#if 0
-
 /**
  * Execute a complete command string.
  *
  * This is a simplified wrapper around exec_string_core() for cases where the
  * input string is expected to be a complete, self-contained command that does
- * not require continuation. This is useful for:
- * - Trap handlers (the action string stored with trap)
- * - eval builtin
- * - Any case where you have a complete command as a string
+ * not require continuation.  Useful for trap handlers, eval, and any case
+ * where you have a complete command as a string.
  *
- * If the command string is incomplete (e.g., unclosed quotes, missing 'done'),
- * this function treats it as an error rather than requesting more input.
+ * A terminal newline is appended if not already present.  Any result other
+ * than EXEC_OK (including EXEC_INCOMPLETE, EXEC_EMPTY, EXEC_ERROR) is
+ * promoted to EXEC_ERROR in the returned status.
  *
- * @param frame The execution frame
- * @param command The complete command string to execute
- * @return exec_result_t with execution status and exit code
+ * @param frame   The execution frame.
+ * @param command The complete command string to execute.
+ * @return exec_result_t with .status == EXEC_OK or EXEC_ERROR.
  */
 exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
 
-    exec_result_t result = {.status = EXEC_OK,
-                            .has_exit_status = true,
-                            .exit_status = 0,
-                            .flow = FRAME_FLOW_NORMAL,
-                            .flow_depth = 0};
+    exec_result_t result = {.status = EXEC_OK, .exit_code = 0};
 
-    /* Handle empty or NULL command */
+    /* Empty or NULL command is success */
     if (!command || !*command)
-    {
         return result;
-    }
 
     exec_t *executor = frame->executor;
 
-    /* Create a temporary parse session for this command */
+    /* Create a temporary parse session */
     exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
     if (!session)
     {
         frame_set_error_printf(frame, "Failed to create parse session for command string");
         result.status = EXEC_ERROR;
-        result.exit_status = 1;
+        result.exit_code = EXEC_EXIT_FAILURE;
         return result;
     }
 
@@ -3913,200 +3926,22 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     exec_status_t status = exec_string_core(frame, string_cstr(cmd_with_newline), session);
 
     string_destroy(&cmd_with_newline);
-
-    /* Map status to result */
-    switch (status)
-    {
-    case EXEC_OK:
-        result.status = EXEC_OK;
-        result.exit_status = frame->last_exit_status;
-        break;
-
-    case EXEC_EMPTY:
-        /* Empty command is not an error, just return success with status 0 */
-        result.status = EXEC_OK;
-        result.exit_status = 0;
-        break;
-
-    case EXEC_INCOMPLETE:
-        /* For a "complete" command string, incomplete is an error */
-        frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        break;
-
-    case EXEC_ERROR:
-        result.status = EXEC_ERROR;
-        result.exit_status = frame->last_exit_status ? frame->last_exit_status : 1;
-        break;
-    }
-
-    /* Clean up */
     exec_parse_session_destroy(&session);
+
+    /* Map result: only EXEC_OK passes through; everything else is an error */
+    if (status == EXEC_OK)
+    {
+        result.status = EXEC_OK;
+        result.exit_code = frame->last_exit_status;
+    }
+    else
+    {
+        result.status = EXEC_ERROR;
+        result.exit_code = frame->last_exit_status ? frame->last_exit_status : EXEC_EXIT_FAILURE;
+    }
 
     return result;
 }
-
-/**
- * Parse a command string into an AST without executing it.
- * This is used by eval to separate parsing from execution.
- */
-exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_node_t **out_ast)
-{
-    Expects_not_null(frame);
-    Expects_not_null(out_ast);
-
-    exec_result_t result = {.status = EXEC_OK,
-                            .has_exit_status = true,
-                            .exit_status = 0,
-                            .flow = FRAME_FLOW_NORMAL,
-                            .flow_depth = 0};
-
-    *out_ast = NULL;
-
-    /* Handle empty or NULL command */
-    if (!command || !*command)
-    {
-        return result;
-    }
-
-    exec_t *executor = frame->executor;
-
-    /* Create a temporary parse session for parsing */
-    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
-    if (!session)
-    {
-        frame_set_error_printf(frame, "Failed to create parse session for parsing");
-        result.status = EXEC_ERROR;
-        result.exit_status = 1;
-        return result;
-    }
-
-    /* Ensure command ends with newline for proper parsing */
-    string_t *cmd_with_newline = string_create_from_cstr(command);
-    int len = string_length(cmd_with_newline);
-    if (len == 0 || string_at(cmd_with_newline, len - 1) != '\n')
-    {
-        string_append_char(cmd_with_newline, '\n');
-    }
-
-    /* Lex the input */
-    lexer_append_input_cstr(session->lexer, string_cstr(cmd_with_newline));
-    string_destroy(&cmd_with_newline);
-
-    token_list_t *raw_tokens = token_list_create();
-    lex_status_t lex_status = lexer_tokenize(session->lexer, raw_tokens, NULL);
-
-    if (lex_status == LEX_ERROR)
-    {
-        const char *err = lexer_get_error(session->lexer);
-        frame_set_error_printf(frame, "Lexer error: %s", err ? err : "unknown");
-        token_list_destroy(&raw_tokens);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    if (lex_status == LEX_INCOMPLETE || lex_status == LEX_NEED_HEREDOC)
-    {
-        frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
-        token_list_destroy(&raw_tokens);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    /* Process tokens */
-    token_list_t *processed_tokens = token_list_create();
-    tok_status_t tok_status = tokenizer_process(session->tokenizer, raw_tokens, processed_tokens);
-    token_list_destroy(&raw_tokens);
-
-    if (tok_status == TOK_ERROR)
-    {
-        const char *err = tokenizer_get_error(session->tokenizer);
-        frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
-        token_list_destroy(&processed_tokens);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    if (tok_status == TOK_INCOMPLETE)
-    {
-        frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
-        token_list_destroy(&processed_tokens);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    if (token_list_size(processed_tokens) == 0)
-    {
-        /* Empty command */
-        token_list_destroy(&processed_tokens);
-        exec_parse_session_destroy(&session);
-        return result;
-    }
-
-    /* Parse tokens */
-    parser_t *parser = parser_create_with_tokens_move(&processed_tokens);
-    gnode_t *gnode = NULL;
-
-    parse_status_t parse_status = parser_parse_program(parser, &gnode);
-
-    if (parse_status == PARSE_ERROR)
-    {
-        const char *err = parser_get_error(parser);
-        if (err && err[0])
-        {
-            frame_set_error_printf(frame, "Parse error: %s", err);
-        }
-        else
-        {
-            frame_set_error_printf(frame, "Parse error");
-        }
-        parser_destroy(&parser);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    if (parse_status == PARSE_INCOMPLETE)
-    {
-        frame_set_error_printf(frame, "Incomplete command: unexpected end of input");
-        if (gnode)
-            g_node_destroy(&gnode);
-        parser_destroy(&parser);
-        exec_parse_session_destroy(&session);
-        result.status = EXEC_ERROR;
-        result.exit_status = 2;
-        return result;
-    }
-
-    if (parse_status == PARSE_EMPTY || !gnode)
-    {
-        /* Empty command */
-        parser_destroy(&parser);
-        exec_parse_session_destroy(&session);
-        return result;
-    }
-
-    /* Lower parse tree to AST */
-    ast_node_t *ast = ast_lower(gnode);
-    g_node_destroy(&gnode);
-    parser_destroy(&parser);
-    exec_parse_session_destroy(&session);
-
-    *out_ast = ast;
-    return result;
-}
-
-#endif
 
 /* ============================================================================
  * Job Control

@@ -1,4 +1,4 @@
-#ifndef BUILTIN_STORE_H
+﻿#ifndef BUILTIN_STORE_H
 #define BUILTIN_STORE_H
 
 /**
@@ -19,41 +19,26 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "exec_types_internal.h"
 #include "exec_types_public.h"
 #include "string_list.h"
 
- /* ── Forward declarations ────────────────────────────────────────────────── */
-
-
-/**
- * Builtin function pointer (matches exec_builtin_fn_t in exec.h).
- */
-typedef int (*builtin_fn_t)(exec_frame_t *frame, struct string_list_t* args);
-
-/**
- * Builtin category (mirrors exec_builtin_category_t in exec.h).
- */
-typedef enum builtin_category_t
-{
-    BUILTIN_NONE = 0,    /**< Not a builtin (used internally) */
-    BUILTIN_SPECIAL = 1, /**< POSIX special builtin  */
-    BUILTIN_REGULAR = 2  /**< POSIX regular builtin  */
-} builtin_category_t;
+/* ── Forward declarations ────────────────────────────────────────────────── */
 
 /* ============================================================================
  * Entry
  * ============================================================================ */
 
- /**
-  * State of a hash-table slot.
-  */
+/**
+ * State of a hash-table slot.
+ */
 typedef enum builtin_slot_state_t
 {
-    BUILTIN_SLOT_EMPTY,     /**< Never used                             */
-    BUILTIN_SLOT_OCCUPIED,  /**< Contains a live entry                  */
-    BUILTIN_SLOT_TOMBSTONE  /**< Previously occupied, now deleted        */
+    BUILTIN_SLOT_EMPTY,    /**< Never used                             */
+    BUILTIN_SLOT_OCCUPIED, /**< Contains a live entry                  */
+    BUILTIN_SLOT_TOMBSTONE /**< Previously occupied, now deleted        */
 } builtin_slot_state_t;
 
 /**
@@ -62,89 +47,89 @@ typedef enum builtin_slot_state_t
 typedef struct builtin_entry_t
 {
     builtin_slot_state_t state;
-    uint32_t             hash;      /**< Cached FNV-1a hash of the name  */
-    char* name;      /**< Heap-allocated copy of the name */
-    builtin_fn_t         fn;        /**< Implementation function         */
-    builtin_category_t   category;  /**< Special or regular              */
+    uint32_t hash;               /**< Cached FNV-1a hash of the name  */
+    char *name;                  /**< Heap-allocated copy of the name */
+    builtin_fn_t fn;             /**< Implementation function         */
+    builtin_category_t category; /**< Special or regular              */
 } builtin_entry_t;
 
 /* ============================================================================
  * Store
  * ============================================================================ */
 
- /**
-  * The builtin store itself.
-  */
+/**
+ * The builtin store itself.
+ */
 typedef struct builtin_store_t
 {
-    builtin_entry_t* entries;   /**< Hash table (open addressing)        */
-    size_t           capacity;  /**< Number of slots allocated           */
-    size_t           count;     /**< Number of live (OCCUPIED) entries    */
-    size_t           tombstones;/**< Number of TOMBSTONE slots           */
+    builtin_entry_t *entries; /**< Hash table (open addressing)        */
+    size_t capacity;          /**< Number of slots allocated           */
+    size_t count;             /**< Number of live (OCCUPIED) entries    */
+    size_t tombstones;        /**< Number of TOMBSTONE slots           */
 } builtin_store_t;
 
 /* ============================================================================
  * Lifecycle
  * ============================================================================ */
 
- /**
-  * Create a new, empty builtin store.
-  * @return A new store, or NULL on allocation failure.
-  */
-builtin_store_t* builtin_store_create(void);
+/**
+ * Create a new, empty builtin store.
+ * @return A new store, or NULL on allocation failure.
+ */
+builtin_store_t *builtin_store_create(void);
 
 /**
  * Destroy a builtin store and free all associated memory.
  * Safe to call with a pointer to NULL.
  */
-void builtin_store_destroy(builtin_store_t** store_ptr);
+void builtin_store_destroy(builtin_store_t **store_ptr);
 
 /* ============================================================================
  * Mutation
  * ============================================================================ */
 
- /**
-  * Register a builtin.
-  *
-  * If a builtin with the given name already exists, its function pointer
-  * and category are replaced.
-  *
-  * @param store     The builtin store.
-  * @param name      The command name (will be copied).
-  * @param fn        The implementation function (must not be NULL).
-  * @param category  Special or regular.
-  * @return true on success, false on failure (NULL args, alloc failure).
-  */
-bool builtin_store_set(builtin_store_t* store, const char* name,
-    builtin_fn_t fn, builtin_category_t category);
+/**
+ * Register a builtin.
+ *
+ * If a builtin with the given name already exists, its function pointer
+ * and category are replaced.
+ *
+ * @param store     The builtin store.
+ * @param name      The command name (will be copied).
+ * @param fn        The implementation function (must not be NULL).
+ * @param category  Special or regular.
+ * @return true on success, false on failure (NULL args, alloc failure).
+ */
+bool builtin_store_set(builtin_store_t *store, const char *name, builtin_fn_t fn,
+                       builtin_category_t category);
 
 /**
  * Remove a builtin by name.
  *
  * @return true if the builtin was found and removed, false otherwise.
  */
-bool builtin_store_remove(builtin_store_t* store, const char* name);
+bool builtin_store_remove(builtin_store_t *store, const char *name);
 
 /**
  * Remove all entries from the store.
  */
-void builtin_store_clear(builtin_store_t* store);
+void builtin_store_clear(builtin_store_t *store);
 
 /* ============================================================================
  * Lookup
  * ============================================================================ */
 
- /**
-  * Check whether a builtin with the given name exists.
-  */
-bool builtin_store_has(const builtin_store_t* store, const char* name);
+/**
+ * Check whether a builtin with the given name exists.
+ */
+bool builtin_store_has(const builtin_store_t *store, const char *name);
 
 /**
  * Look up a builtin's function pointer by name.
  *
  * @return The function pointer, or NULL if not found.
  */
-builtin_fn_t builtin_store_get(const builtin_store_t* store, const char* name);
+builtin_fn_t builtin_store_get(const builtin_store_t *store, const char *name);
 
 /**
  * Look up a builtin's function pointer and category.
@@ -155,42 +140,65 @@ builtin_fn_t builtin_store_get(const builtin_store_t* store, const char* name);
  * @param category_out  If non-NULL, receives the category.
  * @return true if found, false otherwise.
  */
-bool builtin_store_lookup(const builtin_store_t* store, const char* name,
-    builtin_fn_t* fn_out, builtin_category_t* category_out);
+bool builtin_store_lookup(const builtin_store_t *store, const char *name, builtin_fn_t *fn_out,
+                          builtin_category_t *category_out);
 
 /* ============================================================================
  * Queries
  * ============================================================================ */
 
- /**
-  * Get the number of registered builtins.
-  */
-size_t builtin_store_count(const builtin_store_t* store);
+/**
+ * Get the number of registered builtins.
+ */
+size_t builtin_store_count(const builtin_store_t *store);
 
 /* ============================================================================
  * Iteration
  * ============================================================================ */
 
- /**
-  * Callback for iterating over all registered builtins.
-  *
-  * @param name      The builtin name.
-  * @param fn        The function pointer.
-  * @param category  Special or regular.
-  * @param context   User-provided opaque pointer.
-  */
-typedef void (*builtin_store_iter_fn_t)(const char* name,
-    builtin_fn_t fn,
-    builtin_category_t category,
-    void* context);
+/**
+ * Callback for iterating over all registered builtins.
+ *
+ * @param name      The builtin name.
+ * @param fn        The function pointer.
+ * @param category  Special or regular.
+ * @param context   User-provided opaque pointer.
+ */
+typedef void (*builtin_store_iter_fn_t)(const char *name, builtin_fn_t fn,
+                                        builtin_category_t category, void *context);
 
 /**
  * Iterate over all registered builtins, calling the callback for each.
  * The iteration order is unspecified.
  */
-void builtin_store_for_each(const builtin_store_t* store,
-    builtin_store_iter_fn_t callback,
-    void* context);
+void builtin_store_for_each(const builtin_store_t *store, builtin_store_iter_fn_t callback,
+                            void *context);
+
+/* ============================================================================
+ * Stream Accessors
+ * ============================================================================
+ *
+ * On POSIX and UCRT platforms, builtins use the standard stdin/stdout/stderr
+ * file pointers directly.  On ISO C platforms (where fd-level redirection is
+ * not available), the frame may carry overridden FILE* pointers that builtins
+ * should use instead.  These accessors return the correct stream for the
+ * current platform and frame.
+ */
+
+FILE *builtin_stdin(exec_frame_t *frame);
+FILE *builtin_stdout(exec_frame_t *frame);
+FILE *builtin_stderr(exec_frame_t *frame);
+
+/* ============================================================================
+ * Default Builtin Registration
+ * ============================================================================ */
+
+/**
+ * Register all built-in commands (special and regular) into the given store.
+ *
+ * @param store  The builtin store to populate.
+ * @return true if all builtins were registered successfully, false on failure.
+ */
+bool builtins_init_default(builtin_store_t *store);
 
 #endif /* BUILTIN_STORE_H */
-

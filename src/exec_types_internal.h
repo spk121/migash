@@ -171,6 +171,7 @@ struct exec_t
     bool rc_loaded;
     bool rc_files_sourced;
     bool inhibit_rc_files;
+    bool nobuiltins;
     string_t *system_rc_filename;
     string_t *user_rc_filename;
 
