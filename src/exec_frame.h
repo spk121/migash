@@ -18,26 +18,23 @@
 #include <sys/types.h>
 #endif
 
-#include "string_t.h"
-#include "string_list.h"
+#include "alias_store.h"
 #include "ast.h"
 #include "exec_types_internal.h"
-#include "variable_store.h"
 #include "fd_table.h"
-#include "positional_params.h"
-#include "alias_store.h"
 #include "func_store.h"
+#include "positional_params.h"
+#include "string_list.h"
+#include "string_t.h"
+#include "variable_store.h"
 
 #include "exec_frame_policy.h"
 
- /* Forward declarations */
+/* Forward declarations */
 typedef struct exec_t exec_t;
 typedef struct exec_opt_flags_t exec_opt_flags_t;
 typedef struct exec_redirections_t exec_redirections_t;
 typedef struct trap_store_t trap_store_t;
-
-
-
 
 /* ============================================================================
  * Frame Management API
@@ -55,8 +52,8 @@ exec_frame_t *exec_frame_create_top_level(exec_t *exec);
  * @param params  Optional parameters for frame initialization
  * @return        The newly created frame
  */
-exec_frame_t* exec_frame_push(exec_frame_t* parent, exec_frame_type_t type,
-    exec_t* exec, exec_params_t* params);
+exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec_t *exec,
+                              exec_params_t *params);
 
 /**
  * Pop a frame from the stack.
@@ -65,7 +62,7 @@ exec_frame_t* exec_frame_push(exec_frame_t* parent, exec_frame_type_t type,
  * @param frame_ptr  Pointer to the frame to pop (set to NULL on return)
  * @return           The parent frame
  */
-exec_frame_t* exec_frame_pop(exec_frame_t** frame_ptr);
+exec_frame_t *exec_frame_pop(exec_frame_t **frame_ptr);
 
 /**
  * Main entry point: create a frame, execute it, and clean up.
@@ -77,13 +74,14 @@ exec_frame_t* exec_frame_pop(exec_frame_t** frame_ptr);
  * @return        The result of execution
  */
 struct exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type,
-    exec_params_t* params);
+                                                 exec_params_t *params);
 
 struct exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame,
-                                                        const ast_node_t *node);
+                                                               const ast_node_t *node);
 
-struct exec_frame_execute_result_t exec_frame_execute_function_body(exec_frame_t *frame, const ast_node_t *func_body,
-    string_list_t *func_args, const exec_redirections_t *func_redirs);
+struct exec_frame_execute_result_t exec_frame_execute_function_body(
+    exec_frame_t *frame, const ast_node_t *func_body, string_list_t *func_args,
+    const exec_redirections_t *func_redirs);
 
 struct exec_frame_execute_result_t exec_frame_execute_command_string(exec_frame_t *frame,
                                                                      const string_t *command_str);
@@ -94,104 +92,92 @@ struct exec_frame_execute_result_t exec_frame_execute_command_string(exec_frame_
  * These wrap exec_in_frame() with appropriate frame types and params.
  */
 
-exec_frame_result_t exec_subshell(exec_frame_t* parent,
-const ast_node_t* body);
+exec_frame_result_t exec_subshell(exec_frame_t *parent, const ast_node_t *body);
 
-exec_frame_result_t exec_brace_group(exec_frame_t* parent,
-const ast_node_t* body,
-const exec_redirections_t* redirections);
+exec_frame_result_t exec_brace_group(exec_frame_t *parent, const ast_node_t *body,
+                                     const exec_redirections_t *redirections);
 
-exec_frame_result_t exec_function(exec_frame_t* parent,
-const ast_node_t* body,
-string_list_t* arguments,
-const exec_redirections_t* redirections);
+exec_frame_result_t exec_function(exec_frame_t *parent, const ast_node_t *body,
+                                  string_list_t *arguments,
+                                  const exec_redirections_t *redirections);
 
-exec_frame_result_t exec_for_loop(exec_frame_t* parent,
-string_t* var_name, string_list_t* words,
-const ast_node_t* body);
+exec_frame_result_t exec_for_loop(exec_frame_t *parent, string_t *var_name, string_list_t *words,
+                                  const ast_node_t *body);
 
-exec_frame_result_t exec_while_loop(exec_frame_t* parent,
-const ast_node_t* condition, const ast_node_t* body,
-bool until_mode);
+exec_frame_result_t exec_while_loop(exec_frame_t *parent, const ast_node_t *condition,
+                                    const ast_node_t *body, bool until_mode);
 
-exec_frame_result_t exec_dot_script(exec_frame_t* parent,
-string_t* script_path, const ast_node_t* body,
-string_list_t* arguments);
+exec_frame_result_t exec_dot_script(exec_frame_t *parent, string_t *script_path,
+                                    const ast_node_t *body, string_list_t *arguments);
 
-exec_frame_result_t exec_trap_handler(exec_frame_t* parent,
-const ast_node_t* body);
+exec_frame_result_t exec_trap_handler(exec_frame_t *parent, const ast_node_t *body);
 
-exec_frame_result_t exec_background_job(exec_frame_t* parent,
-const ast_node_t* body,
-string_list_t* command_args);
+exec_frame_result_t exec_background_job(exec_frame_t *parent, const ast_node_t *body,
+                                        string_list_t *command_args);
 
-exec_frame_result_t exec_pipeline_group(exec_frame_t *parent, ast_node_list_t *commands, bool negated);
+exec_frame_result_t exec_pipeline_group(exec_frame_t *parent, ast_node_list_t *commands,
+                                        bool negated);
 
 #ifdef POSIX_API
-exec_frame_result_t exec_pipeline_cmd(exec_frame_t* parent,
-    const ast_node_t* body,
-    pid_t pipeline_pgid);
+exec_frame_result_t exec_pipeline_cmd(exec_frame_t *parent, const ast_node_t *body,
+                                      pid_t pipeline_pgid);
 #else
-exec_frame_result_t exec_pipeline_cmd(exec_frame_t* parent,
-    const ast_node_t* body,
-    int pipeline_pgid);
+exec_frame_result_t exec_pipeline_cmd(exec_frame_t *parent, const ast_node_t *body,
+                                      int pipeline_pgid);
 #endif
 
-exec_frame_result_t exec_eval(exec_frame_t* parent,
-const ast_node_t* body);
+exec_frame_result_t exec_eval(exec_frame_t *parent, const ast_node_t *body);
 
 /* ============================================================================
  * Frame Query Functions
  * ============================================================================ */
 
- /**
-  * Find the nearest ancestor frame that is a return target.
-  * Returns NULL if no return target exists (return is invalid).
-  */
-exec_frame_t* exec_frame_find_return_target(exec_frame_t* frame);
+/**
+ * Find the nearest ancestor frame that is a return target.
+ * Returns NULL if no return target exists (return is invalid).
+ */
+exec_frame_t *exec_frame_find_return_target(exec_frame_t *frame);
 
 /**
  * Find the nearest ancestor frame that is a loop.
  * Returns NULL if not inside a loop (break/continue is invalid).
  */
-exec_frame_t* exec_frame_find_loop(exec_frame_t* frame);
+exec_frame_t *exec_frame_find_loop(exec_frame_t *frame);
 
 /**
  * Get the effective variable store for this frame.
  * (Walks up SHARE chain if necessary.)
  */
-variable_store_t* exec_frame_get_variables(exec_frame_t* frame);
+variable_store_t *exec_frame_get_variables(exec_frame_t *frame);
 
 /**
  * Get the effective fd table for this frame.
  */
-fd_table_t* exec_frame_get_fds(exec_frame_t* frame);
+fd_table_t *exec_frame_get_fds(exec_frame_t *frame);
 
 /**
  * Get the effective trap store for this frame.
  */
-trap_store_t* exec_frame_get_traps(exec_frame_t* frame);
+trap_store_t *exec_frame_get_traps(exec_frame_t *frame);
 
 /* ============================================================================
  * Variable Access Helpers
  * ============================================================================ */
 
- /**
-  * Get variable value, checking local store first if applicable.
-  */
-const string_t* exec_frame_get_variable(const exec_frame_t* frame, const string_t* name);
-
+/**
+ * Get variable value, checking local store first if applicable.
+ */
+const string_t *exec_frame_get_variable(const exec_frame_t *frame, const string_t *name);
+ 
 /**
  * Set variable, respecting local scope if applicable.
  */
-void exec_frame_set_variable(exec_frame_t* frame, const string_t* name,
-    const string_t* value);
+void exec_frame_set_variable(exec_frame_t *frame, const string_t *name, const string_t *value);
 
 /**
  * Declare a local variable (only valid in frames with has_locals=true).
  * Returns 0 on success, -1 if locals not supported in this frame.
  */
-int exec_frame_declare_local(exec_frame_t* frame, const string_t* name,
-    const string_t* value);
+int exec_frame_declare_local(exec_frame_t *frame, const string_t *name, const string_t *value);
 
 #endif /* EXEC_FRAME_H */

@@ -202,7 +202,7 @@ static exec_status_t apply_prefix_assignments(exec_frame_t *frame,
 /* ============================================================================
  * Simple Command Execution
  * ============================================================================ */
-exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame, const ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t *frame, const ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);

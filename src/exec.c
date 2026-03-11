@@ -1,4 +1,4 @@
-/**
+﻿/**
  * exec.c - Shell executor implementation
  *
  * This file implements the public executor API and high-level execution.
@@ -2432,10 +2432,11 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
-            executor->current_frame->pending_control_flow == EXEC_FLOW_RETURN &&
+            (executor->current_frame->pending_control_flow == FRAME_FLOW_RETURN ||
+             executor->current_frame->pending_control_flow == FRAME_FLOW_TOP) &&
             executor->current_frame == executor->top_frame)
         {
-            /* A top-level 'return' is equivalent to 'exit' */
+            /* A top-level 'return' or 'exit' unwind */
             final_result = EXEC_EXIT;
             break;
         }
@@ -2636,7 +2637,6 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
     return status;
 }
 
-
 /* this version is for executing -c complete strings. Incomplete inputs are errors */
 exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
 {
@@ -2762,8 +2762,8 @@ void exec_partial_state_cleanup(exec_partial_state_t *session)
  * ============================================================================ */
 
 exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const char *command,
-                                                  const char *filename, size_t line_number,
-                                                  exec_parse_session_t *session)
+                                                       const char *filename, size_t line_number,
+                                                       exec_parse_session_t *session)
 {
     Expects_not_null(executor);
     Expects_not_null(command);
@@ -3640,7 +3640,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
         if (kill(-job->pgid, 0) < 0)
         {
             exec_set_error_printf(executor, "kill: job %d: no such process group: %s", job_id,
-                           strerror(errno));
+                                  strerror(errno));
             return false;
         }
         return true;
@@ -3663,7 +3663,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     {
         // Common errors: ESRCH (no such process), EPERM (permission denied)
         exec_set_error_printf(executor, "kill: cannot send signal %d to job %d: %s", sig, job_id,
-                       strerror(errno));
+                              strerror(errno));
         return false;
     }
 
@@ -3692,7 +3692,8 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
             }
             else
             {
-                exec_set_error_printf(executor, "kill: failed to terminate job %d on Windows", job_id);
+                exec_set_error_printf(executor, "kill: failed to terminate job %d on Windows",
+                                      job_id);
                 return false;
             }
         }
@@ -3702,8 +3703,8 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     }
     else
     {
-        exec_set_error_cstr(executor,
-                       "kill: only SIGTERM/SIGKILL supported on Windows (job control limited)");
+        exec_set_error_cstr(
+            executor, "kill: only SIGTERM/SIGKILL supported on Windows (job control limited)");
         return false;
     }
 
@@ -3879,7 +3880,7 @@ exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
     exec_result_t result = {.status = EXEC_OK,
                             .has_exit_status = true,
                             .exit_status = 0,
-                            .flow = EXEC_FLOW_NORMAL,
+                            .flow = FRAME_FLOW_NORMAL,
                             .flow_depth = 0};
 
     /* Handle empty or NULL command */
@@ -3958,7 +3959,7 @@ exec_result_t exec_parse_string(exec_frame_t *frame, const char *command, ast_no
     exec_result_t result = {.status = EXEC_OK,
                             .has_exit_status = true,
                             .exit_status = 0,
-                            .flow = EXEC_FLOW_NORMAL,
+                            .flow = FRAME_FLOW_NORMAL,
                             .flow_depth = 0};
 
     *out_ast = NULL;
@@ -4176,4 +4177,3 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
         job_store_remove_completed(executor->jobs);
 #endif
 }
-

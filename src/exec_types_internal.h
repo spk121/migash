@@ -159,8 +159,8 @@ struct exec_t
     /* ─── Top-frame initialisation data ───────────────────────────────── */
 
     int argc;
-    char * const *argv;
-    char * const *envp;
+    char *const *argv;
+    char *const *envp;
 
     string_t *shell_name;
     string_list_t *shell_args;
@@ -310,21 +310,6 @@ typedef enum exec_frame_execute_status_t
     EXEC_FRAME_EXECUTE_STATUS_UNKNOWN
 } exec_frame_execute_status_t;
 
-/* ============================================================================
- * Control Flow State
- * ============================================================================ */
-
-/**
- * Control flow state after executing a frame or command.
- */
-typedef enum exec_control_flow_t
-{
-    EXEC_FLOW_NORMAL,  /* Normal execution */
-    EXEC_FLOW_RETURN,  /* 'return' executed */
-    EXEC_FLOW_BREAK,   /* 'break' executed */
-    EXEC_FLOW_CONTINUE /* 'continue' executed */
-} exec_control_flow_t;
-
 typedef struct exec_frame_execute_result_t
 {
     enum exec_frame_execute_status_t status;
@@ -333,7 +318,8 @@ typedef struct exec_frame_execute_result_t
     int exit_status; // valid if has_exit_status is true
 
     bool has_control_flow;
-    enum exec_control_flow_t flow;       // for break/continue/return: what control flow is pending from this execution
+    enum frame_control_flow_t
+        flow;       // for break/continue/return: what control flow is pending from this execution
     int flow_depth; // for break/continue: how many nested loops to break/continue out of
 } exec_frame_execute_result_t;
 
@@ -398,7 +384,7 @@ typedef struct exec_frame_t
     int last_bg_pid;      /* $! */
 
     /* Control flow state (set by builtins like return, break, continue) */
-    exec_control_flow_t pending_control_flow;
+    frame_control_flow_t pending_control_flow;
     int pending_flow_depth; /* For 'break N' / 'continue N' */
 
     /* Source tracking */
@@ -472,7 +458,7 @@ typedef struct exec_frame_result_t
     enum exec_status_t status; /* Execution status (EXEC_OK, EXEC_ERROR, etc.) */
     int exit_status;           /* The exit status ($?) */
     bool has_exit_status;      /* Whether exit_status is valid */
-    exec_control_flow_t flow;  /* Control flow state */
+    frame_control_flow_t flow; /* Control flow state */
     int flow_depth;            /* For 'break N' / 'continue N' */
 } exec_frame_result_t;
 

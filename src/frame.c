@@ -6,7 +6,7 @@
  *
  * Internal frame management (push, pop, exec_in_frame, etc.) is in exec_frame.c
  * and exec_frame.h.
- * 
+ *
  * Whenever possible, frame.c functions should delegate to exec_frame.c for
  * logic and to avoid duplication.
  */
@@ -26,8 +26,8 @@
 #include "alias_store.h"
 #include "ast.h"
 #include "exec.h"
-#include "exec_frame_expander.h"
 #include "exec_frame.h"
+#include "exec_frame_expander.h"
 #include "exec_types_internal.h"
 #include "exec_types_public.h"
 #include "func_store.h"
@@ -59,10 +59,10 @@
 
 #ifdef UCRT_API
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <direct.h>
 #include <io.h>
 #include <process.h>
+#include <windows.h>
 #endif
 
 /* ============================================================================
@@ -302,8 +302,7 @@ frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     }
 }
 
-frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
-                                          const char *value)
+frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -382,8 +381,8 @@ frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_
     Expects_not_null(name);
     Expects_not_null(frame->variables);
 
-    var_store_error_t internal_result = variable_store_set_exported(frame->variables, name,
-                                                                    exported);
+    var_store_error_t internal_result =
+        variable_store_set_exported(frame->variables, name, exported);
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
@@ -518,8 +517,8 @@ frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_
     Expects_not_null(name);
     Expects_not_null(frame->variables);
 
-    var_store_error_t internal_result = variable_store_set_read_only(frame->variables, name,
-                                                                     readonly);
+    var_store_error_t internal_result =
+        variable_store_set_read_only(frame->variables, name, readonly);
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
@@ -587,8 +586,8 @@ typedef struct
     FILE *output;
 } print_var_context_t;
 
-static void print_exported_var_callback(const string_t *name, const string_t *value,
-                                        bool exported, bool read_only, void *user_data)
+static void print_exported_var_callback(const string_t *name, const string_t *value, bool exported,
+                                        bool read_only, void *user_data)
 {
     (void)read_only;
     print_var_context_t *ctx = user_data;
@@ -606,13 +605,13 @@ void frame_print_exported_variables_in_export_format(exec_frame_t *frame, FILE *
 
     if (frame->variables)
     {
-        print_var_context_t ctx = { .output = output };
+        print_var_context_t ctx = {.output = output};
         variable_store_for_each(frame->variables, print_exported_var_callback, &ctx);
     }
 }
 
-static void print_readonly_var_callback(const string_t *name, const string_t *value,
-                                        bool exported, bool read_only, void *user_data)
+static void print_readonly_var_callback(const string_t *name, const string_t *value, bool exported,
+                                        bool read_only, void *user_data)
 {
     (void)exported;
     print_var_context_t *ctx = user_data;
@@ -630,7 +629,7 @@ void frame_print_readonly_variables(exec_frame_t *frame, FILE *output)
 
     if (frame->variables)
     {
-        print_var_context_t ctx = { .output = output };
+        print_var_context_t ctx = {.output = output};
         variable_store_for_each(frame->variables, print_readonly_var_callback, &ctx);
     }
 }
@@ -761,7 +760,7 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *outp
     else
     {
         /* Non-reusable format: print without sorting */
-        print_all_var_context_t pctx = { .reusable = false, .output = output };
+        print_all_var_context_t pctx = {.reusable = false, .output = output};
         variable_store_for_each(frame->variables, print_var_callback, &pctx);
     }
 }
@@ -907,8 +906,7 @@ static expand_flags_t convert_frame_expand_flags(frame_expand_flags_t frame_flag
     return flags;
 }
 
-string_t *frame_expand_string(exec_frame_t *frame, const string_t *text,
-                              frame_expand_flags_t flags)
+string_t *frame_expand_string(exec_frame_t *frame, const string_t *text, frame_expand_flags_t flags)
 {
     Expects_not_null(frame);
     Expects_not_null(text);
@@ -998,7 +996,6 @@ void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0)
     positional_params_set_arg0(frame->positional_params, new_arg0_str);
     string_destroy(&new_arg0_str);
 }
-
 
 string_t *frame_get_positional_param(const exec_frame_t *frame, int index)
 {
@@ -1283,8 +1280,7 @@ frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
     return FRAME_FUNC_ERROR_NONE;
 }
 
-frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name,
-                                           char **out_body)
+frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1342,8 +1338,7 @@ frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
     }
 }
 
-frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
-                                           const char *value)
+frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name, const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1411,7 +1406,8 @@ frame_exec_status_t frame_call_function(exec_frame_t *frame, const string_t *nam
     }
 
     /* Execute the function body in a new function frame */
-    exec_frame_execute_result_t result = exec_frame_execute_function_body(frame, func_def, (string_list_t *)args, NULL);
+    exec_frame_execute_result_t result =
+        exec_frame_execute_function_body(frame, func_def, (string_list_t *)args, NULL);
 
     if (result.status == EXEC_FRAME_EXECUTE_STATUS_ERROR)
         return FRAME_EXEC_ERROR;
@@ -1445,28 +1441,12 @@ void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t fl
 {
     Expects_not_null(frame);
 
-    exec_control_flow_t internal_flow;
-    switch (flow)
+    if (flow == FRAME_FLOW_TOP)
     {
-    case FRAME_FLOW_BREAK:
-        internal_flow = EXEC_FLOW_BREAK;
-        break;
-    case FRAME_FLOW_CONTINUE:
-        internal_flow = EXEC_FLOW_CONTINUE;
-        break;
-    case FRAME_FLOW_RETURN:
-        internal_flow = EXEC_FLOW_RETURN;
-        break;
-    case FRAME_FLOW_TOP:
-        /* Unwind all frames to top level — request exit on the executor */
+        /* Unwind all frames to top level ? request exit on the executor */
         exec_request_exit(frame->executor, frame->last_exit_status);
-        internal_flow = EXEC_FLOW_RETURN; /* Use RETURN to unwind frame stack */
-        break;
-    default:
-        internal_flow = EXEC_FLOW_NORMAL;
-        break;
     }
-    frame->pending_control_flow = internal_flow;
+    frame->pending_control_flow = flow;
     frame->pending_flow_depth = depth;
 }
 
@@ -1575,8 +1555,8 @@ const string_t *frame_get_exit_trap(exec_frame_t *frame)
     return trap_store_get_exit(traps);
 }
 
-bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action,
-                    bool is_ignored, bool is_reset)
+bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
+                    bool is_reset)
 {
     Expects_not_null(frame);
 
@@ -1587,8 +1567,8 @@ bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *acti
     return trap_store_set(traps, signal_number, (string_t *)action, is_ignored, is_reset);
 }
 
-bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action,
-                         bool is_ignored, bool is_reset)
+bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action, bool is_ignored,
+                         bool is_reset)
 {
     Expects_not_null(frame);
 
@@ -1755,8 +1735,7 @@ int frame_alias_count(const exec_frame_t *frame)
     return alias_store_size(aliases);
 }
 
-void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback,
-                          void *context)
+void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback, void *context)
 {
     Expects_not_null(frame);
     Expects_not_null(callback);

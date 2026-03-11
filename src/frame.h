@@ -30,10 +30,9 @@
 
 #include <stdio.h>
 
-#include "string_t.h"
-#include "string_list.h"
 #include "exec_types_public.h"
-
+#include "string_list.h"
+#include "string_t.h"
 
 /* ============================================================================
  * Error Handling
@@ -119,8 +118,7 @@ string_t *frame_get_ps2(exec_frame_t *frame);
  */
 frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
                                      const string_t *value);
-frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
-                                          const char *value);
+frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value);
 
 /**
  * Sets a non-temporary variable in the variable store associated with the
@@ -217,7 +215,7 @@ void frame_print_readonly_variables(exec_frame_t *frame, FILE *output);
  */
 void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *output);
 
-/* ── IFS convenience ─────────────────────────────────────────────────────── */
+/* ?? IFS convenience ??????????????????????????????????????????????????????? */
 
 /**
  * Returns the current value of IFS for the given frame.
@@ -231,7 +229,7 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *outp
 string_t *frame_get_ifs(exec_frame_t *frame);
 char *frame_get_ifs_cstr(exec_frame_t *frame);
 
-/* ── Working directory ───────────────────────────────────────────────────── */
+/* ?? Working directory ????????????????????????????????????????????????????? */
 
 /**
  * Change the current working directory.
@@ -371,8 +369,7 @@ bool frame_has_function(const exec_frame_t *frame, const string_t *name);
 
 frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
                                       string_t **out_body);
-frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name,
-                                           char **out_body);
+frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body);
 
 frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
                                       const string_t *value);
@@ -440,8 +437,8 @@ void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t fl
  * @param is_ignored True if the trap is set to ignore the signal
  * @param context User-provided context pointer
  */
-typedef void (*frame_trap_callback_t)(int signal_number, const string_t *action,
-                                      bool is_ignored, void *context);
+typedef void (*frame_trap_callback_t)(int signal_number, const string_t *action, bool is_ignored,
+                                      void *context);
 
 /**
  * Iterate over all set traps and call the callback for each.
@@ -477,8 +474,8 @@ const string_t *frame_get_exit_trap(exec_frame_t *frame);
  * @param is_reset True to reset to default (action should be NULL)
  * @return True on success, false on failure
  */
-bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action,
-                    bool is_ignored, bool is_reset);
+bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
+                    bool is_reset);
 
 /**
  * Set the EXIT trap.
@@ -488,8 +485,8 @@ bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *acti
  * @param is_reset True to reset to default (action should be NULL)
  * @return True on success, false on failure
  */
-bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action,
-                         bool is_ignored, bool is_reset);
+bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action, bool is_ignored,
+                         bool is_reset);
 
 /**
  * Convert a signal name to its number.
@@ -531,8 +528,7 @@ void frame_run_exit_traps(exec_frame_t *frame);
  * @param value The alias value (the replacement text)
  * @param context User-provided context pointer
  */
-typedef void (*frame_alias_callback_t)(const string_t *name, const string_t *value,
-                                       void *context);
+typedef void (*frame_alias_callback_t)(const string_t *name, const string_t *value, void *context);
 
 /**
  * Check if an alias exists in the frame's alias store.
