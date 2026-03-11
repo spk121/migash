@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_COLOR_DIAGNOSTICS OFF)
 
@@ -276,7 +276,7 @@ set(SH23BASE_SOURCES
     src/xalloc.h
 )
 
-add_library(sh23base ${SH23_LIBRARY_TYPE} ${SH23BASE_SOURCES})
+add_library(sh23base ${SH23_LIBRARY_TYPE} ${SH23BASE_SOURCES} "src/exec_types_public.h")
 target_include_directories(sh23base PUBLIC src)
 enable_strict_linking(sh23base)
 
@@ -318,7 +318,7 @@ set(SH23STORE_SOURCES
     src/variable_store.h
 )
 
-add_library(sh23store ${SH23_LIBRARY_TYPE} ${SH23STORE_SOURCES})
+add_library(sh23store ${SH23_LIBRARY_TYPE} ${SH23STORE_SOURCES} "src/exec_types_public.h")
 target_include_directories(sh23store PUBLIC src)
 target_link_libraries(sh23store PUBLIC sh23base)
 enable_strict_linking(sh23store)
@@ -329,6 +329,8 @@ enable_strict_linking(sh23store)
 set(SH23LOGIC_SOURCES
     src/arithmetic.c
     src/arithmetic.h
+    src/builtin_store.c
+    src/builtin_store.h
     src/builtins.c
     src/builtins.h
     src/exec.c
@@ -337,15 +339,17 @@ set(SH23LOGIC_SOURCES
     src/exec_command.h
     #src/exec_compound.c
     #src/exec_compound.h
-    src/exec_expander.c
-    src/exec_expander.h
+    src/exec_frame_expander.c
+    src/exec_frame_expander.h
     src/exec_frame.c
     src/exec_frame.h
-    src/exec_internal.h
+    "src/exec_types_internal.h"
+    src/exec_parse_session.c
+    src/exec_parse_session.h
     src/exec_redirect.c
     src/exec_redirect.h
-    src/exec_stream_repl.c
-    src/exec_stream_repl.h
+    #src/exec_stream_repl.c
+    #src/exec_stream_repl.h
     src/frame.c
     src/frame.h
     src/job_store.c
@@ -380,7 +384,7 @@ set(SH23LOGIC_SOURCES
     src/tokenizer.h
 )
 
-add_library(sh23logic ${SH23_LIBRARY_TYPE} ${SH23LOGIC_SOURCES})
+add_library(sh23logic ${SH23_LIBRARY_TYPE} ${SH23LOGIC_SOURCES} "src/exec_types_public.h")
 target_include_directories(sh23logic PUBLIC src)
 target_link_libraries(sh23logic PUBLIC sh23store sh23base)
 enable_strict_linking(sh23logic)
@@ -396,7 +400,7 @@ target_link_libraries(sh23interface INTERFACE sh23logic sh23store sh23base)
 # Executable: mgsh
 # ============================================================================
 
-add_executable(mgsh src/main.c)
+add_executable(mgsh src/main.c "src/exec_types_public.h")
 target_link_libraries(mgsh PRIVATE sh23interface)
 set_target_properties(mgsh PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -412,7 +416,7 @@ enable_testing()
 add_library(ctest_obj OBJECT
     test/ctest/ctest.c
     test/ctest/ctest.h
- )
+  "src/exec_types_public.h")
 target_include_directories(ctest_obj PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
 )
@@ -450,7 +454,7 @@ set(SH23LOGIC_TEST_SOURCES
 foreach(test_src ${SH23BASE_TEST_SOURCES})
     get_filename_component(test_name ${test_src} NAME_WE)
 
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj>)
+    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
     # Test-specific C code can be conditionally compiled with #ifdef IN_CTEST
     target_compile_definitions(${test_name} PRIVATE IN_CTEST)
     target_include_directories(${test_name} PRIVATE
@@ -478,7 +482,7 @@ endforeach()
 foreach(test_src ${SH23STORE_TEST_SOURCES})
     get_filename_component(test_name ${test_src} NAME_WE)
 
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj>)
+    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
     target_compile_definitions(${test_name} PRIVATE IN_CTEST)
     target_include_directories(${test_name} PRIVATE
         src
@@ -505,7 +509,7 @@ endforeach()
 foreach(test_src ${SH23LOGIC_TEST_SOURCES})
     get_filename_component(test_name ${test_src} NAME_WE)
 
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj>)
+    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
     target_compile_definitions(${test_name} PRIVATE IN_CTEST)
     target_include_directories(${test_name} PRIVATE
         src

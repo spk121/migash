@@ -1454,16 +1454,16 @@ char *exec_get_ps1_cstr(const exec_t *executor)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->current_frame->variables, "PS1");
         if (ps1 && *ps1)
-            return ps1;
+            return xstrdup(ps1);
     }
     else if (executor->variables)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
         if (ps1 && *ps1)
-            return ps1;
+            return xstrdup(ps1);
     }
 
-    return "$ ";
+    return xstrdup("$ ");
 }
 
 /* Forward declarations — defined after frame_render_ps1 below. */
@@ -1777,13 +1777,13 @@ char *exec_get_ps2_cstr(const exec_t *executor)
     {
         ps2 = variable_store_get_value_cstr(executor->current_frame->variables, "PS2");
         if (ps2 && *ps2)
-            return ps2;
+            return xstrdup(ps2);
     }
     if (executor->variables)
     {
         ps2 = variable_store_get_value_cstr(executor->variables, "PS2");
     }
-    return (ps2 && *ps2) ? ps2 : "> ";
+    return (ps2 && *ps2) ? xstrdup(ps2) : xstrdup("> ");
 }
 
 positional_params_t *exec_get_positional_params(const exec_t *executor)
@@ -2154,7 +2154,7 @@ static exec_string_status_t exec_string_core(exec_frame_t *frame, const char *in
 
     ast_node_destroy(&ast);
 
-    if (result.status == EXEC_ERROR)
+    if (result.status == EXEC_FRAME_EXECUTE_STATUS_ERROR)
     {
         return EXEC_STRING_ERROR;
     }
@@ -2411,7 +2411,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 
             if (interactive)
             {
-                char *err = exec_get_error_cstr(executor);
+                const char *err = exec_get_error_cstr(executor);
                 if (err)
                 {
                     fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
@@ -2432,7 +2432,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
-            executor->current_frame->pending_control_flow == FRAME_FLOW_RETURN &&
+            executor->current_frame->pending_control_flow == EXEC_FLOW_RETURN &&
             executor->current_frame == executor->top_frame)
         {
             /* A top-level 'return' is equivalent to 'exit' */
