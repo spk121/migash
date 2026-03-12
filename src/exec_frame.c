@@ -19,7 +19,10 @@
 
 #ifdef POSIX_API
 #include <errno.h>
+#include <fnmatch.h>
 #include <limits.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #ifdef UCRT_API
@@ -2430,10 +2433,14 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t
             }
 
             /* Execute the command */
-            exec_result_t cmd_result = exec_execute_dispatch(frame, cmd);
+            exec_frame_execute_result_t cmd_result = exec_frame_execute_dispatch(frame, cmd);
 
             /* Exit the child with the command's exit status */
-            _exit(cmd_result.exit_code);
+            if (is_negated && cmd_result.has_exit_status)
+            {
+                cmd_result.exit_status = (cmd_result.exit_status == 0) ? 1 : 0;
+            }
+            _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
         }
 
         /* ---- Parent process ---- */
