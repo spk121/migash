@@ -12,12 +12,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
 #ifdef POSIX_API
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
-#elifdef UCRT_API
+#endif
+
+#ifdef UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -30,7 +34,6 @@
 #include <processthreadsapi.h> // TerminateProcess, OpenProcess, etc.
 #include <synchapi.h>          // WaitForSingleObject
 #include <sys/stat.h>
-#include <sys/types.h>
 #endif
 
 #include "builtin_store.h"
@@ -55,8 +58,9 @@
 #define GETCWD getcwd
 #define STAT stat
 #define STAT_T struct stat
+#endif
 
-#elifdef UCRT_API
+#ifdef UCRT_API
 /* Constants not always available without full Windows.h */
 #ifndef INFINITE
 #define INFINITE 0xFFFFFFFF
@@ -74,11 +78,10 @@
 #ifndef S_ISDIR
 #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #endif
+#endif // UCRT_API
 
-#else
 #ifndef PATH_MAX
-#define PATH_MAX 1024
-#endif
+#define PATH_MAX 260
 #endif
 
 /* ============================================================================

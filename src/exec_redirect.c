@@ -2,9 +2,11 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+
 #ifdef UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
@@ -15,12 +17,14 @@
 #include <fileapi.h>
 #include <io.h>
 #include <sys/stat.h>
+#endif
+
 #ifndef FD_SETSIZE
 #define FD_SETSIZE 64
 #endif
+
 #ifndef MAX_PATH
 #define MAX_PATH 260
-#endif
 #endif
 
 #include "exec_redirect.h"
