@@ -42,7 +42,7 @@
 #include "parser.h"
 #include "positional_params.h"
 #include "sig_act.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "token.h"
 #include "tokenizer.h"
@@ -218,14 +218,14 @@ char *const *exec_get_args_cstr(const exec_t *executor, int *argc_out)
     return executor->argv;
 }
 
-bool exec_set_args(exec_t *executor, const string_list_t *args)
+bool exec_set_args(exec_t *executor, const strlist_t *args)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
         return false;
-    if (args && string_list_size(args) > 0)
+    if (args && strlist_size(args) > 0)
     {
-        executor->argv = string_list_to_cstr_array(args, &executor->argc);
+        executor->argv = strlist_to_cstr_array(args, &executor->argc);
     }
     else
     {
@@ -1061,11 +1061,11 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     // N.B. If e->variables is set, e->variables, rather than e->envp, becomes the source of the
     // initial environment variables for the top frame when the top frame is initialized.
     if (e->envp)
-        e->env_vars = string_list_create_from_cstr_array((const char **)e->envp, -1);
+        e->env_vars = strlist_create_from_cstr_array((const char **)e->envp, -1);
     else
         // In POSIX_API and UCRT_API, this gets the env from the `environ` global.
         // In ISO C, there is no `environ`, so this will be initialized as an empty list.
-        e->env_vars = string_list_create_from_system_env();
+        e->env_vars = strlist_create_from_system_env();
 
     if (!e->top_frame)
     {
@@ -1253,11 +1253,11 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     }
     else if (e->argc > 1 && e->argv)
     {
-        e->shell_args = string_list_create_from_cstr_array((const char **)e->argv + 1, e->argc - 1);
+        e->shell_args = strlist_create_from_cstr_array((const char **)e->argv + 1, e->argc - 1);
     }
     else
     {
-        e->shell_args = string_list_create();
+        e->shell_args = strlist_create();
     }
 
     /* -------------------------------------------------------------------------
@@ -1270,13 +1270,13 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     }
     else if (cfg->envp_set && cfg->envp)
     {
-        e->env_vars = string_list_create_from_cstr_array((const char **)cfg->envp, -1);
+        e->env_vars = strlist_create_from_cstr_array((const char **)cfg->envp, -1);
     }
     else
     {
         // In POSIX_API and UCRT_API, this gets the env from the `environ` global.
         // In ISO C, there is no `environ`, so this will be initialized as an empty list.
-        e->env_vars = string_list_create_from_system_env();
+        e->env_vars = strlist_create_from_system_env();
     }
 
     /* -------------------------------------------------------------------------
@@ -2650,7 +2650,7 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
                     exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
                 exec_result_t trap_result =
-                    exec_command_string(trap_frame, string_cstr(trap_action->action));
+                    frame_execute_string(trap_frame, trap_action->action);
 
                 exec_frame_pop(&executor->current_frame);
 
@@ -2779,14 +2779,74 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
  * Partial State Lifecycle
  * ============================================================================ */
 
-size_t exec_partial_state_size(void)
+exec_parse_session_t *exec_create_parse_session(exec_t *executor)
+{
+    Expects_not_null(executor);
+    return exec_parse_session_create(executor->aliases);
+}
+
+size_t exec_get_parse_session_size(void)
 {
     return sizeof(exec_parse_session_t);
 }
 
-void exec_partial_state_cleanup(exec_partial_state_t *session)
+void exec_reset_parse_session(exec_parse_session_t *session)
 {
-    exec_parse_session_cleanup(session);
+    Expects_not_null(session);
+    exec_parse_session_reset(session);
+}
+
+void exec_hard_reset_parse_session(exec_parse_session_t *session, exec_t *executor)
+{
+    Expects_not_null(session);
+    if (executor)
+        exec_parse_session_hard_reset(session, executor->aliases);
+    else
+        exec_parse_session_hard_reset(session, NULL);
+}
+
+const char *exec_get_parse_session_filename_cstr(const exec_parse_session_t *session)
+{
+    Expects_not_null(session);
+    return session->filename ? string_cstr(session->filename) : NULL;
+}
+
+size_t exec_get_parse_session_line_number(const exec_parse_session_t *session)
+{
+    Expects_not_null(session);
+    return session->caller_line_number;
+}
+
+void exec_set_parse_session_filename_cstr(exec_parse_session_t *session, const char *filename)
+{
+    Expects_not_null(session);
+    if (filename)
+    {
+        if (!session->filename)
+            session->filename = string_create_from_cstr(filename);
+        else
+            string_set_cstr(session->filename, filename);
+    }
+    else
+    {
+        if (session->filename)
+        {
+            string_destroy(&session->filename);
+            session->filename = NULL;
+        }
+    }
+}
+
+void exec_set_parse_session_line_number(exec_parse_session_t *session, size_t line_number)
+{
+    Expects_not_null(session);
+    session->caller_line_number = line_number;
+}
+
+void exec_destroy_parse_session(exec_parse_session_t **session)
+{
+    Expects_not_null(session);
+    exec_parse_session_destroy(session);
 }
 
 /* ============================================================================
@@ -3746,14 +3806,6 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     return false;
 }
 
-void exec_print_jobs(const exec_t *executor, FILE *output)
-{
-    // void job_store_print_jobs(const job_store_t *store, FILE *output)
-    Expects_not_null(executor);
-    Expects_not_null(output);
-    job_store_print_jobs(executor->jobs, output);
-}
-
 /* exec_jobs_format_t is defined in exec.h */
 
 /**
@@ -3884,80 +3936,22 @@ void exec_print_all_jobs(const exec_t *executor, exec_jobs_format_t format, FILE
 }
 
 /**
+ * Prints all jobs and processes in the verbose debug format.
+ */
+void exec_print_jobs_verbose(const exec_t *executor, FILE *output)
+{
+    Expects_not_null(executor);
+    Expects_not_null(output);
+    job_store_print_jobs(executor->jobs, output);
+}
+
+/**
  * Check whether any jobs exist.
  */
 bool exec_has_jobs(const exec_t *executor)
 {
     Expects_not_null(executor);
     return job_store_count(executor->jobs) > 0;
-}
-
-/**
- * Execute a complete command string.
- *
- * This is a simplified wrapper around exec_string_core() for cases where the
- * input string is expected to be a complete, self-contained command that does
- * not require continuation.  Useful for trap handlers, eval, and any case
- * where you have a complete command as a string.
- *
- * A terminal newline is appended if not already present.  Any result other
- * than EXEC_OK (including EXEC_INCOMPLETE, EXEC_EMPTY, EXEC_ERROR) is
- * promoted to EXEC_ERROR in the returned status.
- *
- * @param frame   The execution frame.
- * @param command The complete command string to execute.
- * @return exec_result_t with .status == EXEC_OK or EXEC_ERROR.
- */
-exec_result_t exec_command_string(exec_frame_t *frame, const char *command)
-{
-    Expects_not_null(frame);
-    Expects_not_null(frame->executor);
-
-    exec_result_t result = {.status = EXEC_OK, .exit_code = 0};
-
-    /* Empty or NULL command is success */
-    if (!command || !*command)
-        return result;
-
-    exec_t *executor = frame->executor;
-
-    /* Create a temporary parse session */
-    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
-    if (!session)
-    {
-        frame_set_error_printf(frame, "Failed to create parse session for command string");
-        result.status = EXEC_ERROR;
-        result.exit_code = EXEC_EXIT_FAILURE;
-        return result;
-    }
-
-    /* Ensure command ends with newline for proper parsing */
-    string_t *cmd_with_newline = string_create_from_cstr(command);
-    int len = string_length(cmd_with_newline);
-    if (len == 0 || string_at(cmd_with_newline, len - 1) != '\n')
-    {
-        string_append_char(cmd_with_newline, '\n');
-    }
-
-    /* Execute the command string */
-    exec_status_t status = exec_string_core(frame, string_cstr(cmd_with_newline), session);
-
-    string_destroy(&cmd_with_newline);
-    exec_parse_session_destroy(&session);
-
-    /* Map result: only EXEC_OK passes through; everything else is an error */
-    if (status == EXEC_OK)
-    {
-        result.status = EXEC_OK;
-        result.exit_code = frame->last_exit_status;
-    }
-    else
-    {
-        result.status = EXEC_ERROR;
-        result.exit_code = frame->last_exit_status ? frame->last_exit_status : EXEC_EXIT_FAILURE;
-    }
-
-    return result;
 }
 
 /* ============================================================================

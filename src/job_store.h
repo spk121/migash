@@ -255,6 +255,13 @@ bool job_store_mark_notified(job_store_t *store, int job_id);
  */
 void job_store_print_completed_jobs(job_store_t *store, FILE *output);
 
+/**
+ * Print all jobs in a verbose format.  This is a debugging aid
+ * that dumps all availabe info.  The output format is not guaranteed to be stable.
+ *
+ * @param store The job store
+ * @param output The output stream (e.g., stdout)
+ */
 void job_store_print_jobs(const job_store_t *store, FILE *output);
 
 // ============================================================================

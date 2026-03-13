@@ -1,7 +1,7 @@
 #include <stdint.h>
 #define VARIABLE_MAP_INTERNAL
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "variable_map.h"
 #include "xalloc.h"
@@ -399,12 +399,12 @@ void variable_map_erase_at_pos(variable_map_t *map, int32_t pos)
     backward_shift_deletion(map, pos);
 }
 
-void variable_map_erase_multiple(variable_map_t *map, const string_list_t *keys)
+void variable_map_erase_multiple(variable_map_t *map, const strlist_t *keys)
 {
     Expects_not_null(map);
     Expects_not_null(keys);
 
-    int count = string_list_size(keys);
+    int count = strlist_size(keys);
     if (count == 0)
     {
         return;
@@ -412,7 +412,7 @@ void variable_map_erase_multiple(variable_map_t *map, const string_list_t *keys)
 
     if (count == 1)
     {
-        variable_map_erase(map, string_list_at(keys, 0));
+        variable_map_erase(map, strlist_at(keys, 0));
         return;
     }
 
@@ -428,7 +428,7 @@ void variable_map_erase_multiple(variable_map_t *map, const string_list_t *keys)
         // Batch of individual deletions
         for (int i = 0; i < count; i++)
         {
-            variable_map_erase(map, string_list_at(keys, i));
+            variable_map_erase(map, strlist_at(keys, i));
         }
         return;
     }
@@ -437,7 +437,7 @@ void variable_map_erase_multiple(variable_map_t *map, const string_list_t *keys)
     int deleted = 0;
     for (int i = 0; i < count; i++)
     {
-        const string_t *key = string_list_at(keys, i);
+        const string_t *key = strlist_at(keys, i);
         int32_t pos = variable_map_find(map, key);
         if (pos != -1 && map->entries[pos].occupied)
         {

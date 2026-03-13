@@ -24,7 +24,7 @@
 #include "exec_types_internal.h"
 #include "exec_types_public.h"
 #include "fd_table.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
@@ -81,7 +81,7 @@ struct exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *fra
                                                                const ast_node_t *node);
 
 struct exec_frame_execute_result_t exec_frame_execute_function_body(
-    exec_frame_t *frame, const ast_node_t *func_body, string_list_t *func_args,
+    exec_frame_t *frame, const ast_node_t *func_body, strlist_t *func_args,
     const exec_redirections_t *func_redirs);
 
 struct exec_frame_execute_result_t exec_frame_execute_command_string(exec_frame_t *frame,

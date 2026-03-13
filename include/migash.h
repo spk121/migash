@@ -7,7 +7,7 @@
 
 /* Primitive types */
 #include "migash/string_t.h"
-#include "migash/string_list.h"
+#include "migash/strlist.h"
 
 /* Getopt for shell builtins */
 #include "migash/getopt.h"

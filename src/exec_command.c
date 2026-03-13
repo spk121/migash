@@ -39,7 +39,7 @@
 #include "func_store.h"
 #include "job_store.h"
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "token.h"
 #include "trap_store.h"
@@ -273,8 +273,8 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         runtime_redirs = exec_redirections_create();
 
     /* Expand command words */
-    string_list_t *expanded_words =
-        has_words ? expand_words(frame, word_tokens) : string_list_create();
+    strlist_t *expanded_words =
+        has_words ? expand_words(frame, word_tokens) : strlist_create();
     if (has_words && !expanded_words)
     {
         status = EXEC_ERROR;
@@ -285,7 +285,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
 
     if (has_words)
     {
-        const char *cmd_name = string_cstr(string_list_at(expanded_words, 0));
+        const char *cmd_name = string_cstr(strlist_at(expanded_words, 0));
 
         if (token_is_reserved_word(cmd_name))
         {
@@ -330,14 +330,14 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
                 func_store_get_redirections(frame->functions, func_name_str);
             string_destroy(&func_name_str);
 
-            string_list_t *func_args = string_list_create_slice(expanded_words, 1, -1);
+            strlist_t *func_args = strlist_create_slice(expanded_words, 1, -1);
 
             exec_status_t redir_st =
                 (exec_status_t)exec_redirect_apply_redirectons(frame, runtime_redirs);
             if (redir_st != EXEC_OK)
             {
                 status = redir_st;
-                string_list_destroy(&func_args);
+                strlist_destroy(&func_args);
                 goto done_execution;
             }
 
@@ -345,7 +345,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
                 exec_frame_execute_function_body(frame, func_body, func_args, func_redirs);
             cmd_exit_status = func_result.exit_status;
 
-            string_list_destroy(&func_args);
+            strlist_destroy(&func_args);
 
             exec_redirect_restore_redirections(frame, runtime_redirs);
             goto done_execution;
@@ -394,7 +394,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
     /* External command execution */
     if (has_words)
     {
-        const char *cmd_name = string_cstr(string_list_at(expanded_words, 0));
+        const char *cmd_name = string_cstr(strlist_at(expanded_words, 0));
 
 #ifdef POSIX_API
         if (!cmd_name || *cmd_name == '\0')
@@ -404,11 +404,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
             goto done_execution;
         }
 
-        int argc = string_list_size(expanded_words);
+        int argc = strlist_size(expanded_words);
         char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
         for (int i = 0; i < argc; i++)
         {
-            argv[i] = xstrdup(string_cstr(string_list_at(expanded_words, i)));
+            argv[i] = xstrdup(string_cstr(strlist_at(expanded_words, i)));
         }
         argv[argc] = NULL;
 
@@ -524,11 +524,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
             exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
 #elifdef UCRT_API
-        int argc = string_list_size(expanded_words);
+        int argc = strlist_size(expanded_words);
         char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
         for (int i = 0; i < argc; i++)
         {
-            argv[i] = xstrdup(string_cstr(string_list_at(expanded_words, i)));
+            argv[i] = xstrdup(string_cstr(strlist_at(expanded_words, i)));
         }
         argv[argc] = NULL;
 
@@ -553,7 +553,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
                          "redirections.");
             }
             log_debug("Preparing to execute external background command: %s", cmd_name);
-            for (int i = 0; i < string_list_size(expanded_words); i++)
+            for (int i = 0; i < strlist_size(expanded_words); i++)
             {
                 log_debug("\targv%d: %s", i, argv[i]);
             }
@@ -576,7 +576,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
                 }
             }
             log_debug("Preparing to execute external command: %s", cmd_name);
-            for (int i = 0; i < string_list_size(expanded_words); i++)
+            for (int i = 0; i < strlist_size(expanded_words); i++)
             {
                 log_debug("\targv%d: %s", i, argv[i]);
             }
@@ -636,11 +636,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         }
 
         string_t *cmdline = string_create();
-        for (int i = 0; i < string_list_size(expanded_words); i++)
+        for (int i = 0; i < strlist_size(expanded_words); i++)
         {
             if (i > 0)
                 string_append_cstr(cmdline, " ");
-            string_append(cmdline, string_list_at(expanded_words, i));
+            string_append(cmdline, strlist_at(expanded_words, i));
         }
 
         string_t *env_fname = variable_store_write_env_file(frame->variables);
@@ -675,10 +675,10 @@ done_execution:
     frame->last_exit_status = cmd_exit_status;
 
     /* Update $_ with last argument */
-    if (string_list_size(expanded_words) > 1)
+    if (strlist_size(expanded_words) > 1)
     {
         const string_t *last_arg =
-            string_list_at(expanded_words, string_list_size(expanded_words) - 1);
+            strlist_at(expanded_words, strlist_size(expanded_words) - 1);
         if (!executor->last_argument)
             executor->last_argument = string_create();
         string_set(executor->last_argument, last_arg);
@@ -686,7 +686,7 @@ done_execution:
     }
 
 out_cleanup_words:
-    string_list_destroy(&expanded_words);
+    strlist_destroy(&expanded_words);
 
 out_destroy_redirs:
     exec_redirections_destroy(&runtime_redirs);
@@ -718,7 +718,7 @@ out_restore_vars:
  */
 exec_frame_execute_result_t exec_frame_execute_function_body(exec_frame_t *frame,
                                                              const ast_node_t *func_body,
-                                                             string_list_t *func_args,
+                                                             strlist_t *func_args,
                                                              const exec_redirections_t *func_redirs)
 {
     Expects_not_null(frame);

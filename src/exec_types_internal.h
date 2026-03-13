@@ -33,7 +33,7 @@
 #include "job_store.h"
 #include "positional_params.h"
 #include "sig_act.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
@@ -167,8 +167,8 @@ struct exec_t
     char *const *envp;
 
     string_t *shell_name;
-    string_list_t *shell_args;
-    string_list_t *env_vars;
+    strlist_t *shell_args;
+    strlist_t *env_vars;
 
     exec_opt_flags_t opt;
 
@@ -290,11 +290,8 @@ typedef struct exec_redirections_t
  * Partial Execution State
  * ============================================================================
  *
- * exec_partial_state_t is now a typedef for exec_parse_session_t.
  * The concrete definition lives in exec_parse_session.h.
  *
- * exec_string_ctx_t has been eliminated; its fields are now part of
- * exec_parse_session_t.
  * ============================================================================ */
 
 /* ============================================================================
@@ -409,7 +406,7 @@ typedef struct exec_params_t
     const exec_redirections_t *redirections;
 
     /* For functions and dot scripts: arguments to set $1, $2, ... */
-    string_list_t *arguments;
+    strlist_t *arguments;
 
     /* For dot scripts: the script path (for $0 and source tracking) */
     string_t *script_path;
@@ -417,7 +414,7 @@ typedef struct exec_params_t
     /* For loops */
     const ast_node_t *condition;    /* while/until condition */
     bool until_mode;                /* true for until, false for while */
-    string_list_t *iteration_words; /* for loop word list */
+    strlist_t *iteration_words; /* for loop word list */
     string_t *loop_var_name;        /* for loop variable */
 
     /* For pipelines (EXEC_FRAME_PIPELINE) */
@@ -436,7 +433,7 @@ typedef struct exec_params_t
     int pipe_fds_count;     /* Count of pipe FDs to close */
 
     /* For background jobs / debugging */
-    string_list_t *command_args; /* Original command text for job display */
+    strlist_t *command_args; /* Original command text for job display */
 
     /* Source location */
     int source_line;

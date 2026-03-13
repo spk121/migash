@@ -49,7 +49,7 @@
 #include "lib.h"
 #include "logging.h"
 #include "positional_params.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
@@ -86,11 +86,11 @@ exec_frame_execute_result_t exec_frame_execute_while_loop(exec_frame_t *frame,
                                                           ast_node_t *condition, ast_node_t *node,
                                                           bool is_negated);
 exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name,
-                                                        string_list_t *words, ast_node_t *body);
+                                                        strlist_t *words, ast_node_t *body);
 static exec_frame_execute_result_t exec_frame_execute_background_job(exec_frame_t *parent,
                                                                      ast_node_t *body,
-                                                                     string_list_t *command_args);
- 
+                                                                     strlist_t *command_args);
+
 
 /* ============================================================================
  * Helper Functions - System Queries
@@ -229,7 +229,7 @@ static void init_positional_params(exec_frame_t *frame, exec_t *exec, exec_param
         case EXEC_POSITIONAL_INIT_CALL_ARGS:
             if (params && params->arguments)
             {
-                frame->positional_params = positional_params_create_from_string_list(
+                frame->positional_params = positional_params_create_from_strlist(
                     /* $0 inherited from parent */
                     positional_params_get_arg0(frame->parent->positional_params),
                     params->arguments);
@@ -258,7 +258,7 @@ static void init_positional_params(exec_frame_t *frame, exec_t *exec, exec_param
         if (policy->positional.can_override && params && params->arguments)
         {
             frame->saved_positional_params = frame->positional_params;
-            frame->positional_params = positional_params_create_from_string_list(
+            frame->positional_params = positional_params_create_from_strlist(
                 positional_params_get_arg0(frame->parent->positional_params), params->arguments);
         }
         break;
@@ -1037,7 +1037,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
 }
 
  static exec_frame_execute_result_t exec_frame_execute_background_job(exec_frame_t *parent, ast_node_t *body,
-                                 string_list_t *command_args)
+                                 strlist_t *command_args)
  {
      exec_params_t params = {
          .body = body,
@@ -1077,7 +1077,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *pare
 }
 
 exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name,
-                                                        string_list_t *words, ast_node_t *body)
+                                                        strlist_t *words, ast_node_t *body)
 {
     exec_params_t params = {
         .iteration_words = words,
@@ -1215,7 +1215,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
                 /* Background job: record and return immediately */
                 parent->last_bg_pid = pid;
                 string_t *cmdline =
-                    params ? string_list_join(params->command_args, " ") : string_create_from_cstr("");
+                    params ? strlist_join(params->command_args, " ") : string_create_from_cstr("");
                 job_store_add(exec->jobs, pid, cmdline);
                 string_destroy(&cmdline);
                 return (exec_frame_execute_result_t){.exit_status = 0,
@@ -1566,10 +1566,10 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame
              */
             string_t *command_line = ast_node_to_command_line_full(cmd);
             // Since we're not sending this to spawn, we can keep this as a single string_t
-            string_list_t *argv_list = string_list_create();
-            string_list_move_push_back(argv_list, &command_line);
+            strlist_t *argv_list = strlist_create();
+            strlist_move_push_back(argv_list, &command_line);
             cmd_result = exec_frame_execute_background_job(frame, cmd, argv_list);
-            string_list_destroy(&argv_list);
+            strlist_destroy(&argv_list);
         }
         else
         {
@@ -1934,7 +1934,7 @@ exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, a
     ast_node_t *body = node->data.for_clause.body;
 
     // Build the word list via proper POSIX expansion or positional parameters
-    string_list_t *words;
+    strlist_t *words;
     if (word_tokens && token_list_size(word_tokens) > 0)
     {
         // Perform full word expansion: tilde, parameter, command substitution,
@@ -1942,7 +1942,7 @@ exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, a
         words = expand_words(frame, word_tokens);
         if (!words)
         {
-            words = string_list_create(); // Treat expansion failure as empty list
+            words = strlist_create(); // Treat expansion failure as empty list
         }
     }
     else
@@ -1956,7 +1956,7 @@ exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, a
     exec_frame_execute_result_t result = exec_frame_execute_for_loop(frame, var_name, words, body);
 
     // Clean up
-    string_list_destroy(&words);
+    strlist_destroy(&words);
 
     return result;
 }
@@ -2196,9 +2196,9 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
                                           .flow_depth = 0};
 
     // Iterate over each word
-    for (int i = 0; i < string_list_size(params->iteration_words); i++)
+    for (int i = 0; i < strlist_size(params->iteration_words); i++)
     {
-        const string_t *word = string_list_at(params->iteration_words, i);
+        const string_t *word = strlist_at(params->iteration_words, i);
 
         // Set loop variable
         variable_store_add(frame->variables, params->loop_var_name, word, false, false);

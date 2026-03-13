@@ -827,13 +827,13 @@ parse_status_t gparse_pipeline(parser_t *parser, gnode_t **out_node)
     Expects_not_null(out_node);
 
     *out_node = NULL;
-    
+
     /* Try promoting "!" to TOKEN_BANG */
     parser_token_info_t info = parser_current_token_info(parser);
     token_type_t t = info.valid ? token_get_type(info.token) : TOKEN_EOF;
     if (t == TOKEN_WORD && parser_token_try_promote_to_bang(parser, info.offset))
         t = TOKEN_BANG;
-    
+
     if (t == TOKEN_EOF)
     {
         return PARSE_EMPTY;
@@ -952,7 +952,7 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
         *out_node = node;
         return PARSE_OK;
     }
-    
+
     /* If function definition parsing is incomplete, don't try other alternatives */
     if (status == PARSE_INCOMPLETE)
     {
@@ -988,7 +988,7 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
         *out_node = node;
         return PARSE_OK;
     }
-    
+
     /* If compound command parsing is incomplete, don't try simple_command */
     if (status == PARSE_INCOMPLETE)
     {
@@ -1031,7 +1031,7 @@ parse_status_t gparse_compound_command(parser_t *parser, gnode_t **out_node)
     parser_token_info_t info = parser_current_token_info(parser);
     Expects(info.valid);
     token_type_t t = token_get_type(info.token);
-    
+
     /* Try promoting TOKEN_WORD to reserved words for compound commands */
     if (t == TOKEN_WORD)
     {
@@ -1344,7 +1344,7 @@ parse_status_t gparse_in_clause(parser_t *parser, gnode_t **out_node)
     parser_skip_newlines(parser);
 
     token_type_t t = parser_current_token_type(parser);
-    
+
     /* Check if current token is 'in' (either already promoted or needs promotion) */
     if (t == TOKEN_WORD)
     {
@@ -1355,7 +1355,7 @@ parse_status_t gparse_in_clause(parser_t *parser, gnode_t **out_node)
             t = TOKEN_IN;
         }
     }
-    
+
     if (t != TOKEN_IN)
     {
         parser_set_error(parser, "Expected 'in' keyword");
@@ -1470,7 +1470,7 @@ parse_status_t gparse_case_clause(parser_t *parser, gnode_t **out_node)
             t = TOKEN_IN;
         }
     }
-    
+
     if (t != TOKEN_IN)
     {
         parser_set_error(parser, "Expected 'in' in case statement");
@@ -1622,7 +1622,7 @@ parse_status_t gparse_case_list(parser_t *parser, gnode_t **out_node)
             if (tok && !token_was_quoted(tok) && token_part_count(tok) == 1)
             {
                 const part_t *part = tok->parts->parts[0];
-                if (part_get_type(part) == PART_LITERAL && 
+                if (part_get_type(part) == PART_LITERAL &&
                     strcmp(string_cstr(part->text), "esac") == 0)
                 {
                     break;
@@ -1909,7 +1909,7 @@ parse_status_t gparse_if_clause(parser_t *parser, gnode_t **out_node)
             g_node_destroy(&cond);
             return PARSE_INCOMPLETE;
         }
-        
+
         parser_set_error(parser, "Expected 'then' after if condition");
         g_node_destroy(&node);
         g_node_destroy(&if_tok);
@@ -1960,7 +1960,7 @@ parse_status_t gparse_if_clause(parser_t *parser, gnode_t **out_node)
                 g_node_destroy(&else_part);
             return PARSE_INCOMPLETE;
         }
-        
+
         parser_set_error(parser, "Expected 'fi' to close if statement");
         g_node_destroy(&node);
         g_node_destroy(&if_tok);
@@ -2084,7 +2084,7 @@ parse_status_t gparse_else_part(parser_t *parser, gnode_t **out_node)
         node->data.multi.a = cond;
         node->data.multi.b = then_body;
         node->data.multi.c = else_part;
-        
+
         g_node_destroy(&elif_tok);
         g_node_destroy(&then_tok);
 
@@ -2115,7 +2115,7 @@ parse_status_t gparse_else_part(parser_t *parser, gnode_t **out_node)
         node->data.multi.a = body;
         node->data.multi.b = NULL;
         node->data.multi.c = NULL;
-        
+
         /* else_tok is not needed in the parse tree - just syntactic */
         g_node_destroy(&else_tok);
 
@@ -2428,7 +2428,7 @@ parse_status_t gparse_brace_group(parser_t *parser, gnode_t **out_node)
             g_node_destroy(&list);
             return PARSE_INCOMPLETE;
         }
-        
+
         parser_set_error(parser, "Expected '}' to close brace group");
         g_node_destroy(&node);
         g_node_destroy(&lbrace);
@@ -2508,7 +2508,7 @@ parse_status_t gparse_do_group(parser_t *parser, gnode_t **out_node)
             g_node_destroy(&list);
             return PARSE_INCOMPLETE;
         }
-        
+
         parser_set_error(parser, "Expected 'done' to close do group");
         g_node_destroy(&node);
         g_node_destroy(&do_tok);
@@ -2634,7 +2634,7 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
 /* ============================================================================
  * Helper function: Check if the current word token is a reserved word that
  * should stop simple command parsing.
- * 
+ *
  * Reserved words like "then", "fi", "do", "done", "else", "elif", "esac" should
  * not be consumed as command names or arguments when they appear in contexts
  * where they might be closing/continuing keywords of compound constructs.
@@ -2644,17 +2644,17 @@ static bool is_terminating_reserved_word(const token_t *tok)
 {
     if (!tok || token_get_type(tok) != TOKEN_WORD)
         return false;
-    
+
     /* A reserved word must be a single literal part and not quoted */
     if (token_was_quoted(tok) || token_part_count(tok) != 1)
         return false;
-    
+
     const part_t *first_part = tok->parts->parts[0];
     if (part_get_type(first_part) != PART_LITERAL)
         return false;
-    
+
     const char *word = string_cstr(first_part->text);
-    
+
     /* These are the reserved words that can terminate or continue
      * compound commands and should not be consumed as simple command words */
     return (strcmp(word, "then") == 0 ||
@@ -2782,13 +2782,13 @@ parse_status_t gparse_simple_command(parser_t *parser, gnode_t **out_node)
     if (!has_cmd_prefix && !has_cmd_name)
     {
         g_node_destroy(&node);
-        
+
         /* Check if we're at EOF - need more input */
         if (parser_current_token_type(parser) == TOKEN_EOF)
         {
             return PARSE_INCOMPLETE;
         }
-        
+
         return PARSE_ERROR;
     }
 

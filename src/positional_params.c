@@ -6,7 +6,7 @@
 #include "positional_params.h"
 #include "xalloc.h"
 #include "string_t.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "logging.h"
 #include <string.h>
 #include <assert.h>
@@ -44,10 +44,10 @@ positional_params_t *positional_params_create_from_array(const string_t *arg0, i
     return p;
 }
 
-positional_params_t* positional_params_create_from_string_list(const string_t* arg0, const string_list_t* params)
+positional_params_t* positional_params_create_from_strlist(const string_t* arg0, const strlist_t* params)
 {
     Expects_not_null(params);
-    int count = string_list_size(params);
+    int count = strlist_size(params);
     if (count > POSITIONAL_PARAMS_MAX)
         return NULL;
     positional_params_t *p = xcalloc(1, sizeof(positional_params_t));
@@ -55,7 +55,7 @@ positional_params_t* positional_params_create_from_string_list(const string_t* a
     p->arg0 = string_create_from(arg0);
     p->params = xcalloc((size_t)count + 1, sizeof(string_t *));
     for (int i = 0; i < count; i++)
-        p->params[i] = string_create_from(string_list_at(params, i));
+        p->params[i] = string_create_from(strlist_at(params, i));
     p->params[count] = NULL;
     p->max_params = POSITIONAL_PARAMS_MAX;
     return p;
@@ -163,18 +163,18 @@ int positional_params_count(const positional_params_t *params)
     return params->count;
 }
 
-string_list_t *positional_params_get_all(const positional_params_t *params)
+strlist_t *positional_params_get_all(const positional_params_t *params)
 {
     Expects_not_null(params);
 
-    string_list_t *list = string_list_create();
+    strlist_t *list = strlist_create();
 
     if (params->params == NULL || params->count == 0)
         return list;
 
     for (int i = 0; i < params->count; i++)
     {
-        string_list_push_back(list, params->params[i]);
+        strlist_push_back(list, params->params[i]);
     }
 
     return list;

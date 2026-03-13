@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 
 /* ============================================================================
@@ -77,14 +77,14 @@ bool glob_util_match_str(const string_t *pattern, const string_t *string, int fl
  *
  * @param pattern The glob pattern (may contain *, ?, [...])
  * @return List of matching paths, or NULL if no matches found
- *         Caller must free the returned list with string_list_destroy()
+ *         Caller must free the returned list with strlist_destroy()
  *
  * Examples (POSIX):
  *   glob_util_expand_path("*.txt") -> ["file1.txt", "file2.txt"]
  *   glob_util_expand_path("test?.c") -> ["test1.c", "test2.c"]
  *   glob_util_expand_path("no-match-*") -> NULL
  */
-string_list_t *glob_util_expand_path(const string_t *pattern);
+strlist_t *glob_util_expand_path(const string_t *pattern);
 
 /**
  * Expand a glob pattern with explicit flags and base directory.
@@ -100,6 +100,6 @@ string_list_t *glob_util_expand_path(const string_t *pattern);
  * Note: Currently base_dir is not implemented and should be passed as NULL.
  * Future enhancement will support searching in specific directories.
  */
-string_list_t *glob_util_expand_path_ex(const string_t *pattern, int flags, const char *base_dir);
+strlist_t *glob_util_expand_path_ex(const string_t *pattern, int flags, const char *base_dir);
 
 #endif /* GLOB_UTIL_H */

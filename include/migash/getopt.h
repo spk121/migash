@@ -67,6 +67,12 @@
 #ifndef MGSH_GETOPT_H
 #define MGSH_GETOPT_H
 
+#include "migash/api.h"
+#include "migash/strlist.h"
+#include "migash/string_t.h"
+
+MGSH_EXTERN_C_START
+
 /**
  * @name Argument-requirement constants
  * Used in the @c has_arg field of @c struct @c option and @c struct
@@ -248,7 +254,7 @@ extern int optopt;
  * }
  * @endcode
  */
-int getopt(int argc, char *const argv[], const char *optstring);
+MGSH_API int getopt(int argc, char *const argv[], const char *optstring);
 
 /**
  * @brief Parse short and long command-line options.
@@ -277,9 +283,9 @@ int getopt(int argc, char *const argv[], const char *optstring);
  *
  * @note Not reentrant.  Use getopt_long_r() for a reentrant version.
  */
-int getopt_long(int argc, char *const argv[], const char *optstring,
-                const struct option *longopts,
-                int *longind);
+MGSH_API int getopt_long(int argc, char *const argv[], const char *optstring,
+                   const struct option *longopts,
+                    int *longind);
 
 /**
  * @brief Parse long options, allowing unambiguous abbreviations and single-dash
@@ -302,8 +308,8 @@ int getopt_long(int argc, char *const argv[], const char *optstring,
  *
  * @note Not reentrant.  Use getopt_long_only_r() for a reentrant version.
  */
-int getopt_long_only(int argc, char *const argv[], const char *optstring,
-                     const struct option *longopts, int *longind);
+MGSH_API int getopt_long_only(int argc, char *const argv[], const char *optstring,
+                        const struct option *longopts, int *longind);
 
 /*---------------------------------------------------------------------------
  * Plus-prefix-aware interfaces (non-reentrant)
@@ -355,8 +361,8 @@ int getopt_long_only(int argc, char *const argv[], const char *optstring,
  * }
  * @endcode
  */
-int getopt_long_plus(int argc, char *const argv[], const char *optstring,
-                     const struct option_ex *longopts, int *longind);
+MGSH_API int getopt_long_plus(int argc, char *const argv[], const char *optstring,
+                        const struct option_ex *longopts, int *longind);
 
 /**
  * @brief Parse long options with +prefix support and single-dash long forms.
@@ -378,8 +384,8 @@ int getopt_long_plus(int argc, char *const argv[], const char *optstring,
  * @note Not reentrant.  Use getopt_long_only_plus_r() for a reentrant
  *       version.
  */
-int getopt_long_only_plus(int argc, char *const argv[], const char *optstring,
-                          const struct option_ex *longopts, int *longind);
+MGSH_API int getopt_long_only_plus(int argc, char *const argv[], const char *optstring,
+                             const struct option_ex *longopts, int *longind);
 
 /*---------------------------------------------------------------------------
  * Reentrant variants
@@ -475,7 +481,7 @@ struct getopt_state
  * @return Same as getopt().
  * @retval -1 If @p state is NULL.
  */
-int getopt_r(int argc, char *const argv[], const char *optstring,
+MGSH_API int getopt_r(int argc, char *const argv[], const char *optstring,
              struct getopt_state *state);
 
 /**
@@ -491,7 +497,7 @@ int getopt_r(int argc, char *const argv[], const char *optstring,
  * @return Same as getopt_long().
  * @retval -1 If @p state is NULL.
  */
-int getopt_long_r(int argc, char *const argv[], const char *optstring,
+MGSH_API int getopt_long_r(int argc, char *const argv[], const char *optstring,
                   const struct option *longopts, int *longind,
                   struct getopt_state *state);
 
@@ -508,7 +514,7 @@ int getopt_long_r(int argc, char *const argv[], const char *optstring,
  * @return Same as getopt_long_only().
  * @retval -1 If @p state is NULL.
  */
-int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
+MGSH_API int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
                        const struct option *longopts, int *longind, struct getopt_state *state);
 
 /**
@@ -525,7 +531,7 @@ int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
  * @return Same as getopt_long_plus().
  * @retval -1 If @p state is NULL.
  */
-int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
+MGSH_API int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
                        const struct option_ex *longopts, int *longind, struct getopt_state *state);
 
 /**
@@ -542,7 +548,7 @@ int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
  * @return Same as getopt_long_only_plus().
  * @retval -1 If @p state is NULL.
  */
-int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
+MGSH_API int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
                             const struct option_ex *longopts, int *longind, struct getopt_state *state);
 
 /**
@@ -569,7 +575,7 @@ int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
  *
  * @return Same as the calling public function.
  */
-int _getopt_internal_r(int argc, char *const argv[], const char *optstring, const void *longopts,
+MGSH_LOCAL int _getopt_internal_r(int argc, char *const argv[], const char *optstring, const void *longopts,
                        int *longind, int long_only, int posixly_correct, struct getopt_state *state,
                        int plus_aware);
 
@@ -587,7 +593,7 @@ int _getopt_internal_r(int argc, char *const argv[], const char *optstring, cons
  * Call this before re-scanning @p argv or before parsing a different command
  * line with the non-reentrant API.
  */
-void getopt_reset(void);
+MGSH_API void getopt_reset(void);
 
 /**
  * @brief Reset global state for a fresh plus-aware parsing pass.
@@ -599,6 +605,34 @@ void getopt_reset(void);
  * @note For reentrant usage, simply zero-initialise a new
  *       @c struct @c getopt_state instead of calling this function.
  */
-void getopt_reset_plus(void);
+MGSH_API void getopt_reset_plus(void);
+
+/*---------------------------------------------------------------------------
+ * String-based wrappers
+ *---------------------------------------------------------------------------*/
+
+/*
+ * String-based wrapper for getopt()
+ *
+ * @param argv The argument list as a strlist_t
+ * @param optstring The option string as a string_t
+ * @return Same as getopt(): option character, -1 for end, '?' for error
+ */
+MGSH_API int getopt_string(const strlist_t *argv, const string_t *optstring);
+
+/**
+ * String-based wrapper for getopt_long_plus()
+ *
+ * @param argv The argument list as a strlist_t
+ * @param optstring The option string as a string_t
+ * @param longopts Long options array (NULL-terminated)
+ * @param longind Pointer to store index of long option (can be NULL)
+ * @return Same as getopt_long_plus(): option character, -1 for end, '?' for error
+ */
+MGSH_API int getopt_long_plus_string(const strlist_t *argv,
+                            const string_t *optstring,
+                            const struct option_ex *longopts, int *longind);
+
+MGSH_EXTERN_C_END
 
 #endif /* MGSH_GETOPT_H */

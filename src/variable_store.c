@@ -3,7 +3,7 @@
 
 #define VARIABLE_MAP_INTERNAL
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "variable_map.h"
 #include "variable_store.h"
@@ -624,11 +624,11 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
     Expects_not_null(fn);
 
     // Collect keys to remove after iteration to avoid invalidating the iteration
-    string_list_t *keys_to_remove = NULL;
+    strlist_t *keys_to_remove = NULL;
 
     // Collect renames: parallel lists for new names and values, plus flag arrays
-    string_list_t *rename_new_names = NULL;
-    string_list_t *rename_values = NULL;
+    strlist_t *rename_new_names = NULL;
+    strlist_t *rename_values = NULL;
     bool *rename_exported = NULL;
     bool *rename_read_only = NULL;
     int rename_count = 0;
@@ -666,9 +666,9 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
         {
             if (!keys_to_remove)
             {
-                keys_to_remove = string_list_create();
+                keys_to_remove = strlist_create();
             }
-            string_list_push_back(keys_to_remove, store->map->entries[i].key);
+            strlist_push_back(keys_to_remove, store->map->entries[i].key);
 
             string_destroy(&name);
             if (value)
@@ -715,15 +715,15 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
             // Rename: delete old key, insert new key with updated values
             if (!keys_to_remove)
             {
-                keys_to_remove = string_list_create();
+                keys_to_remove = strlist_create();
             }
-            string_list_push_back(keys_to_remove, store->map->entries[i].key);
+            strlist_push_back(keys_to_remove, store->map->entries[i].key);
 
             // Store the rename for later insertion
             if (!rename_new_names)
             {
-                rename_new_names = string_list_create();
-                rename_values = string_list_create();
+                rename_new_names = strlist_create();
+                rename_values = strlist_create();
             }
 
             if (rename_count >= rename_capacity)
@@ -734,8 +734,8 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
                 rename_capacity = new_capacity;
             }
 
-            string_list_move_push_back(rename_new_names, &name);
-            string_list_move_push_back(rename_values, &value);
+            strlist_move_push_back(rename_new_names, &name);
+            strlist_move_push_back(rename_values, &value);
             rename_exported[rename_count] = exported;
             rename_read_only[rename_count] = read_only;
             rename_count++;
@@ -774,23 +774,23 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
     if (keys_to_remove)
     {
         variable_map_erase_multiple(store->map, keys_to_remove);
-        string_list_destroy(&keys_to_remove);
+        strlist_destroy(&keys_to_remove);
     }
 
     // Perform deferred insertions for renames
     for (int i = 0; i < rename_count; i++)
     {
         variable_map_mapped_t mapped = {0};
-        mapped.value = string_create_from(string_list_at(rename_values, i));
+        mapped.value = string_create_from(strlist_at(rename_values, i));
         mapped.exported = rename_exported[i];
         mapped.read_only = rename_read_only[i];
 
-        variable_map_insert_or_assign(store->map, string_list_at(rename_new_names, i), &mapped);
+        variable_map_insert_or_assign(store->map, strlist_at(rename_new_names, i), &mapped);
         string_destroy(&mapped.value);
     }
 
-    string_list_destroy(&rename_new_names);
-    string_list_destroy(&rename_values);
+    strlist_destroy(&rename_new_names);
+    strlist_destroy(&rename_values);
     xfree(rename_exported);
     xfree(rename_read_only);
 
@@ -798,9 +798,9 @@ var_store_error_t variable_store_map(variable_store_t *store, var_store_map_fn f
     return VAR_STORE_ERROR_NONE;
 
 cleanup:
-    string_list_destroy(&keys_to_remove);
-    string_list_destroy(&rename_new_names);
-    string_list_destroy(&rename_values);
+    strlist_destroy(&keys_to_remove);
+    strlist_destroy(&rename_new_names);
+    strlist_destroy(&rename_values);
     xfree(rename_exported);
     xfree(rename_read_only);
     return err;

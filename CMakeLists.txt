@@ -270,14 +270,14 @@ set(SH23BASE_SOURCES
     src/pattern_removal.h
     src/string_t.c
     src/string_t.h
-    src/string_list.c
-    src/string_list.h
+    src/strlist.c
+    src/strlist.h
     src/xalloc.c
     src/xalloc.h
 )
 
-add_library(sh23base ${SH23_LIBRARY_TYPE} ${SH23BASE_SOURCES} "src/exec_types_public.h")
-target_include_directories(sh23base PUBLIC src)
+add_library(sh23base ${SH23_LIBRARY_TYPE} ${SH23BASE_SOURCES})
+target_include_directories(sh23base PUBLIC src include)
 enable_strict_linking(sh23base)
 
 # ============================================================================
@@ -318,8 +318,8 @@ set(SH23STORE_SOURCES
     src/variable_store.h
 )
 
-add_library(sh23store ${SH23_LIBRARY_TYPE} ${SH23STORE_SOURCES} "src/exec_types_public.h")
-target_include_directories(sh23store PUBLIC src)
+add_library(sh23store ${SH23_LIBRARY_TYPE} ${SH23STORE_SOURCES})
+target_include_directories(sh23store PUBLIC src include)
 target_link_libraries(sh23store PUBLIC sh23base)
 enable_strict_linking(sh23store)
 
@@ -384,8 +384,8 @@ set(SH23LOGIC_SOURCES
     src/tokenizer.h
 )
 
-add_library(sh23logic ${SH23_LIBRARY_TYPE} ${SH23LOGIC_SOURCES} "src/exec_types_public.h")
-target_include_directories(sh23logic PUBLIC src)
+add_library(sh23logic ${SH23_LIBRARY_TYPE} ${SH23LOGIC_SOURCES})
+target_include_directories(sh23logic PUBLIC src include)
 target_link_libraries(sh23logic PUBLIC sh23store sh23base)
 enable_strict_linking(sh23logic)
 
@@ -400,7 +400,7 @@ target_link_libraries(sh23interface INTERFACE sh23logic sh23store sh23base)
 # Executable: mgsh
 # ============================================================================
 
-add_executable(mgsh src/main.c "src/exec_types_public.h")
+add_executable(mgsh src/main.c)
 target_link_libraries(mgsh PRIVATE sh23interface)
 set_target_properties(mgsh PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -415,8 +415,7 @@ enable_testing()
 # Object library for the shared CTest framework used by all shell tests
 add_library(ctest_obj OBJECT
     test/ctest/ctest.c
-    test/ctest/ctest.h
-  "src/exec_types_public.h")
+    test/ctest/ctest.h)
 target_include_directories(ctest_obj PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
 )

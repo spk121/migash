@@ -32,7 +32,7 @@ token_t *token_clone(const token_t *other)
 {
     if (!other)
         return NULL;
-        
+
     token_t *new_token = token_create(other->type);
     if (!new_token)
         return NULL;
@@ -1395,10 +1395,10 @@ int token_list_append_list_move(token_list_t *dest, token_list_t **src)
 
     /* Release src tokens without destroying them (ownership transferred) */
     token_list_release_tokens(s);
-    
+
     /* Destroy the now-empty src list structure */
     token_list_destroy(src);
-    
+
     return 0;
 }
 
@@ -1454,7 +1454,7 @@ int token_list_set_token_type(token_list_t *list, int index, token_type_t type)
     Expects_lt(index, list->size);
     Expects_not_null(list->tokens);
     Expects_not_null(list->tokens[index]);
-    
+
     token_t *token = list->tokens[index];
     /* Some token types require payloads, so we error if this is a token that requires a payload. */
     if (type == TOKEN_ASSIGNMENT_WORD || type == TOKEN_IO_LOCATION || type == TOKEN_IO_NUMBER ||
@@ -1483,11 +1483,11 @@ int token_list_set_io_number(token_list_t *list, int index, int io_number)
     Expects_not_null(list->tokens[index]);
 
     token_t *token = list->tokens[index];
-    
+
     /* Convert to TOKEN_IO_NUMBER and set the value */
     token_set_type(token, TOKEN_IO_NUMBER);
     token_set_io_number(token, io_number);
-    
+
     return 0;
 }
 

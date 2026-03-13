@@ -126,7 +126,7 @@ src/lib.c \
 src/logging.c \
 src/pattern_removal.c \
 src/string_t.c \
-src/string_list.c \
+src/strlist.c \
 src/xalloc.c
 
 MGSHSTORE_SOURCES := \

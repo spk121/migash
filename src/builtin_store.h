@@ -23,7 +23,7 @@
 
 #include "exec_types_internal.h"
 #include "exec_types_public.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 
 /* ── Forward declarations ────────────────────────────────────────────────── */
 

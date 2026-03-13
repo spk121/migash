@@ -610,7 +610,7 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
             // Check if we're in a case statement and the next token is ')'
             // If so, this word is a case pattern and should NOT be promoted to a reserved word
             bool is_case_pattern = false;
-            if (tok->compound_stack_size > 0 && 
+            if (tok->compound_stack_size > 0 &&
                 tok->compound_stack[tok->compound_stack_size - 1] == TOKEN_CASE &&
                 tok->input_pos + 1 < token_list_size(tok->input_tokens))
             {
@@ -625,11 +625,11 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
             // If so, this word is a variable/word name and should NOT be promoted
             // We need to check both output_tokens and buffered_tokens
             bool is_loop_var_or_case_word = false;
-            token_list_t *list_to_check = (tok->compound_stack_size > 0) ? 
+            token_list_t *list_to_check = (tok->compound_stack_size > 0) ?
                                           tok->buffered_tokens : tok->output_tokens;
             if (token_list_size(list_to_check) > 0)
             {
-                const token_t *prev_token = token_list_get(list_to_check, 
+                const token_t *prev_token = token_list_get(list_to_check,
                                                           token_list_size(list_to_check) - 1);
                 token_type_t prev_type = token_get_type(prev_token);
                 if (prev_type == TOKEN_FOR || prev_type == TOKEN_CASE)
@@ -759,7 +759,7 @@ add_token:
     //
     // Middle keywords (then/elif/else/do) are NOT validated here - that's the parser's job.
     // The tokenizer only tracks opening/closing for buffering purposes.
-    if (type == TOKEN_IF || type == TOKEN_WHILE || type == TOKEN_UNTIL || 
+    if (type == TOKEN_IF || type == TOKEN_WHILE || type == TOKEN_UNTIL ||
         type == TOKEN_FOR || type == TOKEN_CASE || type == TOKEN_LBRACE)
     {
         tokenizer_push_compound(tok, type);
@@ -806,8 +806,8 @@ tok_status_t tokenizer_process(tokenizer_t *tok, token_list_t *input_tokens, tok
     return_val_if_null(input_tokens, TOK_INTERNAL_ERROR);
     return_val_if_null(output_tokens, TOK_INTERNAL_ERROR);
 
-    log_debug("tokenizer_process: START - compound_stack_size=%d, buffered=%d, input=%d", 
-              tok->compound_stack_size, 
+    log_debug("tokenizer_process: START - compound_stack_size=%d, buffered=%d, input=%d",
+              tok->compound_stack_size,
               token_list_size(tok->buffered_tokens),
               token_list_size(input_tokens));
 
@@ -856,7 +856,7 @@ tok_status_t tokenizer_process(tokenizer_t *tok, token_list_t *input_tokens, tok
         tok->output_tokens = NULL;
         tok->input_pos = 0;
 
-        log_debug("tokenizer_process: END - compound_stack_size=%d, buffered=%d, status=INCOMPLETE", 
+        log_debug("tokenizer_process: END - compound_stack_size=%d, buffered=%d, status=INCOMPLETE",
                   tok->compound_stack_size,
                   token_list_size(tok->buffered_tokens));
 
@@ -889,7 +889,7 @@ tok_status_t tokenizer_process(tokenizer_t *tok, token_list_t *input_tokens, tok
     tok->output_tokens = NULL;
     tok->input_pos = 0;
 
-    log_debug("tokenizer_process: END - compound_stack_size=%d, buffered=%d, output=%d, status=OK", 
+    log_debug("tokenizer_process: END - compound_stack_size=%d, buffered=%d, output=%d, status=OK",
               tok->compound_stack_size,
               token_list_size(tok->buffered_tokens),
               token_list_size(output_tokens));

@@ -801,6 +801,73 @@ void getopt_reset_plus(void)
 }
 
 
+/* =========
+ * String and string-list based getopot
+ * ==
+ * */
+
+ /* Helper to convert strlist_t to argv array
+   Caller owns the returned array but NOT the strings it points to (they're
+   owned by the strlist_t).
+*/
+static char **strlist_to_argv(const strlist_t *list, int *argc)
+{
+    if (!list)
+    {
+        *argc = 0;
+        return NULL;
+    }
+
+    int count = strlist_size(list);
+    *argc = count;
+
+    if (count == 0)
+        return NULL;
+
+    char **argv = malloc(count * sizeof(char *));
+    if (!argv)
+        return NULL;
+
+    for (int i = 0; i < count; i++)
+    {
+        const string_t *str = strlist_at(list, i);
+        argv[i] = (char *)string_cstr(str);
+    }
+
+    return argv;
+}
+
+int getopt_string(const strlist_t *argv, const string_t *optstring)
+{
+    int argc;
+    char **argv_array = strlist_to_argv(argv, &argc);
+    if (!argv_array)
+        return -1;
+
+    const char *optstr = string_cstr(optstring);
+
+    int result = getopt(argc, argv_array, optstr);
+
+    free(argv_array);
+    return result;
+}
+
+int getopt_long_plus_string(const strlist_t *argv, const string_t *optstring,
+                            const struct option_ex *longopts, int *longind)
+{
+    int argc;
+    char **argv_array = strlist_to_argv(argv, &argc);
+    if (!argv_array)
+        return -1;
+
+    const char *optstr = string_cstr(optstring);
+
+    int result = getopt_long_plus(argc, argv_array, optstr, longopts, longind);
+
+    free(argv_array);
+    return result;
+}
+
 
 #ifdef GETOPT_TEST
 #include <stdio.h>

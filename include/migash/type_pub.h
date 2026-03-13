@@ -1,7 +1,7 @@
 #ifndef EXEC_TYPES_PUBLIC_H
 #define EXEC_TYPES_PUBLIC_H
 
-#include "string_list.h"
+#include "migash/strlist.h"
 /* ============================================================================
  * Opaque Types
  * ============================================================================
@@ -85,7 +85,7 @@ typedef enum builtin_category_t
  * @param args   Argument list (first element is the builtin name).
  * @return       Exit status (0 = success).
  */
-typedef int (*builtin_fn_t)(exec_frame_t *frame, string_list_t *args);
+typedef int (*builtin_fn_t)(exec_frame_t *frame, strlist_t *args);
 
 /* ============================================================================
  * Frame Opaque Type

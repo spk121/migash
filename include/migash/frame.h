@@ -24,15 +24,15 @@
  *
  * @par Naming Convention
  * Functions that accept or return strings are provided in two variants:
- *   - The unsuffixed form uses string_t / string_list_t.
+ *   - The unsuffixed form uses string_t / strlist_t.
  *   - The @c _cstr suffixed form uses plain C strings (const char *).
  */
 
 #include <stdio.h>
 
-#include "exec_types_public.h"
-#include "string_list.h"
-#include "string_t.h"
+#include "migash/type_pub.h"
+#include "migash/strlist.h"
+#include "migash/string_t.h"
 
 /* ============================================================================
  * Error Handling
@@ -299,7 +299,7 @@ void frame_shift_positional_params(exec_frame_t *frame, int shift_count);
  * list of positional parameters.  The new_params list will be copied, so the
  * caller retains ownership of the original list and its strings.
  */
-void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *new_params);
+void frame_replace_positional_params(exec_frame_t *frame, const strlist_t *new_params);
 
 /**
  * Sets the value of $0 for the given frame.  The new_arg0 string will be
@@ -322,7 +322,7 @@ string_t *frame_get_positional_param(const exec_frame_t *frame, int index);
  * The returned list and its strings will be newly allocated, so the caller is responsible for
  * freeing them.
  */
-string_list_t *frame_get_all_positional_params(const exec_frame_t *frame);
+strlist_t *frame_get_all_positional_params(const exec_frame_t *frame);
 
 /* ============================================================================
  * Named Options
@@ -392,7 +392,7 @@ frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *na
  * @return EXEC_OK on success, EXEC_ERROR on error.
  */
 exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
-                                  const string_list_t *args);
+                                  const strlist_t *args);
 
 /* ============================================================================
  * Exit Status
@@ -601,9 +601,12 @@ bool frame_alias_name_is_valid(const char *name);
  * Frame-Level Command Execution
  * ============================================================================ */
 
-/**
+ /**
  * Execute commands from a string in the context of the given frame.
- * Parses and executes the string as shell commands.
+ * Parses and executes the string as shell commands. When executing, a terminal newline is
+ * presumed if not already present.  Returns EXEC_OK if successful execution,
+ * if the string calls 'exit', or if the command is empty.
+ * Returns EXEC_ERROR in other conditions.
  *
  * @param frame The execution frame context
  * @param command The command string to execute

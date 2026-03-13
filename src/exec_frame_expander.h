@@ -20,7 +20,7 @@
 
 #include "exec_types_internal.h"
 #include "exec.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "token.h"
 #include <stdbool.h>
@@ -74,7 +74,7 @@ typedef enum expand_flags_t
  * @param tok    Token to expand (must be TOKEN_WORD)
  * @return       List of expanded strings, or NULL on error
  */
-string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok);
+strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok);
 
 /**
  * Expand multiple word tokens.
@@ -83,7 +83,7 @@ string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_
  * @param tokens  List of tokens to expand
  * @return        List of all expanded strings, or NULL on error
  */
-string_list_t *expand_words(exec_frame_t *frame, const token_list_t *tokens);
+strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens);
 
 /**
  * Expand a single word token without field splitting or pathname expansion.
@@ -205,7 +205,7 @@ string_t *expand_arithmetic(exec_frame_t *frame, const string_t *expression);
  * @param text   Text to split
  * @return       List of fields
  */
-string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text);
+strlist_t *expand_field_split(exec_frame_t *frame, const string_t *text);
 
 /**
  * Perform pathname expansion (globbing).
@@ -215,7 +215,7 @@ string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text);
  * @return         List of matching pathnames, or single-element list with
  *                 original pattern if no matches
  */
-string_list_t *expand_pathname(exec_frame_t *frame, const string_t *pattern);
+strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern);
 
 
 /* ============================================================================

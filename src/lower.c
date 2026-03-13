@@ -779,7 +779,7 @@ static ast_node_t *lower_compound_list(const gnode_t *g)
     {
         /* sep is a valid G_SEPARATOR */
         gnode_t *sep_child = sep->data.child;
-        
+
         if (sep_child->type == G_SEPARATOR_OP)
         {
             /* separator_op linebreak case */
@@ -1054,7 +1054,7 @@ static ast_node_t *lower_until_clause(const gnode_t *g)
     return ast_create_until_clause(cond, body);
 }
 
-/* do_group: Do compound_list Done 
+/* do_group: Do compound_list Done
  * Parser stores: .a=do_tok, .b=compound_list, .c=done_tok */
 static ast_node_t *lower_do_group(const gnode_t *g)
 {
@@ -1162,7 +1162,7 @@ static ast_node_t *lower_case_clause(const gnode_t *g)
         log_error("lower_case_clause: cannot find word node");
         return NULL;
     }
-    
+
     /* Clone the token - gnode tree owns the original, AST needs its own copy */
     token_t *subject = token_clone(gword->data.token);
 
@@ -1219,22 +1219,22 @@ static ast_node_t *lower_case_item(const gnode_t *g)
      * inner.multi.b = patterns (G_PATTERN_LIST)
      * inner.multi.c = rparen
      * inner.multi.d = body (compound_list) */
-     
+
     const gnode_t *inner = g->data.multi.a;
     const gnode_t *dsemi = g->data.multi.b;
-    
+
     if (!inner || inner->type != G_CASE_ITEM)
     {
         log_error("lower_case_item: expected inner G_CASE_ITEM node");
         return NULL;
     }
-    
+
     const gnode_t *gpatterns = inner->data.multi.b;  /* patterns */
     const gnode_t *gbody = inner->data.multi.d;      /* body (compound_list) */
 
     if (!gpatterns || gpatterns->type != G_PATTERN_LIST)
     {
-        log_error("lower_case_item: expected G_PATTERN_LIST, got %s", 
+        log_error("lower_case_item: expected G_PATTERN_LIST, got %s",
                   gpatterns ? g_node_type_to_cstr(gpatterns->type) : "NULL");
         return NULL;
     }
@@ -1245,7 +1245,7 @@ static ast_node_t *lower_case_item(const gnode_t *g)
         log_error("lower_case_item: failed to create pattern list");
         return NULL;
     }
-    
+
     ast_node_t *body = NULL;
 
     if (gbody && gbody->type == G_COMPOUND_LIST)
@@ -1427,14 +1427,14 @@ static ast_node_t *lower_io_redirect(const gnode_t *g)
     {
         EXPECT_TYPE(gioloc, G_IO_LOCATION_NODE);
         fd_string = string_create_from(gioloc->data.token->io_location);
-        
+
         /* If io_location is numeric and io_number wasn't already set, extract it */
         if (io_number == -1 && fd_string && string_length(fd_string) > 0)
         {
             /* Try to parse as a number */
             int endpos = 0;
             int parsed_num = string_atoi_at(fd_string, 0, &endpos);
-            
+
             /* Check if entire string was consumed (meaning it's all digits) */
             if (endpos == (int)string_length(fd_string))
             {
@@ -1526,8 +1526,8 @@ static token_list_t *token_list_from_wordlist(const gnode_t *g)
         const gnode_t *w = lst->nodes[i];
         if (!w || w->type != G_WORD_NODE)
         {
-            log_error("token_list_from_wordlist: item %d is not G_WORD_NODE (got %s / %d)", 
-                      i, 
+            log_error("token_list_from_wordlist: item %d is not G_WORD_NODE (got %s / %d)",
+                      i,
                       w ? g_node_type_to_cstr(w->type) : "NULL",
                       w ? (int)w->type : -1);
             token_list_destroy(&tl);
@@ -1539,7 +1539,7 @@ static token_list_t *token_list_from_wordlist(const gnode_t *g)
     return tl;
 }
 
-/* pattern_list: list of WORD_NODE in data.list 
+/* pattern_list: list of WORD_NODE in data.list
  * Note: The parser includes both pattern words and '|' tokens in the list,
  * so we skip the '|' tokens (TOKEN_PIPE) when building the pattern list. */
 static token_list_t *token_list_from_pattern_list(const gnode_t *g)
@@ -1553,12 +1553,12 @@ static token_list_t *token_list_from_pattern_list(const gnode_t *g)
         const gnode_t *w = lst->nodes[i];
         if (w->type != G_WORD_NODE)
             continue;
-        
+
         /* Skip '|' pipe tokens - only include actual pattern words */
         token_type_t t = token_get_type(w->data.token);
         if (t == TOKEN_PIPE)
             continue;
-            
+
         /* Clone token - respect silo boundary between gnode and AST */
         token_list_append(tl, token_clone(w->data.token));
     }

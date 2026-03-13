@@ -36,7 +36,7 @@
 #include "migash/api.h"
 #include "migash/exec_types_public.h"
 #include "migash/getopt_string.h"
-#include "migash/string_list.h"
+#include "migash/strlist.h"
 #include "migash/string_t.h"
 
 MGSH_EXTERN_C_START
@@ -79,17 +79,17 @@ MGSH_API void exec_destroy(exec_t **executor);
 /* ── Startup environment ─────────────────────────────────────────────────── */
 
 MGSH_API bool exec_is_args_set(const exec_t *executor);
-MGSH_API const string_list_t *exec_get_args(const exec_t *executor);
+MGSH_API const strlist_t *exec_get_args(const exec_t *executor);
 MGSH_API char *const *exec_get_args_cstr(const exec_t *executor,
                                          int *argc_out);
-MGSH_API bool exec_set_args(exec_t *executor, const string_list_t *args);
+MGSH_API bool exec_set_args(exec_t *executor, const strlist_t *args);
 MGSH_API bool exec_set_args_cstr(exec_t *executor, int argc,
                                  char *const *argv);
 
 MGSH_API bool exec_is_envp_set(const exec_t *executor);
-MGSH_API const string_list_t *exec_get_envp(const exec_t *executor);
+MGSH_API const strlist_t *exec_get_envp(const exec_t *executor);
 MGSH_API char *const *exec_get_envp_cstr(const exec_t *executor);
-MGSH_API bool exec_set_envp(exec_t *executor, const string_list_t *envp);
+MGSH_API bool exec_set_envp(exec_t *executor, const strlist_t *envp);
 MGSH_API bool exec_set_envp_cstr(exec_t *executor, char *const *envp);
 
 /* ── Shell identity ──────────────────────────────────────────────────────── */
@@ -464,7 +464,7 @@ MGSH_API exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp);
  *
  * Intended for non-interactive use (scripts, sourced files).
  */
-MGSH_API exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp,
+MGSH_API exec_status_t exec_execute_named_stream(exec_t *executor, FILE *fp,
                                                  const char *filename);
 
 /**
@@ -480,21 +480,6 @@ MGSH_API exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp,
 MGSH_API exec_result_t exec_execute_command_string(exec_t *executor,
                                                    const char *command);
 
-/**
- * Execute a complete command string in the context of a frame.
- *
- * Simplified wrapper for cases where the input is expected to be complete
- * and self-contained (trap handlers, eval, command substitution, etc.).
- * A terminal newline is appended if not present.  Any result other than
- * EXEC_OK is promoted to EXEC_ERROR.
- *
- * @param frame   The execution frame.
- * @param command The complete command string.
- * @return Result with .status == EXEC_OK or EXEC_ERROR and .exit_code.
- */
-MGSH_API exec_result_t exec_command_string(exec_frame_t *frame,
-                                           const char *command);
-
 /* ── Partial / incremental string execution ──────────────────────────────── */
 
 /**
@@ -504,41 +489,88 @@ MGSH_API exec_result_t exec_command_string(exec_frame_t *frame,
  * with the executor reporting when more input is needed (e.g. unclosed
  * quotes or compound commands).
  *
- * Allocate with exec_parse_session_create() (preferred) or allocate
- * exec_parse_session_size() bytes and zero-initialise before the first call.
+ * Allocate with exec_create_parse_session() (preferred) or allocate
+ * exec_get_parse_session_size() bytes and zero-initialise before the first call.
  * The executor populates it with continuation state after each call.
- *
- * The old exec_partial_state_t typedef is preserved for source compatibility.
  */
 typedef struct exec_parse_session_t exec_parse_session_t;
-typedef struct exec_parse_session_t exec_partial_state_t; /* back-compat alias */
+
+/* Create a new parse session.
+ * The EXECUTOR argument is used to determine the alias table for alias expansion
+ * during parsing. If it is provided, the session will maintain a pointer to the
+ * executor's alias state; the executor must not be destroyed when using this session.
+ * If EXECUTOR is NULL, the session will create its own alias state that is independent
+ * of any executor.
+ */
+MGSH_API exec_parse_session_t *exec_create_parse_session(const exec_t *executor);
 
 /**
  * Return the size of exec_parse_session_t so callers can allocate it
  * without including exec_parse_session.h.
  */
-MGSH_API size_t exec_parse_session_size(void);
+MGSH_API size_t exec_get_parse_session_size(void);
 
 /**
- * Release all resources held by a parse session.
+ * Reset a parse session to prepare for the next command.
  *
- * Call this when abandoning an incomplete parse, or after the final
- * successful call.  After cleanup the struct is zeroed and may be
- * reused for a new sequence of partial calls.
- *
- * Safe to call on an already-zeroed struct (no-op).
+ * This clears the lexer, accumulated tokens, and resets the tokenizer
+ * for the next command, but keeps the session allocated for reuse.
+ * The filename and line counter are NOT reset (they keep incrementing).
+ * The alias store is NOT reset (aliases persist across commands).
  */
-MGSH_API void exec_parse_session_cleanup(exec_parse_session_t *session);
+MGSH_API void exec_reset_parse_session(exec_parse_session_t *session);
 
 /**
- * Execute a command string incrementally.
+ * Fully reset a session, including destroying and recreating the tokenizer.
+ * and the alias store.
+ * If an executor is provided, its alias store will replace the existing one; otherwise the
+ * existing alias store will be cleared if owned, or a new one will be created if not owned.
+ * The filename and line counter are NOT reset (they keep incrementing).
+ *
+ * Used after SIGINT or other hard interrupts where any buffered
+ * compound-command state in the tokenizer must be discarded.
+ *
+ * @param session  The session.
+ * @param executor Executor whose alias store will replace the existing one (may be NULL).
+ */
+MGSH_API void exec_hard_reset_parse_session(exec_parse_session_t *session, exec_t *executor);
+
+/* return val may be NULL */
+MGSH_API const char *exec_get_parse_session_filename_cstr(const exec_parse_session_t *session);
+/* return value of zero indicates line numbers are not being tracked */
+MGSH_API size_t exec_get_parse_session_line_number(const exec_parse_session_t *session);
+/* 'filename' may be NULL */
+MGSH_API void exec_set_parse_session_filename_cstr(exec_parse_session_t *session, const char *filename);
+/* set to zero to stop counting line numbers, or set to > 0 to indicate a specific line number. */
+MGSH_API void exec_set_parse_session_line_number(exec_parse_session_t *session, size_t line_number);
+
+/**
+ * Destroy a parse session allocated with exec_create_parse_session() and set
+ * the pointer to NULL.
+ */
+MGSH_API void exec_destroy_parse_session(exec_parse_session_t **session);
+
+/**
+ * Execute a command string incrementally. The 'session' argument
+ * maintains state across calls to allow feeding input line-by-line, with the
+ * executor reporting when more input is needed (e.g. unclosed quotes or compound commands).
+ *
+ * The caller should create a session with exec_create_parse_session() before the first call.
+ *
+ * If a caller provides a line number greater than 0, the executor will use it as the
+ * starting line number. In subsequent calls with the same session, the executor will
+ * increment the line number stored in the session by the number of lines in the command text
+ * whenever a non-zero line number is not provided.
+ *
+ * If EXEC_ERROR is returned, the caller can get the error message with exec_get_error()
+ * and can get the current filename and line number from the 'session'.
  *
  * @param executor          The executor.
  * @param command           The command text for this chunk.
  * @param filename          Source filename for error messages (may be NULL).
  * @param line_number       Starting line number (0 = not provided).
  * @param session           Parse session (caller creates with
- *                          exec_parse_session_create() before first call).
+ *                          exec_create_parse_session() before first call).
  * @return EXEC_OK if the command completed, EXEC_INCOMPLETE if more
  *         input is needed, or an error / control-flow status.
  */
@@ -833,10 +865,11 @@ MGSH_API void exec_print_all_jobs(const exec_t *executor,
                                   FILE *output);
 
 /**
- * Print all jobs.
+ * Print all jobs in verbose format.  This is a debugging aid
+ * that dumps all availabe info.  The output format is not guaranteed to be stable.
  */
 
-MGSH_API void exec_print_jobs(const exec_t *executor, FILE *output);
+MGSH_API void exec_print_jobs_verbose(const exec_t *executor, FILE *output);
 
 /**
  * Check whether any jobs exist.

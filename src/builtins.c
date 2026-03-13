@@ -48,7 +48,7 @@
 #include "job_store.h"
 #include "lib.h"
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "variable_store.h"
 #include "xalloc.h"
@@ -82,7 +82,7 @@
  * ============================================================================
  */
 
-int builtin_colon(exec_frame_t *frame, const string_list_t *args)
+int builtin_colon(exec_frame_t *frame, const strlist_t *args)
 {
     /* Suppress unused parameter warnings */
     (void)frame;
@@ -99,7 +99,7 @@ int builtin_colon(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_break(exec_frame_t *frame, const string_list_t *args)
+int builtin_break(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -109,9 +109,9 @@ int builtin_break(exec_frame_t *frame, const string_list_t *args)
     /* Parse optional loop count argument (default 1) */
     int loop_count = 1;
 
-    if (string_list_size(args) > 1)
+    if (strlist_size(args) > 1)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         int endpos = 0;
         long val = string_atol_at(arg_str, 0, &endpos);
 
@@ -125,10 +125,10 @@ int builtin_break(exec_frame_t *frame, const string_list_t *args)
         loop_count = (int)val;
     }
 
-    if (string_list_size(args) > 2)
+    if (strlist_size(args) > 2)
     {
         frame_set_error_printf(frame, "break: invalid number of arguments (%d)",
-                               string_list_size(args));
+                               strlist_size(args));
         return 1;
     }
 
@@ -142,7 +142,7 @@ int builtin_break(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_continue(exec_frame_t *frame, const string_list_t *args)
+int builtin_continue(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -152,9 +152,9 @@ int builtin_continue(exec_frame_t *frame, const string_list_t *args)
     /* Parse optional loop count argument (default 1) */
     int loop_count = 1;
 
-    if (string_list_size(args) > 1)
+    if (strlist_size(args) > 1)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         int endpos = 0;
         long val = string_atol_at(arg_str, 0, &endpos);
 
@@ -168,9 +168,9 @@ int builtin_continue(exec_frame_t *frame, const string_list_t *args)
         loop_count = (int)val;
     }
 
-    if (string_list_size(args) > 2)
+    if (strlist_size(args) > 2)
     {
-        frame_set_error_printf(frame, "continue: too many arguments (%d)", string_list_size(args));
+        frame_set_error_printf(frame, "continue: too many arguments (%d)", strlist_size(args));
         return 1;
     }
 
@@ -184,7 +184,7 @@ int builtin_continue(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_shift(exec_frame_t *frame, const string_list_t *args)
+int builtin_shift(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -200,9 +200,9 @@ int builtin_shift(exec_frame_t *frame, const string_list_t *args)
     /* Parse optional shift count argument (default 1) */
     int shift_count = 1;
 
-    if (string_list_size(args) > 1)
+    if (strlist_size(args) > 1)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         int endpos = 0;
         long val = string_atol_at(arg_str, 0, &endpos);
 
@@ -216,9 +216,9 @@ int builtin_shift(exec_frame_t *frame, const string_list_t *args)
         shift_count = (int)val;
     }
 
-    if (string_list_size(args) > 2)
+    if (strlist_size(args) > 2)
     {
-        frame_set_error_printf(frame, "shift: too many arguments (%d)", string_list_size(args));
+        frame_set_error_printf(frame, "shift: too many arguments (%d)", strlist_size(args));
         return 1;
     }
 
@@ -282,14 +282,14 @@ static search_path_result_t dot_search_path(exec_frame_t *frame, const string_t 
     const char *dir_sep = "/";
 #endif
 
-    string_list_t *entries = string_list_create_from_string_split_char(path_var, path_sep);
+    strlist_t *entries = strlist_create_from_string_split_char(path_var, path_sep);
     string_destroy(&path_var);
 
     search_path_result_t result = {.full_path = NULL, .found = false};
 
-    for (int i = 0; i < string_list_size(entries); i++)
+    for (int i = 0; i < strlist_size(entries); i++)
     {
-        const string_t *entry = string_list_at(entries, i);
+        const string_t *entry = strlist_at(entries, i);
 
         string_t *full_path;
         if (string_empty(entry))
@@ -318,25 +318,25 @@ static search_path_result_t dot_search_path(exec_frame_t *frame, const string_t 
         string_destroy(&full_path);
     }
 
-    string_list_destroy(&entries);
+    strlist_destroy(&entries);
     return result;
 }
 
-int builtin_dot(exec_frame_t *frame, const string_list_t *args)
+int builtin_dot(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     if (argc < 2)
     {
         fprintf(stderr, "dot: filename argument required\n");
         return 2;
     }
 
-    const string_t *filename_str = string_list_at(args, 1);
+    const string_t *filename_str = strlist_at(args, 1);
     const char *filename = string_cstr(filename_str);
     string_t *resolved_path = NULL;
     FILE *fp = NULL;
@@ -381,13 +381,13 @@ int builtin_dot(exec_frame_t *frame, const string_list_t *args)
     }
 
     // Save and replace positional parameters if extras were supplied
-    string_list_t *saved_params = NULL;
+    strlist_t *saved_params = NULL;
     if (argc > 2)
     {
         saved_params = frame_get_all_positional_params(frame);
-        string_list_t *new_params = string_list_create_slice(args, 2, -1);
+        strlist_t *new_params = strlist_create_slice(args, 2, -1);
         frame_replace_positional_params(frame, new_params);
-        string_list_destroy(&new_params);
+        strlist_destroy(&new_params);
     }
 
     exec_status_t status = exec_execute_stream_once(frame->executor, fp);
@@ -397,7 +397,7 @@ int builtin_dot(exec_frame_t *frame, const string_list_t *args)
     if (saved_params)
     {
         frame_replace_positional_params(frame, saved_params);
-        string_list_destroy(&saved_params);
+        strlist_destroy(&saved_params);
     }
 
     string_destroy(&resolved_path);
@@ -430,14 +430,14 @@ int builtin_dot(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_eval(exec_frame_t *frame, const string_list_t *args)
+int builtin_eval(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* No arguments: return success */
     if (argc < 2)
@@ -454,7 +454,7 @@ int builtin_eval(exec_frame_t *frame, const string_list_t *args)
         {
             string_append_char(command, ' ');
         }
-        const string_t *arg = string_list_at(args, i);
+        const string_t *arg = strlist_at(args, i);
         if (arg)
         {
             string_append(command, arg);
@@ -496,14 +496,14 @@ int builtin_eval(exec_frame_t *frame, const string_list_t *args)
  * On success, does not return.
  * ============================================================================
  */
-int builtin_exec(exec_frame_t *frame, const string_list_t *args)
+int builtin_exec(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     // If no arguments, just apply redirections (handled by shell parser/executor)
     if (argc == 1)
@@ -517,7 +517,7 @@ int builtin_exec(exec_frame_t *frame, const string_list_t *args)
     char **argv = xmalloc((argc) * sizeof(char *));
     for (int i = 1; i < argc; ++i)
     {
-        argv[i - 1] = (char *)string_cstr(string_list_at(args, i));
+        argv[i - 1] = (char *)string_cstr(strlist_at(args, i));
     }
     argv[argc - 1] = NULL;
 
@@ -531,7 +531,7 @@ int builtin_exec(exec_frame_t *frame, const string_list_t *args)
     char **argv = xmalloc((argc) * sizeof(char *));
     for (int i = 1; i < argc; ++i)
     {
-        argv[i - 1] = (char *)string_cstr(string_list_at(args, i));
+        argv[i - 1] = (char *)string_cstr(strlist_at(args, i));
     }
     argv[argc - 1] = NULL;
 
@@ -552,7 +552,7 @@ int builtin_exec(exec_frame_t *frame, const string_list_t *args)
  * exit - Exit the shell or current function/subshell
  * ============================================================================
  */
-int builtin_exit(exec_frame_t *frame, const string_list_t *args)
+int builtin_exit(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -562,9 +562,9 @@ int builtin_exit(exec_frame_t *frame, const string_list_t *args)
     int exit_status = frame_get_last_exit_status(frame);
 
     // Parse optional exit status argument
-    if (string_list_size(args) > 1)
+    if (strlist_size(args) > 1)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         int endpos = 0;
         long val = string_atol_at(arg_str, 0, &endpos);
 
@@ -576,7 +576,7 @@ int builtin_exit(exec_frame_t *frame, const string_list_t *args)
         exit_status = (int)(val & 0xFF);
     }
 
-    if (string_list_size(args) > 2)
+    if (strlist_size(args) > 2)
     {
         frame_set_error_printf(frame, "exit: too many arguments");
         return 1;
@@ -616,7 +616,7 @@ int builtin_exit(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_export(exec_frame_t *frame, const string_list_t *args)
+int builtin_export(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -624,7 +624,7 @@ int builtin_export(exec_frame_t *frame, const string_list_t *args)
     getopt_reset();
 
     /* No arguments → print exported variables */
-    if (string_list_size(args) == 1)
+    if (strlist_size(args) == 1)
     {
         /* On non-POSIX/UCRT platforms, we don't have a real environment to export */
         frame_print_exported_variables_in_export_format(frame, builtin_stdout(frame));
@@ -633,9 +633,9 @@ int builtin_export(exec_frame_t *frame, const string_list_t *args)
 
     int exit_status = 0;
 
-    for (int i = 1; i < string_list_size(args); i++)
+    for (int i = 1; i < strlist_size(args); i++)
     {
-        const string_t *arg = string_list_at(args, i);
+        const string_t *arg = strlist_at(args, i);
         if (!arg || string_empty(arg))
         {
             frame_set_error_printf(frame, "export: invalid variable name '%s'", string_cstr(arg));
@@ -724,21 +724,21 @@ int builtin_export(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_readonly(exec_frame_t *frame, const string_list_t *args)
+int builtin_readonly(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     bool print_mode = false;
     int first_operand = 1;
 
     /* Parse options */
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (arg[0] != '-')
         {
@@ -782,7 +782,7 @@ int builtin_readonly(exec_frame_t *frame, const string_list_t *args)
     /* Process each name[=value] argument */
     for (int i = first_operand; i < argc; i++)
     {
-        const string_t *arg = string_list_at(args, i);
+        const string_t *arg = strlist_at(args, i);
         if (!arg || string_empty(arg))
         {
             frame_set_error_printf(frame, "readonly: invalid variable name '%s'",
@@ -1004,14 +1004,14 @@ static int trap_parse_signal_spec(const char *spec)
     return frame_trap_name_to_number(spec);
 }
 
-int builtin_trap(exec_frame_t *frame, const string_list_t *args)
+int builtin_trap(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     bool list_signals = false;
     bool print_traps = false;
     int first_operand = 1;
@@ -1019,7 +1019,7 @@ int builtin_trap(exec_frame_t *frame, const string_list_t *args)
     /* Parse options */
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (arg[0] != '-')
         {
@@ -1149,7 +1149,7 @@ int builtin_trap(exec_frame_t *frame, const string_list_t *args)
 
         for (int i = first_operand; i < argc; i++)
         {
-            const char *spec = string_cstr(string_list_at(args, i));
+            const char *spec = string_cstr(strlist_at(args, i));
             int signo = trap_parse_signal_spec(spec);
 
             if (signo < 0)
@@ -1191,7 +1191,7 @@ int builtin_trap(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* Parse action and signals */
-    const char *action_str = string_cstr(string_list_at(args, first_operand));
+    const char *action_str = string_cstr(strlist_at(args, first_operand));
     bool is_reset = false;
     bool is_ignore = false;
     string_t *action = NULL;
@@ -1265,7 +1265,7 @@ int builtin_trap(exec_frame_t *frame, const string_list_t *args)
 
     for (int i = signal_start; i < argc; i++)
     {
-        const char *spec = string_cstr(string_list_at(args, i));
+        const char *spec = string_cstr(strlist_at(args, i));
         int signo = trap_parse_signal_spec(spec);
 
         if (signo < 0)
@@ -1346,7 +1346,7 @@ static void times_format_time(double seconds, char *buf, size_t buf_size)
 #ifdef POSIX_API
 #include <sys/times.h>
 
-int builtin_times(exec_frame_t *frame, const string_list_t *args)
+int builtin_times(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1392,7 +1392,7 @@ int builtin_times(exec_frame_t *frame, const string_list_t *args)
 
 #elifdef UCRT_API
 
-int builtin_times(exec_frame_t *frame, const string_list_t *args)
+int builtin_times(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1429,7 +1429,7 @@ int builtin_times(exec_frame_t *frame, const string_list_t *args)
 #else
 /* ISO C fallback - minimal implementation using clock() */
 
-int builtin_times(exec_frame_t *frame, const string_list_t *args)
+int builtin_times(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1509,7 +1509,7 @@ static void builtin_set_print_options(exec_frame_t *frame, bool reusable_format)
     }
 }
 
-int builtin_set(exec_frame_t *frame, const string_list_t *args)
+int builtin_set(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -1550,13 +1550,13 @@ int builtin_set(exec_frame_t *frame, const string_list_t *args)
         /* Terminator */
         {0}};
 
-    /* Convert string_list_t to char** for getopt */
-    int argc = string_list_size(args);
+    /* Convert strlist_t to char** for getopt */
+    int argc = strlist_size(args);
     char **argv = xmalloc(argc * sizeof(char *));
 
     for (int i = 0; i < argc; i++)
     {
-        const string_t *str = string_list_at(args, i);
+        const string_t *str = strlist_at(args, i);
         argv[i] = (char *)string_cstr(str); // Cast away const for getopt compatibility
     }
 
@@ -1725,18 +1725,18 @@ int builtin_set(exec_frame_t *frame, const string_list_t *args)
     /* Replace positional parameters if requested (includes explicit "set --") */
     if (have_positional_request)
     {
-        /* Build a string_list_t from the new parameters */
-        string_list_t *new_params = string_list_create();
+        /* Build a strlist_t from the new parameters */
+        strlist_t *new_params = strlist_create();
         for (int i = 0; i < new_param_count; i++)
         {
             string_t *param = string_create_from_cstr(argv[state.optind + i]);
-            string_list_push_back(new_params, param);
+            strlist_push_back(new_params, param);
             string_destroy(&param);
         }
 
         /* Use frame API to replace positional parameters */
         frame_replace_positional_params(frame, new_params);
-        string_list_destroy(&new_params);
+        strlist_destroy(&new_params);
     }
 
     xfree(argv);
@@ -1747,7 +1747,7 @@ int builtin_set(exec_frame_t *frame, const string_list_t *args)
  * unset - unset values and attributes of variables and functions
  * ============================================================================
  */
-int builtin_unset(exec_frame_t *frame, const string_list_t *args)
+int builtin_unset(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -1789,16 +1789,16 @@ int builtin_unset(exec_frame_t *frame, const string_list_t *args)
         fprintf(stderr, "usage:");
         return 2;
     }
-    for (; optind < string_list_size(args); optind++)
+    for (; optind < strlist_size(args); optind++)
     {
         if (flag_f)
         {
             /* Unset function using frame API */
-            frame_func_error_t err = frame_unset_function(frame, string_list_at(args, optind));
+            frame_func_error_t err = frame_unset_function(frame, strlist_at(args, optind));
             if (err == FRAME_FUNC_ERROR_NOT_FOUND)
             {
                 fprintf(stderr, "unset: function '%s' not found\n",
-                        string_cstr(string_list_at(args, optind)));
+                        string_cstr(strlist_at(args, optind)));
                 err_count++;
             }
             else if (err == FRAME_FUNC_ERROR_EMPTY_NAME || err == FRAME_FUNC_ERROR_NAME_TOO_LONG ||
@@ -1806,28 +1806,28 @@ int builtin_unset(exec_frame_t *frame, const string_list_t *args)
                      err == FRAME_FUNC_ERROR_NAME_STARTS_WITH_DIGIT)
             {
                 fprintf(stderr, "unset: invalid function name '%s'\n",
-                        string_cstr(string_list_at(args, optind)));
+                        string_cstr(strlist_at(args, optind)));
                 err_count++;
             }
         }
         else
         {
             /* Unset variable using frame API */
-            if (!frame_has_variable(frame, string_list_at(args, optind)))
+            if (!frame_has_variable(frame, strlist_at(args, optind)))
             {
                 fprintf(stderr, "unset: variable '%s' not found\n",
-                        string_cstr(string_list_at(args, optind)));
+                        string_cstr(strlist_at(args, optind)));
                 err_count++;
             }
-            else if (frame_variable_is_readonly(frame, string_list_at(args, optind)))
+            else if (frame_variable_is_readonly(frame, strlist_at(args, optind)))
             {
                 fprintf(stderr, "unset: variable '%s' is read-only\n",
-                        string_cstr(string_list_at(args, optind)));
+                        string_cstr(strlist_at(args, optind)));
                 err_count++;
             }
             else
             {
-                const string_t *name = string_list_at(args, optind);
+                const string_t *name = strlist_at(args, optind);
                 frame_unset_variable(frame, name);
                 if (string_eq_cstr(name, "LINENO"))
                 {
@@ -1891,21 +1891,21 @@ static void alias_print_callback(const string_t *name, const string_t *value, vo
     printf("'\n");
 }
 
-int builtin_alias(exec_frame_t *frame, const string_list_t *args)
+int builtin_alias(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     bool print_all = false;
     int first_operand = 1;
 
     /* Parse options */
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (arg[0] != '-')
         {
@@ -1952,7 +1952,7 @@ int builtin_alias(exec_frame_t *frame, const string_list_t *args)
     /* Process each argument */
     for (int i = first_operand; i < argc; i++)
     {
-        const string_t *arg = string_list_at(args, i);
+        const string_t *arg = strlist_at(args, i);
         const char *arg_str = string_cstr(arg);
 
         /* Check if this is a definition (contains '=') */
@@ -2034,21 +2034,21 @@ int builtin_alias(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_unalias(exec_frame_t *frame, const string_list_t *args)
+int builtin_unalias(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     bool remove_all = false;
     int first_operand = 1;
 
     /* Parse options */
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (arg[0] != '-')
         {
@@ -2099,7 +2099,7 @@ int builtin_unalias(exec_frame_t *frame, const string_list_t *args)
     /* Remove each specified alias */
     for (int i = first_operand; i < argc; i++)
     {
-        const string_t *name = string_list_at(args, i);
+        const string_t *name = strlist_at(args, i);
 
         if (!frame_remove_alias(frame, name))
         {
@@ -2122,22 +2122,22 @@ int builtin_unalias(exec_frame_t *frame, const string_list_t *args)
  * Returns 0 if an option was found, 1 if no more options, 2 on error.
  * ============================================================================
  */
-int builtin_getopts(exec_frame_t *frame, const string_list_t *args)
+int builtin_getopts(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     if (argc < 3)
     {
         frame_set_error_printf(frame, "getopts: usage: getopts optstring name [args ...]");
         return 2;
     }
 
-    const string_t *optstring = string_list_at(args, 1);
-    const string_t *name = string_list_at(args, 2);
+    const string_t *optstring = strlist_at(args, 1);
+    const string_t *name = strlist_at(args, 2);
     if (!optstring || string_empty(optstring) || !name || string_empty(name))
     {
         frame_set_error_printf(frame, "getopts: invalid optstring or name");
@@ -2145,14 +2145,14 @@ int builtin_getopts(exec_frame_t *frame, const string_list_t *args)
     }
 
     // Use provided args if present, else use shell positional parameters
-    string_list_t *opt_args = NULL;
+    strlist_t *opt_args = NULL;
     if (argc > 3)
     {
         // args[3..] are the arguments to parse
-        opt_args = string_list_create();
+        opt_args = strlist_create();
         for (int i = 3; i < argc; ++i)
         {
-            string_list_push_back(opt_args, string_list_at(args, i));
+            strlist_push_back(opt_args, strlist_at(args, i));
         }
     }
     else
@@ -2182,9 +2182,9 @@ int builtin_getopts(exec_frame_t *frame, const string_list_t *args)
         // End of options
         frame_set_variable_cstr(frame, string_cstr(name), "--");
         if (argc > 3)
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         else
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         return 1;
     }
     else if (c == '?')
@@ -2192,9 +2192,9 @@ int builtin_getopts(exec_frame_t *frame, const string_list_t *args)
         // Error
         frame_set_variable_cstr(frame, string_cstr(name), "?");
         if (argc > 3)
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         else
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         return 2;
     }
     else
@@ -2202,9 +2202,9 @@ int builtin_getopts(exec_frame_t *frame, const string_list_t *args)
         optbuf[0] = (char)c;
         frame_set_variable_cstr(frame, string_cstr(name), optbuf);
         if (argc > 3)
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         else
-            string_list_destroy(&opt_args);
+            strlist_destroy(&opt_args);
         return 0;
     }
 }
@@ -2240,7 +2240,7 @@ static string_t *resolve_home(exec_frame_t *frame)
 #if defined(POSIX_API) || defined(UCRT_API)
 
 /**
- * Canonicalize a path using string_t and string_list_t.
+ * Canonicalize a path using string_t and strlist_t.
  * Removes dot components, resolves dot-dot, normalizes slashes.
  * Returns a new string_t* (caller must destroy).
  */
@@ -2252,12 +2252,12 @@ string_t *cd_canonicalize_string(const string_t *path)
 
     bool rooted = (string_front(path) == '/' || string_front(path) == '\\');
 
-    string_list_t *raw = string_list_create_from_string_split_cstr(path, SLASHES);
-    string_list_t *parts = string_list_create();
+    strlist_t *raw = strlist_create_from_string_split_cstr(path, SLASHES);
+    strlist_t *parts = strlist_create();
 
-    for (int i = 0; i < string_list_size(raw); i++)
+    for (int i = 0; i < strlist_size(raw); i++)
     {
-        const string_t *comp = string_list_at(raw, i);
+        const string_t *comp = strlist_at(raw, i);
 
         if (string_empty(comp) || string_eq_cstr(comp, "."))
         {
@@ -2265,31 +2265,31 @@ string_t *cd_canonicalize_string(const string_t *path)
         }
         else if (string_eq_cstr(comp, ".."))
         {
-            int size = string_list_size(parts);
-            if (size > 0 && !string_eq_cstr(string_list_at(parts, size - 1), ".."))
-                string_list_erase(parts, size - 1);
+            int size = strlist_size(parts);
+            if (size > 0 && !string_eq_cstr(strlist_at(parts, size - 1), ".."))
+                strlist_erase(parts, size - 1);
             else if (!rooted)
             {
                 string_t *dotdot = string_create_from_cstr("..");
-                string_list_move_push_back(parts, &dotdot);
+                strlist_move_push_back(parts, &dotdot);
             }
             // else: at rooted root, silently discard
         }
         else
         {
             string_t *copy = string_create_from(comp);
-            string_list_move_push_back(parts, &copy);
+            strlist_move_push_back(parts, &copy);
         }
     }
 
-    string_t *out = string_list_join(parts, "/");
+    string_t *out = strlist_join(parts, "/");
     if (rooted)
         string_insert_cstr(out, 0, "/");
     if (string_empty(out))
         string_set_cstr(out, rooted ? "/" : ".");
 
-    string_list_destroy(&raw);
-    string_list_destroy(&parts);
+    strlist_destroy(&raw);
+    strlist_destroy(&parts);
     return out;
 }
 
@@ -2371,7 +2371,7 @@ static int cd_do_chdir(exec_frame_t *frame,
 
 #endif // POSIX_API || UCRT_API
 
-int builtin_cd(exec_frame_t *frame, const string_list_t *args)
+int builtin_cd(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2422,7 +2422,7 @@ int builtin_cd(exec_frame_t *frame, const string_list_t *args)
     return 1;
 #else
 
-    int remaining = string_list_size(args) - optind;
+    int remaining = strlist_size(args) - optind;
     if (remaining > 1)
     {
         fprintf(stderr, "cd: too many arguments\n");
@@ -2443,7 +2443,7 @@ int builtin_cd(exec_frame_t *frame, const string_list_t *args)
     }
     else
     {
-        const string_t *arg = string_list_at(args, optind);
+        const string_t *arg = strlist_at(args, optind);
 
         if (string_empty(arg))
         {
@@ -2488,13 +2488,13 @@ int builtin_cd(exec_frame_t *frame, const string_list_t *args)
                 const char sep = ':';
 #endif
                 string_t *cdpath = frame_get_variable_cstr(frame, "CDPATH");
-                string_list_t *cdpath_entries =
-                    string_list_create_from_string_split_char(cdpath, sep);
+                strlist_t *cdpath_entries =
+                    strlist_create_from_string_split_char(cdpath, sep);
                 string_destroy(&cdpath);
 
-                for (int i = 0; i < string_list_size(cdpath_entries); i++)
+                for (int i = 0; i < strlist_size(cdpath_entries); i++)
                 {
-                    const string_t *entry = string_list_at(cdpath_entries, i);
+                    const string_t *entry = strlist_at(cdpath_entries, i);
                     string_t *candidate;
                     if (string_empty(entry))
                     {
@@ -2517,7 +2517,7 @@ int builtin_cd(exec_frame_t *frame, const string_list_t *args)
                     }
                     string_destroy(&candidate);
                 }
-                string_list_destroy(&cdpath_entries);
+                strlist_destroy(&cdpath_entries);
             }
 
             if (!found)
@@ -2592,7 +2592,7 @@ int builtin_cd(exec_frame_t *frame, const string_list_t *args)
 /* ============================================================================
  * pwd - Print working directory
  * ============================================================================ */
-int builtin_pwd(exec_frame_t *frame, const string_list_t *args)
+int builtin_pwd(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2631,7 +2631,7 @@ int builtin_pwd(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    if (optind < string_list_size(args))
+    if (optind < strlist_size(args))
     {
         fprintf(stderr, "pwd: too many arguments\n");
         return 1;
@@ -2683,7 +2683,7 @@ int builtin_pwd(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
+int builtin_jobs(exec_frame_t *frame, const strlist_t *args)
 {
     getopt_reset();
 
@@ -2702,10 +2702,10 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
     int exit_status = 0;
 
     /* Parse options */
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (arg[0] != '-')
         {
@@ -2745,7 +2745,7 @@ int builtin_jobs(exec_frame_t *frame, const string_list_t *args)
     {
         for (int i = first_operand; i < argc; i++)
         {
-            const string_t *arg_str = string_list_at(args, i);
+            const string_t *arg_str = strlist_at(args, i);
             int job_id = exec_parse_job_id(frame->executor, arg_str);
 
             if (job_id < 0)
@@ -3188,14 +3188,14 @@ static int kill_send_to_job(exec_frame_t *frame, int signum, int job_id, const c
 #endif
 }
 
-int builtin_kill(exec_frame_t *frame, const string_list_t *args)
+int builtin_kill(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     if (argc < 2)
     {
@@ -3212,7 +3212,7 @@ int builtin_kill(exec_frame_t *frame, const string_list_t *args)
     /* Parse options */
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         /* Check for -l (list signals) */
         if (strcmp(arg, "-l") == 0 || strcmp(arg, "-L") == 0)
@@ -3230,7 +3230,7 @@ int builtin_kill(exec_frame_t *frame, const string_list_t *args)
                 fprintf(stderr, "kill: -s requires an argument\n");
                 return 2;
             }
-            const char *signame = string_cstr(string_list_at(args, i + 1));
+            const char *signame = string_cstr(strlist_at(args, i + 1));
             signal_num = kill_signal_name_to_number(signame);
             if (signal_num < 0)
             {
@@ -3282,7 +3282,7 @@ int builtin_kill(exec_frame_t *frame, const string_list_t *args)
             /* -l with argument: convert exit status to signal name */
             for (int i = first_operand; i < argc; i++)
             {
-                const string_t *arg_str = string_list_at(args, i);
+                const string_t *arg_str = strlist_at(args, i);
                 int endpos = 0;
                 long val = string_atol_at(arg_str, 0, &endpos);
                 if (endpos != string_length(arg_str))
@@ -3324,7 +3324,7 @@ int builtin_kill(exec_frame_t *frame, const string_list_t *args)
     /* Process each target */
     for (int i = first_operand; i < argc; i++)
     {
-        const string_t *arg_str = string_list_at(args, i);
+        const string_t *arg_str = strlist_at(args, i);
         const char *target = string_cstr(arg_str);
 
         /* Check if it's a job specification */
@@ -3659,14 +3659,14 @@ static int wait_for_all(exec_frame_t *frame)
     return last_exit_status;
 }
 
-int builtin_wait(exec_frame_t *frame, const string_list_t *args)
+int builtin_wait(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     int exit_status = 0;
 
     /* No arguments: wait for all background jobs */
@@ -3679,7 +3679,7 @@ int builtin_wait(exec_frame_t *frame, const string_list_t *args)
     int first_operand = 1;
     for (int i = 1; i < argc; i++)
     {
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (strcmp(arg, "--") == 0)
         {
@@ -3708,7 +3708,7 @@ int builtin_wait(exec_frame_t *frame, const string_list_t *args)
     /* Process each job_id or pid */
     for (int i = first_operand; i < argc; i++)
     {
-        const string_t *arg_str = string_list_at(args, i);
+        const string_t *arg_str = strlist_at(args, i);
         const char *target = string_cstr(arg_str);
 
         /* Check if it's a job specification */
@@ -3758,7 +3758,7 @@ int builtin_wait(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_fg(exec_frame_t *frame, const string_list_t *args)
+int builtin_fg(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -3778,7 +3778,7 @@ int builtin_fg(exec_frame_t *frame, const string_list_t *args)
         return 1;
     }
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     int job_id = -1;
 
     /* Parse optional job_id argument */
@@ -3790,7 +3790,7 @@ int builtin_fg(exec_frame_t *frame, const string_list_t *args)
 
     if (argc == 2)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         job_id = exec_parse_job_id(frame->executor, arg_str);
         if (job_id < 0)
         {
@@ -3950,7 +3950,7 @@ int builtin_fg(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_bg(exec_frame_t *frame, const string_list_t *args)
+int builtin_bg(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -3970,7 +3970,7 @@ int builtin_bg(exec_frame_t *frame, const string_list_t *args)
         return 1;
     }
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     int exit_status = 0;
 
     if (argc == 1)
@@ -4014,7 +4014,7 @@ int builtin_bg(exec_frame_t *frame, const string_list_t *args)
         /* Process each job_id argument */
         for (int i = 1; i < argc; i++)
         {
-            const string_t *arg_str = string_list_at(args, i);
+            const string_t *arg_str = strlist_at(args, i);
             int job_id = exec_parse_job_id(frame->executor, arg_str);
 
             if (job_id < 0)
@@ -4411,7 +4411,7 @@ static int ls_list_directory(const string_t *dir_path, int flag_a, int flag_A, i
     return 0;
 }
 
-int builtin_ls(exec_frame_t *frame, const string_list_t *args)
+int builtin_ls(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -4476,7 +4476,7 @@ int builtin_ls(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* Collect directories to list */
-    int dir_count = string_list_size(args) - optind;
+    int dir_count = strlist_size(args) - optind;
     int start_index = optind;
 
     /* Default to current directory if none specified */
@@ -4497,7 +4497,7 @@ int builtin_ls(exec_frame_t *frame, const string_list_t *args)
         }
         else
         {
-            dir_path = string_list_at(args, start_index + i);
+            dir_path = strlist_at(args, start_index + i);
         }
 
         /* Print directory name if listing multiple directories */
@@ -4525,7 +4525,7 @@ int builtin_ls(exec_frame_t *frame, const string_list_t *args)
     return err_count > 0 ? 1 : 0;
 }
 #else
-int builtin_ls(exec_frame_t *frame, const string_list_t *args)
+int builtin_ls(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -4539,7 +4539,7 @@ int builtin_ls(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_echo(exec_frame_t *frame, const string_list_t *args)
+int builtin_echo(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -4583,7 +4583,7 @@ int builtin_echo(exec_frame_t *frame, const string_list_t *args)
     }
 
     /* Print arguments starting from optind, separated by spaces */
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     for (int i = optind; i < argc; i++)
     {
         if (i > optind)
@@ -4591,7 +4591,7 @@ int builtin_echo(exec_frame_t *frame, const string_list_t *args)
             putchar(' ');
         }
 
-        const char *arg = string_cstr(string_list_at(args, i));
+        const char *arg = string_cstr(strlist_at(args, i));
 
         if (flag_e)
         {
@@ -5071,15 +5071,15 @@ static int printf_process_format(const char **fmt, const char *arg, int *stop_ou
     return 0;
 }
 
-int builtin_printf(exec_frame_t *frame, const string_list_t *args)
+int builtin_printf(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
-    // for (int i = 0; i < string_list_size(args); i++)
-    //     log_debug(string_cstr(string_list_at(args, i)));
+    // for (int i = 0; i < strlist_size(args); i++)
+    //     log_debug(string_cstr(strlist_at(args, i)));
 
     /* Need at least format string */
     if (argc < 2)
@@ -5088,7 +5088,7 @@ int builtin_printf(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const char *format = string_cstr(string_list_at(args, 1));
+    const char *format = string_cstr(strlist_at(args, 1));
     int arg_index = 2; /* Start of actual arguments */
     int stop_output = 0;
 
@@ -5106,7 +5106,7 @@ int builtin_printf(exec_frame_t *frame, const string_list_t *args)
                 const char *arg = "";
                 if (arg_index < argc)
                 {
-                    arg = string_cstr(string_list_at(args, arg_index));
+                    arg = string_cstr(strlist_at(args, arg_index));
                     arg_index++;
                     format_used = 1;
                 }
@@ -5216,12 +5216,12 @@ int builtin_printf(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_bracket(exec_frame_t *frame, const string_list_t *args)
+int builtin_bracket(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* Last argument must be "]" */
     if (argc < 2)
@@ -5230,7 +5230,7 @@ int builtin_bracket(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const string_t *last_str = string_list_at(args, argc - 1);
+    const string_t *last_str = strlist_at(args, argc - 1);
     if (string_length(last_str) != 1 || string_cstr(last_str)[0] != ']')
     {
         frame_set_error_printf(frame, "[: missing ']'");
@@ -5246,15 +5246,15 @@ int builtin_bracket(exec_frame_t *frame, const string_list_t *args)
     /* Single argument - test if non-empty string */
     if (argc == 3)
     {
-        const string_t *arg = string_list_at(args, 1);
+        const string_t *arg = strlist_at(args, 1);
         return (string_length(arg) > 0) ? 0 : 1;
     }
 
     /* Unary operators or field splitting artifacts */
     if (argc == 4)
     {
-        const string_t *op_str = string_list_at(args, 1);
-        const string_t *arg_str = string_list_at(args, 2);
+        const string_t *op_str = strlist_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 2);
         const char *op = string_cstr(op_str);
 
         /* First check for unary operators */
@@ -5315,9 +5315,9 @@ int builtin_bracket(exec_frame_t *frame, const string_list_t *args)
     /* Binary operators */
     if (argc == 5)
     {
-        const string_t *arg1_str = string_list_at(args, 1);
-        const string_t *op_str = string_list_at(args, 2);
-        const string_t *arg2_str = string_list_at(args, 3);
+        const string_t *arg1_str = strlist_at(args, 1);
+        const string_t *op_str = strlist_at(args, 2);
+        const string_t *arg2_str = strlist_at(args, 3);
         const char *op = string_cstr(op_str);
 
         /* String comparisons */
@@ -5370,7 +5370,7 @@ int builtin_bracket(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_return(exec_frame_t *frame, const string_list_t *args)
+int builtin_return(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5388,9 +5388,9 @@ int builtin_return(exec_frame_t *frame, const string_list_t *args)
     /* Parse optional exit status argument */
     int exit_status = frame_get_last_exit_status(frame);
 
-    if (string_list_size(args) > 1)
+    if (strlist_size(args) > 1)
     {
-        const string_t *arg_str = string_list_at(args, 1);
+        const string_t *arg_str = strlist_at(args, 1);
         int endpos = 0;
         long val = string_atol_at(arg_str, 0, &endpos);
 
@@ -5403,7 +5403,7 @@ int builtin_return(exec_frame_t *frame, const string_list_t *args)
         exit_status = (int)(val & 0xFF);
     }
 
-    if (string_list_size(args) > 2)
+    if (strlist_size(args) > 2)
     {
         frame_set_error_printf(frame, "return: too many arguments");
         return 1;
@@ -5430,12 +5430,12 @@ int builtin_return(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_basename(exec_frame_t *frame, const string_list_t *args)
+int builtin_basename(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* Usage check */
     if (argc < 2 || argc > 3)
@@ -5444,8 +5444,8 @@ int builtin_basename(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const string_t *path_arg = string_list_at(args, 1);
-    const string_t *suffix = (argc == 3) ? string_list_at(args, 2) : NULL;
+    const string_t *path_arg = strlist_at(args, 1);
+    const string_t *suffix = (argc == 3) ? strlist_at(args, 2) : NULL;
 
     /* Handle empty string */
     if (!path_arg || string_empty(path_arg))
@@ -5557,12 +5557,12 @@ int builtin_basename(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_dirname(exec_frame_t *frame, const string_list_t *args)
+int builtin_dirname(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* Usage check */
     if (argc != 2)
@@ -5572,7 +5572,7 @@ int builtin_dirname(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const string_t *path_arg = string_list_at(args, 1);
+    const string_t *path_arg = strlist_at(args, 1);
 
     log_debug("dirname: path_arg %s", string_cstr(path_arg));
 
@@ -5690,12 +5690,12 @@ int builtin_dirname(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_mgsh_dirnamevar(exec_frame_t *frame, const string_list_t *args)
+int builtin_mgsh_dirnamevar(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* Usage check */
     if (argc != 3)
@@ -5704,8 +5704,8 @@ int builtin_mgsh_dirnamevar(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const string_t *varname_arg = string_list_at(args, 1);
-    const string_t *path_arg = string_list_at(args, 2);
+    const string_t *varname_arg = strlist_at(args, 1);
+    const string_t *path_arg = strlist_at(args, 2);
     log_debug("mgsh_dirnamevar: (%s, %s)", string_cstr(varname_arg), string_cstr(path_arg));
 
     /* Validate variable name is not empty */
@@ -6138,12 +6138,12 @@ static int printfvar_process_format(string_t *output, const char **fmt, const ch
     return 0;
 }
 
-int builtin_mgsh_printfvar(exec_frame_t *frame, const string_list_t *args)
+int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
 
     /* Need at least variable name and format string */
     if (argc < 3)
@@ -6152,7 +6152,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const string_t *varname_arg = string_list_at(args, 1);
+    const string_t *varname_arg = strlist_at(args, 1);
 
     /* Validate variable name is not empty */
     if (!varname_arg || string_empty(varname_arg))
@@ -6161,7 +6161,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const string_list_t *args)
         return 2;
     }
 
-    const char *format = string_cstr(string_list_at(args, 2));
+    const char *format = string_cstr(strlist_at(args, 2));
     int arg_index = 3; /* Start of actual arguments */
     int stop_output = 0;
 
@@ -6182,7 +6182,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const string_list_t *args)
                 const char *arg = "";
                 if (arg_index < argc)
                 {
-                    arg = string_cstr(string_list_at(args, arg_index));
+                    arg = string_cstr(strlist_at(args, arg_index));
                     arg_index++;
                     format_used = 1;
                 }
@@ -6294,21 +6294,21 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const string_list_t *args)
  * Usage: mgsh_cat filename
  * ==========================================================================
  */
-int builtin_mgsh_cat(exec_frame_t *frame, const string_list_t *args)
+int builtin_mgsh_cat(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     getopt_reset();
 
-    int argc = string_list_size(args);
+    int argc = strlist_size(args);
     if (argc != 2)
     {
         fprintf(stderr, "mgsh_cat: usage: mgsh_cat filename\n");
         return 2;
     }
 
-    const string_t *filename_arg = string_list_at(args, 1);
+    const string_t *filename_arg = strlist_at(args, 1);
     const char *filename = string_cstr(filename_arg);
 
     FILE *fp = fopen(filename, "r");
@@ -6332,14 +6332,14 @@ int builtin_mgsh_cat(exec_frame_t *frame, const string_list_t *args)
  * ============================================================================
  */
 
-int builtin_true(exec_frame_t *frame, const string_list_t *args)
+int builtin_true(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
     return 0;
 }
 
-int builtin_false(exec_frame_t *frame, const string_list_t *args)
+int builtin_false(exec_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;

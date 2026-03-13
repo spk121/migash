@@ -1,7 +1,7 @@
 #ifndef MGSH_API_H
 #define MGSH_API_H
 
-/* 
+/*
    MGSH_API controls symbol visibility / dll export-import.
    MGSH_LOCAL can be used to explicitly hide symbols (very recommended).
 */
@@ -32,7 +32,7 @@
     #endif
 #endif
 
-/* 
+/*
    The actual public API macro — usually what you want to use.
    Controls whether we are building the library or consuming it.
 */

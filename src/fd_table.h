@@ -106,7 +106,7 @@ void fd_table_destroy(fd_table_t **table);
 /**
  * A helper function to generate a name string for an FD based on its number and flags.
  * Caller frees.
- * 
+ *
  */
 string_t *fd_table_generate_name(int fd, fd_flags_t flags);
 string_t *fd_table_generate_name_ex(int new_fd, int orig_fd, fd_flags_t flags);
@@ -310,9 +310,9 @@ typedef bool (*fd_table_foreach_cb)(const fd_entry_t *entry, void *user_data);
 
 /**
  * This function applies a callback to each active entry of the fd table.
- * @param table 
- * @param callback 
- * @param user_data 
+ * @param table
+ * @param callback
+ * @param user_data
  */
 void fd_table_foreach(const fd_table_t *table, fd_table_foreach_cb callback, void *user_data);
 

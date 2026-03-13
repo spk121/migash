@@ -12,7 +12,7 @@
  * For all functions that take string_t *as their initial argument, the argument must not be NULL.
  * It will abort if it is.
  *
- * For all functions that take string_list_t*as their initial argument, the argument must not be NULL.
+ * For all functions that take strlist_t*as their initial argument, the argument must not be NULL.
  * It will abort if it is.
  *
  * Other pointer arguments must not be NULL unless documented as such.

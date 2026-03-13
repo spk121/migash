@@ -7,7 +7,7 @@
 #include "lexer.h"
 #include "logging.h"
 #include "string_t.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "tokenizer.h"
 #include "xalloc.h"
 
@@ -391,16 +391,16 @@ static bool is_right_associative(math_token_type_t type) {
 // Handles unary operators, binary operators, ternary operator, and comma operator
 static ArithmeticResult parse_expression(math_parser_t *parser, int min_precedence) {
     ArithmeticResult left;
-    
+
     // Handle unary operators (prefix)
     int saved_pos = parser->pos;
     math_token_t token = get_token(parser);
-    
+
     if (token.type == MATH_TOKEN_PLUS || token.type == MATH_TOKEN_MINUS ||
         token.type == MATH_TOKEN_BIT_NOT || token.type == MATH_TOKEN_LOGICAL_NOT) {
         math_token_type_t unary_op = token.type;
         free_token(&token);
-        
+
         ArithmeticResult expr = parse_expression(parser, 14); // Unary has highest precedence
         if (expr.failed) return expr;
 
@@ -425,7 +425,7 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
         saved_pos = parser->pos;
         token = get_token(parser);
         int prec = get_precedence(token.type);
-        
+
         if (prec < min_precedence) {
             parser->pos = saved_pos;
             free_token(&token);
@@ -566,7 +566,7 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
                 arithmetic_result_free(&right);
                 return make_error("Unknown binary operator");
         }
-        
+
         arithmetic_result_free(&right);
     }
     return left;
@@ -782,7 +782,7 @@ static string_t *arithmetic_expand_expression(exec_frame_t *frame, const string_
 
         if (tok_type == TOKEN_WORD) {
             // Expand the word using the frame-based API
-            string_list_t *expanded_words = exec_frame_expander_expand_word(frame, tok);
+            strlist_t *expanded_words = exec_frame_expander_expand_word(frame, tok);
 
             if (!expanded_words) {
                 continue;
@@ -790,12 +790,12 @@ static string_t *arithmetic_expand_expression(exec_frame_t *frame, const string_
 
             // Concatenate all expanded words without adding spaces
             // Arithmetic expressions should not have field splitting
-            for (int j = 0; j < string_list_size(expanded_words); j++) {
-                const string_t *word = string_list_at(expanded_words, j);
+            for (int j = 0; j < strlist_size(expanded_words); j++) {
+                const string_t *word = strlist_at(expanded_words, j);
                 string_append(result, word);
             }
 
-            string_list_destroy(&expanded_words);
+            strlist_destroy(&expanded_words);
         } else if (tok_type == TOKEN_NEWLINE) {
             // Skip newlines in arithmetic expressions
         }

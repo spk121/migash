@@ -3,7 +3,7 @@
 #include <string.h>
 #include "ast.h"
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "token.h"
 #include "xalloc.h"
@@ -700,18 +700,18 @@ const token_list_t* ast_simple_command_node_get_words(const ast_node_t* node)
     return (const token_list_t *) node->data.simple_command.words;
 }
 
-string_list_t* ast_simple_command_node_get_word_strings(const ast_node_t* node)
+strlist_t* ast_simple_command_node_get_word_strings(const ast_node_t* node)
 {
     Expects_not_null(node);
     Expects_eq(ast_node_get_type(node), AST_SIMPLE_COMMAND);
 
     token_list_t *words = node->data.simple_command.words;
     int len = token_list_size(words);
-    string_list_t *sl = string_list_create();
+    strlist_t *sl = strlist_create();
     for (int i = 0; i < len; i ++)
     {
         string_t *txt = token_get_all_text(token_list_get(words, i));
-        string_list_move_push_back(sl, &txt);
+        strlist_move_push_back(sl, &txt);
     }
     return sl;
 }
@@ -1111,7 +1111,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
                 string_append_cstr(result, " ");
             }
         }
-        
+
         // Handle words (command and arguments)
         if (node->data.simple_command.words != NULL &&
             node->data.simple_command.words->size > 0)
@@ -1125,7 +1125,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
                 string_destroy(&word_str);
             }
         }
-        
+
         // Handle redirections
         if (node->data.simple_command.redirections != NULL &&
             ast_node_list_size(node->data.simple_command.redirections) > 0)
@@ -1211,7 +1211,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
         ast_node_to_command_line_full_helper(node->data.if_clause.condition, result, level + 1);
         string_append_cstr(result, " ; then ");
         ast_node_to_command_line_full_helper(node->data.if_clause.then_body, result, level + 1);
-        
+
         if (node->data.if_clause.elif_list != NULL)
         {
             for (int i = 0; i < ast_node_list_size(node->data.if_clause.elif_list); i++)
@@ -1223,13 +1223,13 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
                 ast_node_to_command_line_full_helper(elif_node->data.if_clause.then_body, result, level + 1);
             }
         }
-        
+
         if (node->data.if_clause.else_body != NULL)
         {
             string_append_cstr(result, " ; else ");
             ast_node_to_command_line_full_helper(node->data.if_clause.else_body, result, level + 1);
         }
-        
+
         string_append_cstr(result, " ; fi");
         break;
 
@@ -1256,7 +1256,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
             string_append(result, node->data.for_clause.variable);
         }
         string_append_cstr(result, " in ");
-        
+
         if (node->data.for_clause.words != NULL && node->data.for_clause.words->size > 0)
         {
             for (int i = 0; i < node->data.for_clause.words->size; i++)
@@ -1268,7 +1268,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
                 string_destroy(&word_str);
             }
         }
-        
+
         string_append_cstr(result, " ; do ");
         ast_node_to_command_line_full_helper(node->data.for_clause.body, result, level + 1);
         string_append_cstr(result, " ; done");
@@ -1283,7 +1283,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
             string_destroy(&word_str);
         }
         string_append_cstr(result, " in ");
-        
+
         if (node->data.case_clause.case_items != NULL)
         {
             for (int i = 0; i < ast_node_list_size(node->data.case_clause.case_items); i++)
@@ -1293,7 +1293,7 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
                 ast_node_to_command_line_full_helper(case_item, result, level + 1);
             }
         }
-        
+
         string_append_cstr(result, " esac");
         break;
 
@@ -1345,9 +1345,9 @@ static void ast_node_to_command_line_full_helper(const ast_node_t *node, string_
             snprintf(buf, sizeof(buf), "%d", node->data.redirection.io_number);
             string_append_cstr(result, buf);
         }
-        
+
         string_append_cstr(result, redirection_type_to_string(node->data.redirection.redir_type));
-        
+
         switch (node->data.redirection.operand)
         {
         case REDIR_TARGET_FILE:

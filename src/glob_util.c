@@ -17,7 +17,7 @@
 #include "glob_util.h"
 
 #include "logging.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 
 /* ============================================================================
@@ -377,7 +377,7 @@ bool glob_util_match_str(const string_t *pattern, const string_t *string, int fl
 
 #ifdef POSIX_API
 
-string_list_t *glob_util_expand_path(const string_t *pattern)
+strlist_t *glob_util_expand_path(const string_t *pattern)
 {
     if (!pattern)
         return NULL;
@@ -406,7 +406,7 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
     if (pos < strlen(pattern_str) && pattern_str[pos] == '.')
         explicit_dot = true;
 
-    string_list_t *result = string_list_create();
+    strlist_t *result = strlist_create();
 
     for (size_t i = 0; i < we.we_wordc; i++)
     {
@@ -425,14 +425,14 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
             continue;
         }
 
-        string_list_move_push_back(result, &expanded);
+        strlist_move_push_back(result, &expanded);
     }
 
     wordfree(&we);
 
-    if (string_list_size(result) == 0)
+    if (strlist_size(result) == 0)
     {
-        string_list_destroy(&result);
+        strlist_destroy(&result);
         return NULL;
     }
 
@@ -441,7 +441,7 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
 
 #elifdef UCRT_API
 
-string_list_t *glob_util_expand_path(const string_t *pattern)
+strlist_t *glob_util_expand_path(const string_t *pattern)
 {
     if (!pattern)
         return NULL;
@@ -507,7 +507,7 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
         return NULL;
     }
 
-    string_list_t *result = string_list_create();
+    strlist_t *result = strlist_create();
 
     do
     {
@@ -538,7 +538,7 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
         string_t *filepath = string_create_from(dir_prefix);
         string_append_cstr(filepath, name);
 
-        string_list_move_push_back(result, &filepath);
+        strlist_move_push_back(result, &filepath);
         log_debug("glob_util_expand_path: matched '%s'", name);
 
     } while (_findnext(handle, &fd) == 0);
@@ -546,20 +546,20 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
     string_destroy(&dir_prefix);
     _findclose(handle);
 
-    if (string_list_size(result) == 0)
+    if (strlist_size(result) == 0)
     {
         log_debug("glob_util_expand_path: only . and .. or no matches or all hidden filtered");
-        string_list_destroy(&result);
+        strlist_destroy(&result);
         return NULL;
     }
 
-    log_debug("glob_util_expand_path: returning %d matches", string_list_size(result));
+    log_debug("glob_util_expand_path: returning %d matches", strlist_size(result));
     return result;
 }
 
 #else
 /* ISO_C unchanged */
-string_list_t *glob_util_expand_path(const string_t *pattern)
+strlist_t *glob_util_expand_path(const string_t *pattern)
 {
     (void)pattern;
     log_warn("glob_util_expand_path: No glob implementation available in ISO_C mode");
@@ -567,7 +567,7 @@ string_list_t *glob_util_expand_path(const string_t *pattern)
 }
 #endif
 
-string_list_t *glob_util_expand_path_ex(const string_t *pattern, int flags, const char *base_dir)
+strlist_t *glob_util_expand_path_ex(const string_t *pattern, int flags, const char *base_dir)
 {
     // For now, ignore flags and base_dir - future enhancement
     (void)flags;

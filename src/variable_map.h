@@ -6,7 +6,7 @@
     "variable_map.h is an internal header. Only variable_store.c and variable_map.c may include it."
 #endif
 
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -182,7 +182,7 @@ void variable_map_erase(variable_map_t *map, const string_t *key);
  * @param map Variable map.
  * @param keys List of variable names to remove.
  */
-void variable_map_erase_multiple(variable_map_t *map, const string_list_t *keys);
+void variable_map_erase_multiple(variable_map_t *map, const strlist_t *keys);
 
 /**
  * Removes the entry at the given position.

@@ -12,7 +12,7 @@
 #define POSITIONAL_PARAMS_H
 
 #include "string_t.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include <stdbool.h>
 #include <limits.h>
 
@@ -59,8 +59,8 @@ positional_params_t *positional_params_create(void);
  * @return New positional_params_t, or NULL if count exceeds maximum
  */
 positional_params_t *positional_params_create_from_array(const string_t *arg0, int count, const string_t **params);
-positional_params_t *positional_params_create_from_string_list(const string_t *arg0,
-                                                               const string_list_t *params);
+positional_params_t *positional_params_create_from_strlist(const string_t *arg0,
+                                                               const strlist_t *params);
 
 /**
  * @brief Create positional parameters from C-style argv
@@ -119,12 +119,12 @@ int positional_params_count(const positional_params_t *params);
 /**
  * @brief Get all positional parameters as a list (for $@ and $*)
  *
- * Returns a newly allocated string_list_t (caller must free).
+ * Returns a newly allocated strlist_t (caller must free).
  *
  * @param params The positional parameters
  * @return List of all positional parameters (caller must free)
  */
-string_list_t *positional_params_get_all(const positional_params_t *params);
+strlist_t *positional_params_get_all(const positional_params_t *params);
 
 /**
  * @brief Get all positional parameters joined by a separator (for "$*")

@@ -429,15 +429,48 @@ void job_store_print_completed_jobs(job_store_t *store, FILE *output)
     }
 }
 
+/* Print all jobs in a verbose format.  */
 void job_store_print_jobs(const job_store_t *store, FILE *output)
 {
     Expects_not_null(store);
     Expects_not_null(output);
+
+    if (!store->jobs)
+    {
+        fprintf(output, "(no jobs)\n");
+        return;
+    }
+
     for (const job_t *job = store->jobs; job; job = job->next)
     {
         const char *state_str = job_state_to_string(job->state);
+
         fprintf(output, "[%d] %s\t%s\n", job->job_id, state_str,
                 job->command_line ? string_cstr(job->command_line) : "(no command)");
+#if POSIX_API
+        // Posix says pid_t is a signed integer type of unspecified size.
+        fprintf(output, "    pgid: %ld\n", (long)job->pgid);
+#else
+        fprintf(output, "    pgid: %d\n", job->pgid);
+#endif
+        fprintf(output, "    background: %s\n", job->is_background ? "yes" : "no");
+        fprintf(output, "    notified: %s\n", job->is_notified ? "yes" : "no");
+        fprintf(output, "    processes:\n");
+
+        for (const process_t *proc = job->processes; proc; proc = proc->next)
+        {
+            const char *proc_state_str = job_state_to_string(proc->state);
+            fprintf(output, "        pid: %d  ", proc->pid);
+#ifdef UCRT_API
+            fprintf(output, "handle: %llu  ", proc->handle);
+#endif
+            fprintf(output, "state: %s  ", proc_state_str);
+            if (proc->state == JOB_DONE)
+                fprintf(output, "exit status: %d  ", proc->exit_status);
+            else if (proc->state == JOB_TERMINATED)
+                fprintf(output, "signal: %d  ", proc->exit_status);
+            fprintf(output, "command: %s\n", proc->command ? string_cstr(proc->command) : "(no command)");
+        }
     }
 }
 

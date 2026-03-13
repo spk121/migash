@@ -62,7 +62,7 @@ static token_type_t match_operator(const lexer_t *lx)
             const char *op = normal_mode_operators[i];
             if (strlen(op) != tlen)
                 continue; // skip operators of different length
-            
+
             if (check_operator_at_position(lx, op))
             {
                 return (token_type_t)i;

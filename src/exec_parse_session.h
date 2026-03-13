@@ -14,10 +14,6 @@
  *   - Line-number tracking
  *   - Source-location metadata for error messages
  *   - An "incomplete" flag for the partial-execution API
- *
- * Previously this state was scattered across exec_string_ctx_t,
- * exec_partial_state_t, and a bare tokenizer_t pointer on exec_t.
- * This structure replaces all three.
  */
 
 #include <stdbool.h>
@@ -40,6 +36,9 @@ typedef struct exec_parse_session_t
     /* Lexer — owns quote / heredoc continuation state. */
     lexer_t *lexer;
 
+    bool own_aliases; // whether this session owns its alias store (and should destroy it)
+    alias_store_t *aliases;
+
     /* Tokenizer — alias expansion, compound-command buffering. */
     tokenizer_t *tokenizer;
 
@@ -48,8 +47,6 @@ typedef struct exec_parse_session_t
 
     /* Line counter (incremented by exec_string_core on each chunk). */
     int line_num;
-
-    /* --- Fields carried over from exec_partial_state_t --- */
 
     /* Whether we are mid-parse (unclosed quote, compound command, etc.). */
     bool incomplete;
@@ -69,11 +66,11 @@ typedef struct exec_parse_session_t
 
 /**
  * Create a new parse session.
+ * Uses a provided alias store for expansion if given, otherwise creates its own
+ * independent alias store.
  *
- * @param aliases  Alias store for expansion (may be NULL to disable aliases).
- * @return A heap-allocated session, or NULL on allocation failure.
- *         The caller owns the returned session and must destroy it with
- *         exec_parse_session_destroy().
+ * @param aliases  Alias store for expansion (may be NULL).
+ * @return A new session. Caller owns.
  */
 exec_parse_session_t *exec_parse_session_create(alias_store_t *aliases);
 
@@ -88,12 +85,15 @@ void exec_parse_session_destroy(exec_parse_session_t **session);
  *
  * This clears the lexer, accumulated tokens, and resets the tokenizer
  * for the next command, but keeps the session allocated for reuse.
- * The line counter is NOT reset (it keeps incrementing).
+ * The filename and line counter are NOT reset (they keep incrementing).
+ * The alias store is NOT reset (aliases persist across commands).
  */
 void exec_parse_session_reset(exec_parse_session_t *session);
 
 /**
  * Fully reset a session, including destroying and recreating the tokenizer.
+ * If an alias store is provided, it will replace the existing one; otherwise the
+ * existing alias store will be cleared if owned, or a new one will be created if not owned.
  *
  * Used after SIGINT or other hard interrupts where any buffered
  * compound-command state in the tokenizer must be discarded.
@@ -112,15 +112,5 @@ void exec_parse_session_hard_reset(exec_parse_session_t *session, alias_store_t 
  * without including exec_parse_session.h.
  */
 size_t exec_parse_session_size(void);
-
-/**
- * Release all resources held by a session that was allocated by the caller
- * (e.g. stack-allocated or embedded in another struct) rather than by
- * exec_parse_session_create().  After cleanup the struct is zeroed and
- * may be reused.
- *
- * Safe to call on an already-zeroed struct (no-op).
- */
-void exec_parse_session_cleanup(exec_parse_session_t *session);
 
 #endif /* EXEC_PARSE_SESSION_H */

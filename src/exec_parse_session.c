@@ -28,14 +28,17 @@ exec_parse_session_t* exec_parse_session_create(alias_store_t* aliases)
         return NULL;
     }
 
-    s->tokenizer = tokenizer_create(aliases);
-    if (!s->tokenizer)
+    if (aliases)
     {
-        lexer_destroy(&s->lexer);
-        xfree(s);
-        return NULL;
+        s->own_aliases = false;
+        s->aliases = aliases;
     }
-
+    else
+    {
+        s->own_aliases = true;
+        s->aliases = alias_store_create();
+    }
+    s->tokenizer = tokenizer_create(s->aliases);
     s->accumulated_tokens = NULL;
     s->line_num = 0;
     s->incomplete = false;
@@ -54,6 +57,11 @@ void exec_parse_session_destroy(exec_parse_session_t** session)
 
     if (s->lexer)
         lexer_destroy(&s->lexer);
+    if (s->own_aliases && s->aliases)
+    {
+        alias_store_destroy(&s->aliases);
+        s->own_aliases = false;
+    }
     if (s->tokenizer)
         tokenizer_destroy(&s->tokenizer);
     if (s->accumulated_tokens)
@@ -103,7 +111,32 @@ void exec_parse_session_hard_reset(exec_parse_session_t* session, alias_store_t*
        compound-command tokens. */
     if (session->tokenizer)
         tokenizer_destroy(&session->tokenizer);
-    session->tokenizer = tokenizer_create(aliases);
+
+    if (!session->own_aliases)
+    {
+        if (aliases == NULL)
+        {
+            session->aliases = alias_store_create();
+            session->own_aliases = true;
+        }
+        else
+        {
+            session->aliases = aliases;
+            session->own_aliases = false;
+        }
+    }
+    else
+    {
+        if (aliases == NULL)
+            alias_store_clear(session->aliases);
+        else
+        {
+            alias_store_destroy(&session->aliases);
+            session->aliases = aliases;
+            session->own_aliases = false;
+        }
+    }
+    session->tokenizer = tokenizer_create(session->aliases);
 
     session->incomplete = false;
 }
@@ -115,21 +148,4 @@ void exec_parse_session_hard_reset(exec_parse_session_t* session, alias_store_t*
 size_t exec_parse_session_size(void)
 {
     return sizeof(exec_parse_session_t);
-}
-
-void exec_parse_session_cleanup(exec_parse_session_t* session)
-{
-    if (!session)
-        return;
-
-    if (session->lexer)
-        lexer_destroy(&session->lexer);
-    if (session->tokenizer)
-        tokenizer_destroy(&session->tokenizer);
-    if (session->accumulated_tokens)
-        token_list_destroy(&session->accumulated_tokens);
-    if (session->filename)
-        string_destroy(&session->filename);
-
-    memset(session, 0, sizeof(*session));
 }

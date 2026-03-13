@@ -42,7 +42,7 @@
 #define _AMD64_
 #elif defined(_WIN32)
 #define _X86_
-#endif 
+#endif
 #include <direct.h>
 #include <io.h>
 #include <process.h>
@@ -67,7 +67,7 @@
 #include "lower.h"
 #include "parser.h"
 #include "positional_params.h"
-#include "string_list.h"
+#include "migash/strlist.h"
 #include "string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
@@ -916,7 +916,7 @@ void frame_shift_positional_params(exec_frame_t *frame, int shift_count)
     positional_params_shift(frame->positional_params, shift_count);
 }
 
-void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *new_params)
+void frame_replace_positional_params(exec_frame_t *frame, const strlist_t *new_params)
 {
     Expects_not_null(frame);
 
@@ -925,7 +925,7 @@ void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *n
         return;
     }
 
-    int count = new_params ? string_list_size(new_params) : 0;
+    int count = new_params ? strlist_size(new_params) : 0;
     string_t **params = NULL;
 
     if (count > 0)
@@ -933,7 +933,7 @@ void frame_replace_positional_params(exec_frame_t *frame, const string_list_t *n
         params = xcalloc((size_t)count, sizeof(string_t *));
         for (int i = 0; i < count; i++)
         {
-            params[i] = string_create_from(string_list_at(new_params, i));
+            params[i] = string_create_from(strlist_at(new_params, i));
         }
     }
 
@@ -992,24 +992,24 @@ string_t *frame_get_positional_param(const exec_frame_t *frame, int index)
     return string_create();
 }
 
-string_list_t *frame_get_all_positional_params(const exec_frame_t *frame)
+strlist_t *frame_get_all_positional_params(const exec_frame_t *frame)
 {
     Expects_not_null(frame);
 
     if (!frame->positional_params)
     {
-        return string_list_create();
+        return strlist_create();
     }
 
     int count = positional_params_count(frame->positional_params);
-    string_list_t *result = string_list_create();
+    strlist_t *result = strlist_create();
 
     for (int i = 0; i < count; i++)
     {
         const string_t *param = positional_params_get(frame->positional_params, i);
         if (param)
         {
-            string_list_push_back(result, param);
+            strlist_push_back(result, param);
         }
     }
 
@@ -1356,7 +1356,7 @@ frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *na
 }
 
 exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
-                                  const string_list_t *args)
+                                  const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1374,7 +1374,7 @@ exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
 
     /* Execute the function body in a new function frame */
     exec_frame_execute_result_t result =
-        exec_frame_execute_function_body(frame, func_def, (string_list_t *)args, NULL);
+        exec_frame_execute_function_body(frame, func_def, (strlist_t *)args, NULL);
 
     if (result.status == EXEC_ERROR)
         return EXEC_ERROR;
@@ -1738,6 +1738,75 @@ bool frame_alias_name_is_valid(const char *name)
  * Frame-Level Command Execution
  * ============================================================================ */
 
+ /**
+ * Execute a complete command string.
+ *
+ * This is a simplified wrapper around exec_string_core() for cases where the
+ * input string is expected to be a complete, self-contained command that does
+ * not require continuation.  Useful for trap handlers, eval, and any case
+ * where you have a complete command as a string.
+ *
+ * A terminal newline is appended if not already present.  Any result other
+ * than EXEC_OK (including EXEC_INCOMPLETE, EXEC_EMPTY, EXEC_ERROR) is
+ * promoted to EXEC_ERROR in the returned status.
+ *
+ * @param frame   The execution frame.
+ * @param command The complete command string to execute.
+ * @return exec_result_t with .status == EXEC_OK or EXEC_ERROR.
+ */
+static exec_result_t execute_command_string(exec_frame_t *frame, const char *command)
+{
+    Expects_not_null(frame);
+    Expects_not_null(frame->executor);
+
+    exec_result_t result = {.status = EXEC_OK, .exit_code = 0};
+
+    /* Empty or NULL command is success */
+    if (!command || !*command)
+        return result;
+
+    exec_t *executor = frame->executor;
+
+    /* Create a temporary parse session */
+    exec_parse_session_t *session = exec_parse_session_create(executor->aliases);
+    if (!session)
+    {
+        frame_set_error_printf(frame, "Failed to create parse session for command string");
+        result.status = EXEC_ERROR;
+        result.exit_code = EXEC_EXIT_FAILURE;
+        return result;
+    }
+
+    /* Ensure command ends with newline for proper parsing */
+    string_t *cmd_with_newline = string_create_from_cstr(command);
+    int len = string_length(cmd_with_newline);
+    if (len == 0 || string_at(cmd_with_newline, len - 1) != '\n')
+    {
+        string_append_char(cmd_with_newline, '\n');
+    }
+
+    /* Execute the command string */
+    exec_status_t status = exec_string_core(frame, string_cstr(cmd_with_newline), session);
+
+    string_destroy(&cmd_with_newline);
+    exec_parse_session_destroy(&session);
+
+    /* Map result: only EXEC_OK passes through; everything else is an error */
+    if (status == EXEC_OK)
+    {
+        result.status = EXEC_OK;
+        result.exit_code = frame->last_exit_status;
+    }
+    else
+    {
+        result.status = EXEC_ERROR;
+        result.exit_code = frame->last_exit_status ? frame->last_exit_status : EXEC_EXIT_FAILURE;
+    }
+
+    return result;
+}
+
+
 exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *command)
 {
     Expects_not_null(frame);
@@ -1755,12 +1824,20 @@ exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command
     if (!command || !*command)
         return EXEC_OK;
 
-    exec_result_t result = exec_command_string(frame, command);
+    exec_result_t result = execute_command_string(frame, command);
 
-    if (result.status == EXEC_ERROR)
-        return EXEC_ERROR;
-
-    return EXEC_OK;
+    case(result.status)
+    {
+        case EXEC_OK:
+        case EXEC_EMPTY:
+        case EXEC_EXIT:
+            return EXEC_OK;
+        case EXEC_ERROR:
+        case EXEC_NOT_IMPL:
+        case EXEC_INCOMPLETE:
+        default:
+            return EXEC_ERROR;
+    }
 }
 
 exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const char *command)
@@ -1774,7 +1851,7 @@ exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const char *co
      * continue) passes through to enclosing contexts correctly. */
     exec_frame_t *eval_frame = exec_frame_push(frame, EXEC_FRAME_EVAL, frame->executor, NULL);
 
-    exec_result_t result = exec_command_string(eval_frame, command);
+    exec_result_t result = execute_command_string(eval_frame, command);
 
     exec_frame_pop(&eval_frame);
 

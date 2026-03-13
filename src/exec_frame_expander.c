@@ -54,7 +54,7 @@ static string_t *get_ifs(exec_frame_t *frame)
          * it is initialized to <space><tab><newline> by default. So we intentionally
          * don't check it here. */
     }
-    else 
+    else
     {
         char *ifs_env = getenv("IFS");
         if (ifs_env)
@@ -136,7 +136,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
     else
     {
         const char *uname = string_cstr(username);
-        
+
         /* Check for special ~+ and ~- forms */
         if (strcmp(uname, "+") == 0)
         {
@@ -160,7 +160,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
                 return string_create_from_cstr(oldpwd);
             return NULL;
         }
-        
+
         /* Expand ~username to specified user's home */
         pw = getpwnam(uname);
     }
@@ -189,7 +189,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
     else
     {
         const char *uname = string_cstr(username);
-        
+
         /* Check for special ~+ and ~- forms */
         if (strcmp(uname, "+") == 0)
         {
@@ -226,7 +226,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
     else
     {
         const char *uname = string_cstr(username);
-        
+
         /* Check for special ~+ and ~- forms */
         if (strcmp(uname, "+") == 0)
         {
@@ -470,7 +470,7 @@ static string_t *expand_parameter_with_modifier(exec_frame_t *frame, const part_
             /* Now expand that variable */
             string_t *indirect_value = get_parameter_value(frame, v);
             string_destroy(&v);
-            
+
             if (indirect_value)
             {
                 return indirect_value;
@@ -734,7 +734,7 @@ string_t *expand_arithmetic(exec_frame_t *frame, const string_t *expression)
 
     if (result.failed)
     {
-        log_error("Arithmetic expansion error: %s", 
+        log_error("Arithmetic expansion error: %s",
                   result.error ? string_cstr(result.error) : "unknown error");
         arithmetic_result_free(&result);
         frame->last_exit_status = 1;
@@ -773,7 +773,7 @@ static bool is_ifs_char(char c, const char *ifs)
 
 /**
  * POSIX-compliant field splitting.
- * 
+ *
  * Rules:
  * 1. If IFS is null (empty), no splitting occurs
  * 2. IFS whitespace (space/tab/newline) at start/end is ignored
@@ -782,12 +782,12 @@ static bool is_ifs_char(char c, const char *ifs)
  * 5. IFS whitespace adjacent to non-whitespace IFS is ignored
  * 6. If the result contains only IFS whitespace, produce zero words (empty list)
  */
-string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text)
+strlist_t *expand_field_split(exec_frame_t *frame, const string_t *text)
 {
     Expects_not_null(frame);
     Expects_not_null(text);
 
-    string_list_t *fields = string_list_create();
+    strlist_t *fields = strlist_create();
 
     if (string_empty(text))
         return fields;
@@ -796,7 +796,7 @@ string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text)
     if (string_empty(ifs))
     {
         // Empty IFS: no splitting, whole text is one field
-        string_list_push_back(fields, text);
+        strlist_push_back(fields, text);
         string_destroy(&ifs);
         return fields;
     }
@@ -837,7 +837,7 @@ string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text)
             field_end = len;
 
         string_t *field = string_create_from_range(text, field_start, field_end);
-        string_list_move_push_back(fields, &field);
+        strlist_move_push_back(fields, &field);
 
         i = field_end;
         if (i >= len)
@@ -873,7 +873,7 @@ string_list_t *expand_field_split(exec_frame_t *frame, const string_t *text)
                 if (i >= len || string_find_first_of_at(text, ifs, i) == i)
                 {
                     string_t *empty = string_create();
-                    string_list_move_push_back(fields, &empty);
+                    strlist_move_push_back(fields, &empty);
                 }
                 else
                 {
@@ -901,13 +901,13 @@ cleanup:
  * Pathname Expansion
  * ============================================================================ */
 
-string_list_t *expand_pathname(exec_frame_t *frame, const string_t *pattern)
+strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern)
 {
     (void)frame; /* May use frame for noglob check in future */
 
-    string_list_t *matches = glob_util_expand_path(pattern);
+    strlist_t *matches = glob_util_expand_path(pattern);
 
-    if (matches && string_list_size(matches) > 0)
+    if (matches && strlist_size(matches) > 0)
     {
         return matches;
     }
@@ -915,11 +915,11 @@ string_list_t *expand_pathname(exec_frame_t *frame, const string_t *pattern)
     /* No matches: return original pattern */
     if (matches)
     {
-        string_list_destroy(&matches);
+        strlist_destroy(&matches);
     }
 
-    string_list_t *result = string_list_create();
-    string_list_push_back(result, string_create_from(pattern));
+    strlist_t *result = strlist_create();
+    strlist_push_back(result, string_create_from(pattern));
     return result;
 }
 
@@ -989,14 +989,14 @@ static string_t *expand_parts_to_string(exec_frame_t *frame, const part_list_t *
     for (int i = 0; i < part_list_size(parts); i++)
     {
         const part_t *part = part_list_get(parts, i);
-        
+
         /* Single-quoted parts: no expansion, literal text */
         if (part->was_single_quoted && part->type == PART_LITERAL)
         {
             string_append(result, part->text);
             continue;
         }
-        
+
         /* Expand the part */
         string_t *expanded = expand_part(frame, part);
 
@@ -1031,7 +1031,7 @@ static string_t *remove_quotes(const string_t *text)
  * Expands a single WORD token into a list of strings, applying all relevant expansions.
  * This may have side effects from parameter expansions with modifiers and command substitutions.
  */
-string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok)
+strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok)
 {
     if (!tok || tok->type != TOKEN_WORD)
     {
@@ -1043,8 +1043,8 @@ string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_
     {
         /* No expansion: return literal text */
         string_t *text = token_get_all_text(tok);
-        string_list_t *result = string_list_create();
-        string_list_move_push_back(result, &text);
+        strlist_t *result = strlist_create();
+        strlist_move_push_back(result, &text);
         return result;
     }
 
@@ -1052,39 +1052,39 @@ string_list_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_
     string_t *expanded = expand_parts_to_string(frame, token_get_parts_const(tok));
 
     /* Field splitting */
-    string_list_t *fields;
+    strlist_t *fields;
     if (tok->needs_field_splitting)
     {
         fields = expand_field_split(frame, expanded);
         string_destroy(&expanded);
-        
+
         /* POSIX: If field splitting produced zero words (e.g., input was only
          * IFS whitespace), that's correct - don't add an empty string. */
     }
     else
     {
-        fields = string_list_create();
-        string_list_move_push_back(fields, &expanded);
+        fields = strlist_create();
+        strlist_move_push_back(fields, &expanded);
     }
 
     /* Pathname expansion */
     if (tok->needs_pathname_expansion)
     {
-        string_list_t *globs = string_list_create();
+        strlist_t *globs = strlist_create();
 
-        for (int i = 0; i < string_list_size(fields); i++)
+        for (int i = 0; i < strlist_size(fields); i++)
         {
-            const string_t *pattern = string_list_at(fields, i);
-            string_list_t *matches = expand_pathname(frame, pattern);
+            const string_t *pattern = strlist_at(fields, i);
+            strlist_t *matches = expand_pathname(frame, pattern);
 
-            for (int j = 0; j < string_list_size(matches); j++)
+            for (int j = 0; j < strlist_size(matches); j++)
             {
-                string_list_push_back(globs, string_create_from(string_list_at(matches, j)));
+                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
             }
-            string_list_destroy(&matches);
+            strlist_destroy(&matches);
         }
 
-        string_list_destroy(&fields);
+        strlist_destroy(&fields);
         return globs;
     }
 
@@ -1113,27 +1113,27 @@ string_t *expand_word_nosplit(exec_frame_t *frame, const token_t *tok)
  * Expand a list of WORD tokens into a list of strings, applying all relevant expansions.
  * This may have side effects from parameter expansions with modifiers and command substitutions.
  */
-string_list_t *expand_words(exec_frame_t *frame, const token_list_t *tokens)
+strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens)
 {
     if (!tokens)
     {
         return NULL;
     }
 
-    string_list_t *result = string_list_create();
+    strlist_t *result = strlist_create();
 
     for (int i = 0; i < token_list_size(tokens); i++)
     {
         const token_t *tok = token_list_get(tokens, i);
-        string_list_t *expanded = exec_frame_expander_expand_word(frame, tok);
+        strlist_t *expanded = exec_frame_expander_expand_word(frame, tok);
 
         if (expanded)
         {
-            for (int j = 0; j < string_list_size(expanded); j++)
+            for (int j = 0; j < strlist_size(expanded); j++)
             {
-                string_list_push_back(result, string_create_from(string_list_at(expanded, j)));
+                strlist_push_back(result, string_create_from(strlist_at(expanded, j)));
             }
-            string_list_destroy(&expanded);
+            strlist_destroy(&expanded);
         }
     }
 
@@ -1182,19 +1182,19 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
 
     /* Unquoted heredoc: perform parameter, command, and arithmetic expansions.
      * No field splitting or pathname expansion.
-     * 
+     *
      * We need to scan through the text and expand $var, ${...}, $(...), $((...))
      * but not perform field splitting or globbing.
      */
-    
+
     string_t *result = string_create();
     const char *text = string_cstr(body);
     int len = string_length(body);
-    
+
     for (int i = 0; i < len; i++)
     {
         char c = text[i];
-        
+
         if (c == '\\' && i + 1 < len)
         {
             /* Backslash escapes: \$, \`, \\ */
@@ -1217,7 +1217,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
             if (i + 1 < len)
             {
                 char next = text[i + 1];
-                
+
                 if (next == '(')
                 {
                     /* Command substitution $(...) or arithmetic $((...)) */
@@ -1239,7 +1239,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
                             brace_depth--;
                         j++;
                     }
-                    
+
                     if (brace_depth == 0)
                     {
                         /* Extract parameter name (simple case) */
@@ -1248,7 +1248,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
                         {
                             string_append_char(param_name, text[k]);
                         }
-                        
+
                         string_t *value = expand_parameter(frame, param_name);
                         if (value)
                         {
@@ -1256,7 +1256,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
                             string_destroy(&value);
                         }
                         string_destroy(&param_name);
-                        
+
                         i = j - 1; /* Move past the expansion */
                         continue;
                     }
@@ -1269,7 +1269,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
                     /* Simple parameter: $var or $1, $?, etc. */
                     string_t *param_name = string_create();
                     i++; /* Move to first char of name */
-                    
+
                     /* Special single-char parameters */
                     if (strchr("?$!#@*-0", text[i]))
                     {
@@ -1285,7 +1285,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
                         }
                         i--; /* Back up one for loop increment */
                     }
-                    
+
                     string_t *value = expand_parameter(frame, param_name);
                     if (value)
                     {
@@ -1318,7 +1318,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
             string_append_char(result, c);
         }
     }
-    
+
     return result;
 }
 
@@ -1326,14 +1326,14 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
  * Legacy/Compatibility Functions
  * ============================================================================ */
 
-string_list_t *exec_expand_word(exec_t *executor, const token_t *tok)
+strlist_t *exec_expand_word(exec_t *executor, const token_t *tok)
 {
     if (!executor)
         return NULL;
     return exec_frame_expander_expand_word(executor->current_frame, tok);
 }
 
-string_list_t *exec_expand_words(exec_t *executor, const token_list_t *tokens)
+strlist_t *exec_expand_words(exec_t *executor, const token_list_t *tokens)
 {
     if (!executor)
         return NULL;
