@@ -24,6 +24,10 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#ifdef POSIX_API
+#include <sys/resource.h>
+#include <sys/types.h>
+#endif
 
 /* ── Public utility types (also used by frame.h) ─────────────────────────── */
 #include "exec_types_public.h"
@@ -31,11 +35,6 @@
 #include "string_list.h"
 #include "string_t.h"
 
-/* ── Platform-specific system headers ────────────────────────────────────── */
-#ifdef POSIX_API
-#include <sys/resource.h>
-#include <sys/types.h>
-#endif
 
 /* ============================================================================
  * Executor Lifecycle

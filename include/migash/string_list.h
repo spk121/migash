@@ -2,7 +2,7 @@
 #define STRING_LIST_H
 
 #include <stdint.h>
-#include "string_t.h"
+#include "mgsh/string_t.h"
 
 /**
  * @file string_list.h
