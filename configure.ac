@@ -85,7 +85,6 @@ dnl ----------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile
                  src/Makefile
                  include/Makefile
-                 m4/Makefile
                  include/migash/mgshconf.h
                  migash.pc
                  packaging/migash.spec])
