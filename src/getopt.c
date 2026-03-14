@@ -7,21 +7,21 @@
    it under the terms of the GNU Lesser General Public License as published by
    the Free Software Foundation, version 2.1 or later.
 */
-
-#include "getopt.h"
-#include "xalloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "migash/getopt.h"
+#include "xalloc.h"
 
 /* ============================================================================
  * Traditional global variables (file-local, used by non-reentrant wrappers)
  * ============================================================================ */
 
-static char *optarg = NULL;
-static int optind = 1;
-static int opterr = 1;
-static int optopt = '?';
+char *optarg = NULL;
+int optind = 1;
+int opterr = 1;
+int optopt = '?';
 
 static struct getopt_state _getopt_global_state = {
     .optind = 1, .opterr = 1, .optopt = '?', .initialized = 0, .__getopt_external_argv = NULL};
@@ -543,7 +543,7 @@ static option_type_t classify_option(const char *arg, int plus_aware)
  * Core internal entry point
  * ============================================================================ */
 
-MGSH_LOCAL int _getopt_internal_r(int argc, char *const argv[], const char *optstring,
+static int _getopt_internal_r(int argc, char *const argv[], const char *optstring,
                        const void *longopts_void, int *longind, int long_only, int posixly_correct,
                        struct getopt_state *st, int plus_aware)
 {
@@ -658,7 +658,7 @@ static void reset_global_state(void)
     _getopt_global_state.initialized = 0;
 }
 
-MGSH_LOCAL int getopt(int argc, char *const argv[], const char *optstring)
+int getopt(int argc, char *const argv[], const char *optstring)
 {
     if (optind == 0)
     {
@@ -671,8 +671,8 @@ MGSH_LOCAL int getopt(int argc, char *const argv[], const char *optstring)
     return rc;
 }
 
-MGSH_LOCAL int getopt_long(int argc, char *const argv[], const char *optstring,
-                           const struct option *longopts, int *longind)
+int getopt_long(int argc, char *const argv[], const char *optstring,
+                const struct option *longopts, int *longind)
 {
     if (optind == 0)
     {
@@ -685,8 +685,8 @@ MGSH_LOCAL int getopt_long(int argc, char *const argv[], const char *optstring,
     return rc;
 }
 
-MGSH_LOCAL int getopt_long_only(int argc, char *const argv[], const char *optstring,
-                                const struct option *longopts, int *longind)
+int getopt_long_only(int argc, char *const argv[], const char *optstring,
+                     const struct option *longopts, int *longind)
 {
     if (optind == 0)
     {
@@ -699,7 +699,7 @@ MGSH_LOCAL int getopt_long_only(int argc, char *const argv[], const char *optstr
     return rc;
 }
 
-MGSH_LOCAL int getopt_long_plus(int argc, char *const argv[], const char *optstring,
+int getopt_long_plus(int argc, char *const argv[], const char *optstring,
                                 const struct option_ex *longopts, int *longind)
 {
     static struct getopt_state state = {0};
@@ -739,7 +739,7 @@ MGSH_LOCAL int getopt_long_only_plus(int argc, char *const argv[], const char *o
  * Raw char** reentrant variants (all MGSH_LOCAL)
  * ============================================================================ */
 
-MGSH_LOCAL int getopt_r(int argc, char *const argv[], const char *optstring,
+int getopt_r(int argc, char *const argv[], const char *optstring,
                         struct getopt_state *state)
 {
     if (!state)
@@ -747,7 +747,7 @@ MGSH_LOCAL int getopt_r(int argc, char *const argv[], const char *optstring,
     return _getopt_internal_r(argc, argv, optstring, NULL, NULL, 0, 0, state, 0);
 }
 
-MGSH_LOCAL int getopt_long_r(int argc, char *const argv[], const char *optstring,
+int getopt_long_r(int argc, char *const argv[], const char *optstring,
                              const struct option *longopts, int *longind,
                              struct getopt_state *state)
 {
@@ -756,7 +756,7 @@ MGSH_LOCAL int getopt_long_r(int argc, char *const argv[], const char *optstring
     return _getopt_internal_r(argc, argv, optstring, longopts, longind, 0, 0, state, 0);
 }
 
-MGSH_LOCAL int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
+int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
                                   const struct option *longopts, int *longind,
                                   struct getopt_state *state)
 {
@@ -765,7 +765,7 @@ MGSH_LOCAL int getopt_long_only_r(int argc, char *const argv[], const char *opts
     return _getopt_internal_r(argc, argv, optstring, longopts, longind, 1, 0, state, 0);
 }
 
-MGSH_LOCAL int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
+int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
                                   const struct option_ex *longopts, int *longind,
                                   struct getopt_state *state)
 {
@@ -774,7 +774,7 @@ MGSH_LOCAL int getopt_long_plus_r(int argc, char *const argv[], const char *opts
     return _getopt_internal_r(argc, argv, optstring, longopts, longind, 0, 0, state, 1);
 }
 
-MGSH_LOCAL int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
+int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
                                        const struct option_ex *longopts, int *longind,
                                        struct getopt_state *state)
 {
@@ -787,19 +787,12 @@ MGSH_LOCAL int getopt_long_only_plus_r(int argc, char *const argv[], const char 
  * State reset functions (MGSH_LOCAL)
  * ============================================================================ */
 
-MGSH_LOCAL void getopt_reset(void)
+void getopt_reset(void)
 {
     optind = 1;
     optarg = NULL;
     optopt = '?';
     reset_global_state();
-}
-
-MGSH_LOCAL void getopt_reset_plus(void)
-{
-    optind = 1;
-    optarg = NULL;
-    optopt = '?';
 }
 
 /* ============================================================================

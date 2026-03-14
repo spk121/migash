@@ -1,0 +1,56 @@
+Name:           migash
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        The miga-shell POSIX Shell library
+
+License:        MIT
+URL:            https://github.com/spk121/migash
+Source0:        %{name}-%{version}.tar.gz
+
+BuildRequires:  gcc autoconf automake libtool
+
+%description
+%{summary}.
+
+%package        devel
+Summary:        Development files for %{name}
+Requires:       %{name}%{?_isa} = %{version}-%{release}
+
+%description    devel
+Headers and pkg-config for %{name}.
+
+%prep
+%autosetup
+
+%build
+autoreconf -fi
+%configure --disable-static
+%make_build
+
+%install
+%make_install
+find %{buildroot} -name '*.la' -delete
+
+%check
+# make check     # Enable once tests are ready
+
+%files
+%license LICENSE
+%{_libdir}/libmigash.so.*
+
+%files devel
+%{_includedir}/migash.h
+%{_includedir}/migash/api.h
+%{_includedir}/migash/config.h
+%{_includedir}/migash/exec.h
+%{_includedir}/migash/frame.h
+%{_includedir}/migash/getopt.h
+%{_includedir}/migash/string_t.h
+%{_includedir}/migash/strlist.h
+%{_includedir}/migash/type_pub.h
+%{_libdir}/libmigash.so
+%{_libdir}/pkgconfig/migash.pc
+
+%changelog
+* Thu Mar 12 2026 Mike Gran <mike@lonelycactus.com> - 0.0.1-1
+- Initial commit

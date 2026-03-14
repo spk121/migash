@@ -15,6 +15,20 @@
             "cStandard": "c23",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-gcc-x64"
+        },
+        {
+            "name": "cygwin gcc",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "cppStandard": "c++17",
+            "compilerPath": "C:/cygwin64/bin/gcc.exe",
+            "intelliSenseMode": "windows-gcc-x64",
+            "defines": [
+                "MGSH_BUILD_SHARED"
+            ],
+            "cStandard": "c23"
         }
     ],
     "version": 4

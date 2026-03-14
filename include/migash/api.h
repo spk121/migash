@@ -36,7 +36,7 @@
    The actual public API macro — usually what you want to use.
    Controls whether we are building the library or consuming it.
 */
-#if defined(MGSH_BUILD_SHARED) || defined(MGSH_EXPORTS)
+#if defined(MGSH_BUILD_SHARED)
 /* We are building the shared library → export symbols */
     #define MGSH_API  MGSH_EXPORT
 #else

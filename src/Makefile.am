@@ -1,0 +1,117 @@
+lib_LTLIBRARIES = libmigash.la
+bin_PROGRAMS = migash
+
+libmigash_la_SOURCES = \
+    alias.c \
+    alias.h \
+    alias_array.c \
+    alias_array.h \
+    alias_store.c \
+    alias_store.h \
+    arithmetic.c \
+    arithmetic.h \
+    ast.c \
+    ast.h \
+    builtin_store.c \
+    builtin_store.h \
+    builtins.c \
+    builtins.h \
+    exec.c \
+    exec_command.c \
+    exec_command.h \
+    exec_frame.c \
+    exec_frame.h \
+    exec_frame_expander.c \
+    exec_frame_expander.h \
+    exec_redirect.c \
+    exec_redirect.h \
+    fd_table.c \
+    fd_table.h \
+    frame.c \
+    func_map.c \
+    func_map.h \
+    func_store.c \
+    func_store.h \
+    getopt.c \
+    glob_util.c \
+    glob_util.h \
+    gnode.c \
+    gnode.h \
+    gprint.c \
+    gprint.h \
+    job_store.c \
+    job_store.h \
+    lexer.c \
+    lexer.h \
+    lexer_arith_exp.c\
+    lexer_arith_exp.h \
+    lexer_cmd_subst.c \
+    lexer_cmd_subst.h \
+    lexer_squote.c \
+    lexer_squote.h \
+    lexer_dquote.c \
+    lexer_dquote.h \
+    lexer_heredoc.c \
+    lexer_heredoc.h \
+    lexer_normal.c \
+    lexer_normal.h \
+    lexer_param_exp.c \
+    lexer_param_exp.h \
+    lexer_t.h \
+    lexer_priv_t.h \
+    lib.c \
+    lib.h \
+    logging.c \
+    logging.h \
+    lower.c \
+    lower.h \
+    parse_session.c \
+    parse_session.h \
+    parser.c \
+    parser.h \
+    pattern_removal.c \
+    pattern_removal.h \
+    positional_params.c \
+    positional_params.h \
+    sig_act.c \
+    sig_act.h \
+    string_t.c \
+    strlist.c \
+    token.c \
+    token.h \
+    token_array.c \
+    token_array.h \
+    tokenizer.c \
+    tokenizer.h \
+    trap_controller.c \
+    trap_controller.h \
+    trap_store.c \
+    trap_store.h \
+    variable_map.c \
+    variable_map.h \
+    variable_store.c \
+    variable_store.h \
+    xalloc.c \
+    xalloc.h
+
+# Libtool ABI versioning: current:revision:age
+# See the "Libtool Version-Info" section below for how to update this.
+libmigash_la_LDFLAGS = -version-info 1:0:0
+if ENABLE_WIN32_DLL
+libmigash_la_LDFLAGS += -no-undefined
+endif
+
+# FIXME? Libtool always adds -DDLL_EXPORT by default. Use that instead of defining
+# MGSH_BUILD_SHARED? Or is it better to have a separate macro for the API?
+
+libmigash_la_CPPFLAGS = -I$(top_srcdir)/include -I$(top_builddir)
+if ENABLE_SHARED
+libmigash_la_CPPFLAGS += -DMGSH_BUILD_SHARED
+endif
+libmigash_la_CFLAGS = -fvisibility=hidden
+
+migash_SOURCES = \
+    main.c \
+    shell.c
+migash_LDADD = libmigash.la
+migash_CPPFLAGS = -I$(top_srcdir)/include

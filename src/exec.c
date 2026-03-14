@@ -1505,12 +1505,16 @@ char *exec_get_ps1_cstr(const exec_t *executor)
     return string_release(&s);
 }
 
-/* Forward declarations — defined after render_ps1 below. */
-static const char *ps1_lookup_variable(const exec_frame_t *frame, const char *name);
-
 static bool is_valid_ps1_variable_char(char c)
 {
     return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+static bool is_xdigit(char c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
 }
 
 /**
@@ -1560,7 +1564,7 @@ static string_t *render_ps1(const exec_t *exec)
      * -------------------------------------------------------------------------
      */
     string_t *ps1_str = string_create_from_cstr("PS1");
-    string_t *ps1_raw = exec_frame_get_variable(frame, ps1_str);
+    const string_t *ps1_raw = exec_frame_get_variable(frame, ps1_str);
     string_destroy(&ps1_str);
 
     if (!ps1_raw)
@@ -1628,44 +1632,36 @@ static string_t *render_ps1(const exec_t *exec)
                  * trivially to its UTF-8 representation.  Fewer than 2
                  * valid hex digits: copy the escape literally. */
                 i++; /* consume 'x' */
-                char hi = string_at(ps1_raw, i);
-                char lo = string_at(ps1_raw, i + 1);
-                if (isxdigit((unsigned char)hi) && isxdigit((unsigned char)lo))
+                int end = string_find_first_not_of_predicate_at(ps1_raw, is_xdigit, i);
+                if (end == -1 || end - i < 2)
                 {
-                    char hex[3] = {hi, lo, '\0'};
-                    uint32_t cp = (uint32_t)strtoul(hex, NULL, 16);
-                    string_append_utf8(out, cp);
-                    i += 2;
-                }
-                else
-                {
-                    /* Not a valid escape — emit literally. */
+                    /* Not enough hex digits — emit literally. */
                     string_append_cstr(out, "\\x");
+                    continue;
                 }
+                string_t *hex_str = string_substring(ps1_raw, i, i + 2);
+                uint32_t cp = (uint32_t)strtoul(string_cstr(hex_str), NULL, 16);
+                string_append_utf8(out, cp);
+                string_destroy(&hex_str);
+                i += 2;
                 break;
             }
 
             case 'u': {
                 /* \uhhhh — exactly 4 hex digits, BMP Unicode code point. */
                 i++; /* consume 'u' */
-                char hex[5];
-                int n = 0;
-                while (n < 4 && isxdigit((unsigned char)string_at(ps1_raw, i + n)))
+                int end = string_find_first_not_of_predicate_at(ps1_raw, is_xdigit, i);
+                if (end == -1 || end - i < 4)
                 {
-                    hex[n] = string_at(ps1_raw, i + n);
-                    n = n + 1;
-                }
-                if (n == 4)
-                {
-                    hex[4] = '\0';
-                    uint32_t cp = (uint32_t)strtoul(hex, NULL, 16);
-                    string_append_utf8(out, cp);
-                    i += 4;
-                }
-                else
-                {
+                    /* Not enough hex digits — emit literally. */
                     string_append_cstr(out, "\\u");
+                    continue;
                 }
+                string_t *hex_str = string_substring(ps1_raw, i, i + 4);
+                uint32_t cp = (uint32_t)strtoul(string_cstr(hex_str), NULL, 16);
+                string_append_utf8(out, cp);
+                string_destroy(&hex_str);
+                i += 4;
                 break;
             }
 
@@ -1675,24 +1671,18 @@ static string_t *render_ps1(const exec_t *exec)
                  * but 6 gives a clean fixed-width field and matches common
                  * shell practice for emoji, e.g. \U01F600.) */
                 i++; /* consume 'U' */
-                char hex[7];
-                int n = 0;
-                while (n < 6 && isxdigit((unsigned char)string_at(ps1_raw, i + n)))
+                int end = string_find_first_not_of_predicate_at(ps1_raw, is_xdigit, i);
+                if (end == -1 || end - i < 6)
                 {
-                    hex[n] = string_at(ps1_raw, i + n);
-                    n = n + 1;
-                }
-                if (n == 6)
-                {
-                    hex[6] = '\0';
-                    uint32_t cp = (uint32_t)strtoul(hex, NULL, 16);
-                    string_append_utf8(out, cp);
-                    i += 6;
-                }
-                else
-                {
+                    /* Not enough hex digits — emit literally. */
                     string_append_cstr(out, "\\U");
+                    continue;
                 }
+                string_t *hex_str = string_substring(ps1_raw, i, i + 6);
+                uint32_t cp = (uint32_t)strtoul(string_cstr(hex_str), NULL, 16);
+                string_append_utf8(out, cp);
+                string_destroy(&hex_str);
+                i += 6;
                 break;
             }
 
@@ -1810,28 +1800,6 @@ char *exec_get_rendered_ps1_cstr(const exec_t *executor)
 {
     string_t *s = exec_get_rendered_ps1(executor);
     return string_release(&s);
-}
-
-/**
- * Look up a variable for PS1 expansion.
- * Checks the frame's variable store first, then the executor-level store.
- * Returns the C string value, or NULL if not set.
- */
-static const char *ps1_lookup_variable(const exec_frame_t *frame, const char *name)
-{
-    if (frame->variables)
-    {
-        const char *v = variable_store_get_value_cstr(frame->variables, name);
-        if (v)
-            return v;
-    }
-    if (frame->executor && frame->executor->variables)
-    {
-        const char *v = variable_store_get_value_cstr(frame->executor->variables, name);
-        if (v)
-            return v;
-    }
-    return NULL;
 }
 
 string_t *exec_get_ps2(const exec_t *executor)

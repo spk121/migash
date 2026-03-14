@@ -69,6 +69,7 @@
 #define MGSH_GETOPT_H
 
 #include "migash/api.h"
+#include "migash/config.h"
 #include "migash/strlist.h"
 #include "migash/string_t.h"
 
@@ -268,6 +269,47 @@ struct getopt_state
  * @endcode
  */
 MGSH_API void getopt_state_init(struct getopt_state *state);
+
+/*---------------------------------------------------------------------------
+ * Internal APIs used by Miga Shell builtins
+ * Not public because of collision risk with standard getopt APIs.
+ *---------------------------------------------------------------------------*/
+
+ /* Traditional getopt APIs */
+MGSH_LOCAL int getopt(int argc, char *const argv[], const char *optstring);
+MGSH_LOCAL int getopt_long(int argc, char *const argv[], const char *optstring,
+                           const struct option *longopts, int *longind);
+MGSH_LOCAL int getopt_long_only(int argc, char *const argv[], const char *optstring,
+                                const struct option *longopts, int *longind);
+MGSH_LOCAL int getopt_long_plus(int argc, char *const argv[], const char *optstring,
+                                const struct option_ex *longopts, int *longind);
+MGSH_LOCAL int getopt_long_only_plus(int argc, char *const argv[], const char *optstring,
+                                     const struct option_ex *longopts, int *longind);
+
+/* Resets the internal state of the traditional getopt APIs */
+MGSH_LOCAL void getopt_reset(void);
+
+/* Output-only traditional global variables. Updated by the traditional getopt APIs. */
+MGSH_LOCAL extern int optind;
+MGSH_LOCAL extern char *optarg;
+MGSH_LOCAL extern int opterr;
+MGSH_LOCAL extern int optopt;
+
+/* Reentrant versions */
+MGSH_LOCAL int getopt_r(int argc, char *const argv[], const char *optstring,
+                        struct getopt_state *state);
+MGSH_LOCAL int getopt_long_r(int argc, char *const argv[], const char *optstring,
+                             const struct option *longopts, int *longind,
+                             struct getopt_state *state);
+MGSH_LOCAL int getopt_long_only_r(int argc, char *const argv[], const char *optstring,
+                                  const struct option *longopts, int *longind,
+                                  struct getopt_state *state);
+MGSH_LOCAL int getopt_long_plus_r(int argc, char *const argv[], const char *optstring,
+                                  const struct option_ex *longopts, int *longind,
+                                  struct getopt_state *state);
+MGSH_LOCAL int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
+                                       const struct option_ex *longopts, int *longind,
+                                       struct getopt_state *state);
 
 /*---------------------------------------------------------------------------
  * Public API — reentrant, strlist-based wrappers

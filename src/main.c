@@ -165,12 +165,18 @@ static void print_usage(const string_t *prog)
     fprintf(stderr, "  -s              read from stdin\n");
 }
 
-// Note: envp is not part of ISO C, but it is a standard extension
-// in both POSIX and UCRT environments.
-// Actually, in ISO C, since there is no envp and no environ
-// there is no way to get all the environmental variables. all you have is getenv();
+// In gcc on POSIX and with cl on UCRT, you can have an envp in main().
+// In ISO C, there is no guarantee of an envp.
+#if defined(POSIX_API) || defined(UCRT_API)
 int main(int argc, char **argv, char **envp)
+#else
+int main(int argc, char **argv)
+#endif
 {
+#if !defined(POSIX_API) && !defined(UCRT_API)
+    char **envp = NULL;
+#endif
+
     arena_init();
     log_init();
     lib_setlocale();

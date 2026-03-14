@@ -6,6 +6,7 @@
 #include "lib.h"
 
 #include "migash/string_t.h"
+#include "logging.h"
 
 static inline uint8_t ascii_tolower(uint8_t c)
 {

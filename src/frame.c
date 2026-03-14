@@ -1834,7 +1834,7 @@ exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command
 
     exec_result_t result = execute_command_string(frame, command);
 
-    case(result.status)
+    switch(result.status)
     {
         case EXEC_OK:
         case EXEC_EMPTY:
