@@ -1,4 +1,4 @@
-﻿# Arithmetic Expansion
+# Arithmetic Expansion
 
 **Arithmetic expansion** lets you perform integer arithmetic directly in the shell, without calling external commands like `expr` or `bc`. It evaluates arithmetic expressions and substitutes the result, making it easy to do calculations in scripts.
 

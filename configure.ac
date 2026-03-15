@@ -26,7 +26,7 @@ AM_CONDITIONAL([ENABLE_SHARED], [test "x$enable_shared" = xyes])
 AM_CONDITIONAL([ENABLE_WIN32_DLL], [test "x$enable_win32_dll" = xyes])
 
 dnl ------------------------------------------------------------------------------
-dnl - library configuration options - for mgshconf.h
+dnl - library configuration options - for migaconf.h
 dnl ------------------------------------------------------------------------------
 
 AC_ARG_ENABLE([configuration],
@@ -57,13 +57,13 @@ fi
 
 case "$configuration" in
   posix)
-    CONFIG_DEFINE="#define MGSH_POSIX_API"
+    CONFIG_DEFINE="#define MIGA_POSIX_API"
     ;;
   ucrt)
-    CONFIG_DEFINE="#define MGSH_UCRT_API"
+    CONFIG_DEFINE="#define MIGA_UCRT_API"
     ;;
   iso_c)
-    CONFIG_DEFINE="#define MGSH_ISO_C_API"
+    CONFIG_DEFINE="#define MIGA_ISO_C_API"
     ;;
   *)
     AC_MSG_ERROR([Invalid value for --enable-configuration: $configuration])
@@ -85,7 +85,7 @@ dnl ----------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile
                  src/Makefile
                  include/Makefile
-                 include/migash/mgshconf.h
+                 include/miga/migaconf.h
                  migash.pc
                  packaging/migash.spec])
 AC_OUTPUT

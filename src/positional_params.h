@@ -11,8 +11,8 @@
 #ifndef POSITIONAL_PARAMS_H
 #define POSITIONAL_PARAMS_H
 
-#include "migash/string_t.h"
-#include "migash/strlist.h"
+#include "miga/string_t.h"
+#include "miga/strlist.h"
 #include <stdbool.h>
 #include <limits.h>
 

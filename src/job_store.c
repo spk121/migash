@@ -9,10 +9,10 @@
 #include "job_store.h"
 
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -27,7 +27,7 @@
 /**
  * Create a new process node.
  */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 static process_t *process_create(pid_t pid, const string_t *command)
 #else
 static process_t *process_create(int pid, const string_t *command)
@@ -53,7 +53,7 @@ static void process_destroy(process_t *proc)
     if (proc->command)
         string_destroy(&proc->command);
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     if (proc->handle)
     {
         CloseHandle((HANDLE)(proc->handle));
@@ -223,9 +223,9 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
     return job_id;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 bool job_store_add_process(job_store_t *store, int job_id, pid_t pid, const string_t *command)
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 bool job_store_add_process(job_store_t *store, int job_id, int pid, uintptr_t handle, const string_t *command)
 #else
 bool job_store_add_process(job_store_t *store, int job_id, int pid, const string_t *command)
@@ -239,7 +239,7 @@ bool job_store_add_process(job_store_t *store, int job_id, int pid, const string
         return false;
 
     process_t *new_proc = process_create(pid, command);
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     new_proc->handle = handle;
 #endif
 
@@ -334,7 +334,7 @@ job_t *job_store_find_by_substring(const job_store_t *store, const char *substri
     return NULL;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 job_t *job_store_find_by_pgid(const job_store_t *store, pid_t pgid)
 #else
 job_t *job_store_find_by_pgid(const job_store_t *store, int pgid)
@@ -369,7 +369,7 @@ bool job_store_set_state(job_store_t *store, int job_id, job_state_t new_state)
     return true;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 bool job_store_set_process_state(job_store_t *store, pid_t pid, job_state_t new_state,
                                  int exit_status)
 #else
@@ -447,7 +447,7 @@ void job_store_print_jobs(const job_store_t *store, FILE *output)
 
         fprintf(output, "[%d] %s\t%s\n", job->job_id, state_str,
                 job->command_line ? string_cstr(job->command_line) : "(no command)");
-#if POSIX_API
+#if MIGA_POSIX_API
         // Posix says pid_t is a signed integer type of unspecified size.
         fprintf(output, "    pgid: %ld\n", (long)job->pgid);
 #else
@@ -461,7 +461,7 @@ void job_store_print_jobs(const job_store_t *store, FILE *output)
         {
             const char *proc_state_str = job_state_to_string(proc->state);
             fprintf(output, "        pid: %d  ", proc->pid);
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
             fprintf(output, "handle: %llu  ", proc->handle);
 #endif
             fprintf(output, "state: %s  ", proc_state_str);
@@ -626,7 +626,7 @@ intptr_t job_store_iter_get_handle(const job_process_iterator_t *iter)
 {
     if (!iter || !iter->current_process)
         return -1;
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     return (intptr_t)iter->current_process->handle;
 #else
     return -1;
@@ -679,7 +679,7 @@ size_t job_process_count(const job_t *job)
     return count;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 pid_t job_get_process_pid(const job_t *job, size_t index)
 #else
 int job_get_process_pid(const job_t *job, size_t index)
@@ -699,7 +699,7 @@ int job_get_process_pid(const job_t *job, size_t index)
     return -1;
 }
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 intptr_t job_get_process_handle(const job_t *job, size_t index)
 {
     if (!job)

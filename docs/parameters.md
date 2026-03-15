@@ -1,4 +1,4 @@
-﻿# Parameters: Positional and Special
+# Parameters: Positional and Special
 
 The shell uses **parameters** to give you access to important information like command-line arguments, exit codes, process IDs, and more. The most common type of a parameter is a variable see [Variables](variables.md). While variables are one type of parameter (covered in their own section), this section focuses on the two other types:
 

@@ -20,17 +20,17 @@
 #include "glob_util.h"
 #include "logging.h"
 #include "pattern_removal.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "variable_store.h"
 #include "xalloc.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <pwd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #include <errno.h>
 #include <io.h>
 #endif
@@ -79,7 +79,7 @@ static void record_subst_status(exec_frame_t *frame, int raw_status)
     if (!frame)
         return;
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     int status;
     if (WIFEXITED(raw_status))
     {
@@ -125,7 +125,7 @@ static void strip_trailing_newlines(string_t *str)
 
 string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     struct passwd *pw;
 
     if (username == NULL || string_length(username) == 0)
@@ -172,7 +172,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
 
     return string_create_from_cstr(pw->pw_dir);
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     if (username == NULL || string_length(username) == 0)
     {
         /* Expand ~ to current user's home */
@@ -575,7 +575,7 @@ string_t *expand_special_param(const exec_frame_t *frame, const string_t *name)
                     return string_create_from(arg0);
                 }
             }
-            return string_create_from_cstr("mgsh");
+            return string_create_from_cstr("miga");
         }
     }
 
@@ -641,7 +641,7 @@ bool is_special_param(const string_t *name)
 
 string_t *expand_command_subst(exec_frame_t *frame, const string_t *command)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     const char *cmd = string_cstr(command);
     if (cmd == NULL || *cmd == '\0')
     {
@@ -673,7 +673,7 @@ string_t *expand_command_subst(exec_frame_t *frame, const string_t *command)
 
     return output;
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     const char *cmd = string_cstr(command);
     if (cmd == NULL || *cmd == '\0')
     {

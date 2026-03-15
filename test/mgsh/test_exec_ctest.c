@@ -1,9 +1,9 @@
 #include <string.h>
 #include "ctest.h"
-#include "exec.h"
+#include "miga/exec.h"
 #include "exec_frame.h"
 #include "logging.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 
 #if 0
 
@@ -27,7 +27,7 @@ CTEST(test_exec_create_destroy)
 
     // Verify new special variable fields are initialized
     CTEST_ASSERT_EQ(ctest, exec_get_last_background_pid(executor), 0, "last_background_pid should be 0");
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     CTEST_ASSERT(ctest, exec_get_shell_pid(executor) > 0, "shell_pid should be set to getpid() on POSIX");
 #else
     CTEST_ASSERT_EQ(ctest, exec_get_shell_pid(executor), 0, "shell_pid should be 0 on non-POSIX");

@@ -1,11 +1,11 @@
 #ifndef SHELL_T_H
 #define SHELL_T_H
 
-#ifdef POSIX_API
-#define _POSIX_C_SOURCE 202401L
+#ifdef MIGA_POSIX_API
+#define _POSIX_C_SOURCE 202405L
 #endif
 
-#include "migash/exec.h"
+#include "miga/exec.h"
 #include "exec_frame.h"
 
 // Status/result conventions applied everywhere
@@ -89,7 +89,7 @@ shell_t *shell_create(const shell_cfg_t *opts);
 void     shell_destroy(shell_t **sh);
 
 // Cleanup function for arena allocator.
-// This gets registered with arena_set_cleanup when a shell is created.
+// This gets registered with miga_set_out_of_memory_cleanup_cb when a shell is created.
 // It is called when a catastrophic OOM occurs.
 void shell_cleanup(void *sh_ptr);
 

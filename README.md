@@ -45,6 +45,11 @@ command‑line interface, executes commands, and runs scripts written in
 the shell language. In this regard, nothing is particularly
 extraordinary.
 
+In UCRT mode, it is more of a curiosity. That is because most of what
+one thinks of a Windows command-line commands, like `dir`, are actually
+builtins to the `cmd` shell or to PowerShell. So Miga Shell does function,
+but there are few native Windows command-line commands to use with it.
+
 The ISO C mode, though undeniably underpowered, holds interest for me
 owing to my background in embedded systems and microcontrollers. I
 wish to provide a shell interface suitable for such constrained

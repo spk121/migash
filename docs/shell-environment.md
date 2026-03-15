@@ -1,4 +1,4 @@
-﻿# Shell Execution Environment
+# Shell Execution Environment
 
 When you run commands in the shell, they don't all execute in the same "context." Some commands run in the current shell's environment, others in a completely separate process environment, and some in a special **subshell environment** that's a copy of the current shell. Understanding these different execution environments is crucial for predicting how variables, traps, directory changes, and other settings behave in your scripts.
 

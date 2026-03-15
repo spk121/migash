@@ -1,6 +1,6 @@
 /* exec.h - a POSIX shell executor */
-#ifndef MGSH_EXEC_H
-#define MGSH_EXEC_H
+#ifndef MIGA_EXEC_H
+#define MIGA_EXEC_H
 
 /**
  * @file exec.h
@@ -24,21 +24,21 @@
  */
 
 /* Compile-time configuration must come first. */
-#include "migash/mgshconf.h"
+#include "miga/migaconf.h"
 
 #include <stdbool.h>
 #include <stdio.h>
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/resource.h>
 #include <sys/types.h>
 #endif
 
-#include "migash/api.h"
-#include "migash/type_pub.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/api.h"
+#include "miga/type_pub.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 
-MGSH_EXTERN_C_START
+MIGA_EXTERN_C_START
 
 /* ============================================================================
  * Executor Lifecycle
@@ -53,7 +53,7 @@ MGSH_EXTERN_C_START
  *
  * @return A new executor, or NULL on allocation failure.
  */
-MGSH_API exec_t *exec_create(void);
+MIGA_API exec_t *exec_create(void);
 
 /**
  * Destroy an executor and free all associated memory.
@@ -61,7 +61,7 @@ MGSH_API exec_t *exec_create(void);
  *
  * @param executor  Pointer to the executor pointer; set to NULL on return.
  */
-MGSH_API void exec_destroy(exec_t **executor);
+MIGA_API void exec_destroy(exec_t **executor);
 
 /* ============================================================================
  * Pre-Execution Configuration
@@ -77,93 +77,93 @@ MGSH_API void exec_destroy(exec_t **executor);
 
 /* ── Startup environment ─────────────────────────────────────────────────── */
 
-MGSH_API bool exec_is_args_set(const exec_t *executor);
-MGSH_API const strlist_t *exec_get_args(const exec_t *executor);
-MGSH_API char *const *exec_get_args_cstr(const exec_t *executor,
+MIGA_API bool exec_is_args_set(const exec_t *executor);
+MIGA_API const strlist_t *exec_get_args(const exec_t *executor);
+MIGA_API char *const *exec_get_args_cstr(const exec_t *executor,
                                          int *argc_out);
-MGSH_API bool exec_set_args(exec_t *executor, const strlist_t *args);
-MGSH_API bool exec_set_args_cstr(exec_t *executor, int argc,
+MIGA_API bool exec_set_args(exec_t *executor, const strlist_t *args);
+MIGA_API bool exec_set_args_cstr(exec_t *executor, int argc,
                                  char *const *argv);
 
-MGSH_API bool exec_is_envp_set(const exec_t *executor);
-MGSH_API const strlist_t *exec_get_envp(const exec_t *executor);
-MGSH_API char *const *exec_get_envp_cstr(const exec_t *executor);
-MGSH_API bool exec_set_envp(exec_t *executor, const strlist_t *envp);
-MGSH_API bool exec_set_envp_cstr(exec_t *executor, char *const *envp);
+MIGA_API bool exec_is_envp_set(const exec_t *executor);
+MIGA_API const strlist_t *exec_get_envp(const exec_t *executor);
+MIGA_API char *const *exec_get_envp_cstr(const exec_t *executor);
+MIGA_API bool exec_set_envp(exec_t *executor, const strlist_t *envp);
+MIGA_API bool exec_set_envp_cstr(exec_t *executor, char *const *envp);
 
 /* ── Shell identity ──────────────────────────────────────────────────────── */
 
-MGSH_API bool exec_is_shell_name_set(const exec_t *executor);
-MGSH_API const string_t *exec_get_shell_name(const exec_t *executor);
-MGSH_API const char *exec_get_shell_name_cstr(const exec_t *executor);
-MGSH_API bool exec_set_shell_name(exec_t *executor,
+MIGA_API bool exec_is_shell_name_set(const exec_t *executor);
+MIGA_API const string_t *exec_get_shell_name(const exec_t *executor);
+MIGA_API const char *exec_get_shell_name_cstr(const exec_t *executor);
+MIGA_API bool exec_set_shell_name(exec_t *executor,
                                   const string_t *shell_name);
-MGSH_API bool exec_set_shell_name_cstr(exec_t *executor,
+MIGA_API bool exec_set_shell_name_cstr(exec_t *executor,
                                        const char *shell_name);
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
 
-MGSH_API bool exec_get_flag_allexport(const exec_t *executor);
-MGSH_API bool exec_set_flag_allexport(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_allexport(const exec_t *executor);
+MIGA_API bool exec_set_flag_allexport(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_errexit(const exec_t *executor);
-MGSH_API bool exec_set_flag_errexit(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_errexit(const exec_t *executor);
+MIGA_API bool exec_set_flag_errexit(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_ignoreeof(const exec_t *executor);
-MGSH_API bool exec_set_flag_ignoreeof(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_ignoreeof(const exec_t *executor);
+MIGA_API bool exec_set_flag_ignoreeof(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_noclobber(const exec_t *executor);
-MGSH_API bool exec_set_flag_noclobber(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_noclobber(const exec_t *executor);
+MIGA_API bool exec_set_flag_noclobber(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_noglob(const exec_t *executor);
-MGSH_API bool exec_set_flag_noglob(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_noglob(const exec_t *executor);
+MIGA_API bool exec_set_flag_noglob(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_noexec(const exec_t *executor);
-MGSH_API bool exec_set_flag_noexec(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_noexec(const exec_t *executor);
+MIGA_API bool exec_set_flag_noexec(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_nounset(const exec_t *executor);
-MGSH_API bool exec_set_flag_nounset(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_nounset(const exec_t *executor);
+MIGA_API bool exec_set_flag_nounset(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_pipefail(const exec_t *executor);
-MGSH_API bool exec_set_flag_pipefail(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_pipefail(const exec_t *executor);
+MIGA_API bool exec_set_flag_pipefail(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_verbose(const exec_t *executor);
-MGSH_API bool exec_set_flag_verbose(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_verbose(const exec_t *executor);
+MIGA_API bool exec_set_flag_verbose(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_vi(const exec_t *executor);
-MGSH_API bool exec_set_flag_vi(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_vi(const exec_t *executor);
+MIGA_API bool exec_set_flag_vi(exec_t *executor, bool value);
 
-MGSH_API bool exec_get_flag_xtrace(const exec_t *executor);
-MGSH_API bool exec_set_flag_xtrace(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_xtrace(const exec_t *executor);
+MIGA_API bool exec_set_flag_xtrace(exec_t *executor, bool value);
 
 /* ── Interactive / login mode ────────────────────────────────────────────── */
 
-MGSH_API bool exec_get_is_interactive(const exec_t *executor);
-MGSH_API bool exec_set_is_interactive(exec_t *executor, bool is_interactive);
+MIGA_API bool exec_get_is_interactive(const exec_t *executor);
+MIGA_API bool exec_set_is_interactive(exec_t *executor, bool is_interactive);
 
-MGSH_API bool exec_get_is_login_shell(const exec_t *executor);
-MGSH_API bool exec_set_is_login_shell(exec_t *executor, bool is_login_shell);
+MIGA_API bool exec_get_is_login_shell(const exec_t *executor);
+MIGA_API bool exec_set_is_login_shell(exec_t *executor, bool is_login_shell);
 
 /* ── Job control ─────────────────────────────────────────────────────────── */
 
-MGSH_API bool exec_get_job_control_enabled(const exec_t *executor);
-MGSH_API bool exec_set_job_control_enabled(exec_t *executor, bool enabled);
+MIGA_API bool exec_get_job_control_enabled(const exec_t *executor);
+MIGA_API bool exec_set_job_control_enabled(exec_t *executor, bool enabled);
 
 /* ── Working directory ───────────────────────────────────────────────────── */
 
-MGSH_API bool exec_is_working_directory_set(const exec_t *executor);
-MGSH_API const string_t *exec_get_working_directory(const exec_t *executor);
-MGSH_API const char *exec_get_working_directory_cstr(const exec_t *executor);
-MGSH_API bool exec_set_working_directory(exec_t *executor,
+MIGA_API bool exec_is_working_directory_set(const exec_t *executor);
+MIGA_API const string_t *exec_get_working_directory(const exec_t *executor);
+MIGA_API const char *exec_get_working_directory_cstr(const exec_t *executor);
+MIGA_API bool exec_set_working_directory(exec_t *executor,
                                          const string_t *path);
-MGSH_API bool exec_set_working_directory_cstr(exec_t *executor,
+MIGA_API bool exec_set_working_directory_cstr(exec_t *executor,
                                               const char *path);
 
 /* ── File permissions ────────────────────────────────────────────────────── */
 
-MGSH_API bool exec_is_umask_set(const exec_t *executor);
-MGSH_API int exec_get_umask(const exec_t *executor);
-MGSH_API bool exec_set_umask(exec_t *executor, int mask);
+MIGA_API bool exec_is_umask_set(const exec_t *executor);
+MIGA_API int exec_get_umask(const exec_t *executor);
+MIGA_API bool exec_set_umask(exec_t *executor, int mask);
 
 /**
  * Format a umask value as a symbolic mode string (e.g. "u=rwx,g=rx,o=rx").
@@ -173,36 +173,36 @@ MGSH_API bool exec_set_umask(exec_t *executor, int mask);
  * @param mask  The umask value (e.g. 0022).
  * @return A newly allocated string with the symbolic representation.
  */
-MGSH_API string_t *exec_format_umask_symbolic(int mask);
-MGSH_API char *exec_format_umask_symbolic_cstr(int mask);
+MIGA_API string_t *exec_format_umask_symbolic(int mask);
+MIGA_API char *exec_format_umask_symbolic_cstr(int mask);
 
-#ifdef POSIX_API
-MGSH_API mode_t exec_get_umask_posix(const exec_t *executor);
-MGSH_API bool exec_set_umask_posix(exec_t *executor, mode_t mask);
+#ifdef MIGA_POSIX_API
+MIGA_API mode_t exec_get_umask_posix(const exec_t *executor);
+MIGA_API bool exec_set_umask_posix(exec_t *executor, mode_t mask);
 
-MGSH_API bool exec_is_file_size_limit_set(const exec_t *executor);
-MGSH_API rlim_t exec_get_file_size_limit(const exec_t *executor);
-MGSH_API bool exec_set_file_size_limit(exec_t *executor, rlim_t limit);
+MIGA_API bool exec_is_file_size_limit_set(const exec_t *executor);
+MIGA_API rlim_t exec_get_file_size_limit(const exec_t *executor);
+MIGA_API bool exec_set_file_size_limit(exec_t *executor, rlim_t limit);
 #endif
 
 /* ── Process identity ────────────────────────────────────────────────────── */
 
-MGSH_API bool exec_is_process_group_set(const exec_t *executor);
-MGSH_API int exec_get_process_group(const exec_t *executor);
-MGSH_API bool exec_set_process_group(exec_t *executor, int pgid);
+MIGA_API bool exec_is_process_group_set(const exec_t *executor);
+MIGA_API int exec_get_process_group(const exec_t *executor);
+MIGA_API bool exec_set_process_group(exec_t *executor, int pgid);
 
-MGSH_API bool exec_is_shell_pid_set(const exec_t *executor);
-MGSH_API int exec_get_shell_pid(const exec_t *executor);
-MGSH_API bool exec_set_shell_pid(exec_t *executor, int pid);
+MIGA_API bool exec_is_shell_pid_set(const exec_t *executor);
+MIGA_API int exec_get_shell_pid(const exec_t *executor);
+MIGA_API bool exec_set_shell_pid(exec_t *executor, int pid);
 
-MGSH_API bool exec_is_shell_ppid_set(const exec_t *executor);
-MGSH_API int exec_get_shell_ppid(const exec_t *executor);
-MGSH_API bool exec_set_shell_ppid(exec_t *executor, int ppid);
+MIGA_API bool exec_is_shell_ppid_set(const exec_t *executor);
+MIGA_API int exec_get_shell_ppid(const exec_t *executor);
+MIGA_API bool exec_set_shell_ppid(exec_t *executor, int ppid);
 
 /* ── RC file control ─────────────────────────────────────────────────────── */
 
-MGSH_API bool exec_get_inhibit_rc_files(const exec_t *executor);
-MGSH_API bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
+MIGA_API bool exec_get_inhibit_rc_files(const exec_t *executor);
+MIGA_API bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
 
 /**
  * When set, exec_setup_core() will not register the default builtin
@@ -211,37 +211,37 @@ MGSH_API bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit);
  *
  * Must be called before the top frame is initialized.
  */
-MGSH_API bool exec_get_flag_nobuiltins(const exec_t *executor);
-MGSH_API bool exec_set_flag_nobuiltins(exec_t *executor, bool value);
+MIGA_API bool exec_get_flag_nobuiltins(const exec_t *executor);
+MIGA_API bool exec_set_flag_nobuiltins(exec_t *executor, bool value);
 
-MGSH_API bool exec_is_system_rc_filename_set(const exec_t *executor);
-MGSH_API const string_t *exec_get_system_rc_filename(const exec_t *executor);
-MGSH_API const char *exec_get_system_rc_filename_cstr(const exec_t *executor);
-MGSH_API bool exec_set_system_rc_filename(exec_t *executor,
+MIGA_API bool exec_is_system_rc_filename_set(const exec_t *executor);
+MIGA_API const string_t *exec_get_system_rc_filename(const exec_t *executor);
+MIGA_API const char *exec_get_system_rc_filename_cstr(const exec_t *executor);
+MIGA_API bool exec_set_system_rc_filename(exec_t *executor,
                                           const string_t *filename);
-MGSH_API bool exec_set_system_rc_filename_cstr(exec_t *executor,
+MIGA_API bool exec_set_system_rc_filename_cstr(exec_t *executor,
                                                const char *filename);
 
-MGSH_API bool exec_is_user_rc_filename_set(const exec_t *executor);
-MGSH_API const string_t *exec_get_user_rc_filename(const exec_t *executor);
-MGSH_API const char *exec_get_user_rc_filename_cstr(const exec_t *executor);
-MGSH_API bool exec_set_user_rc_filename(exec_t *executor,
+MIGA_API bool exec_is_user_rc_filename_set(const exec_t *executor);
+MIGA_API const string_t *exec_get_user_rc_filename(const exec_t *executor);
+MIGA_API const char *exec_get_user_rc_filename_cstr(const exec_t *executor);
+MIGA_API bool exec_set_user_rc_filename(exec_t *executor,
                                         const string_t *filename);
-MGSH_API bool exec_set_user_rc_filename_cstr(exec_t *executor,
+MIGA_API bool exec_set_user_rc_filename_cstr(exec_t *executor,
                                              const char *filename);
 
 /* ── Special parameters ──────────────────────────────────────────────────── */
 
-MGSH_API int exec_get_last_exit_status(const exec_t *executor);
-MGSH_API bool exec_set_last_exit_status(exec_t *executor, int status);
+MIGA_API int exec_get_last_exit_status(const exec_t *executor);
+MIGA_API bool exec_set_last_exit_status(exec_t *executor, int status);
 
-MGSH_API int exec_get_last_background_pid(const exec_t *executor);
-MGSH_API bool exec_set_last_background_pid(exec_t *executor, int pid);
+MIGA_API int exec_get_last_background_pid(const exec_t *executor);
+MIGA_API bool exec_set_last_background_pid(exec_t *executor, int pid);
 
-MGSH_API const string_t *exec_get_last_argument(const exec_t *executor);
-MGSH_API const char *exec_get_last_argument_cstr(const exec_t *executor);
-MGSH_API bool exec_set_last_argument(exec_t *executor, const string_t *arg);
-MGSH_API bool exec_set_last_argument_cstr(exec_t *executor, const char *arg);
+MIGA_API const string_t *exec_get_last_argument(const exec_t *executor);
+MIGA_API const char *exec_get_last_argument_cstr(const exec_t *executor);
+MIGA_API bool exec_set_last_argument(exec_t *executor, const string_t *arg);
+MIGA_API bool exec_set_last_argument_cstr(exec_t *executor, const char *arg);
 
 /* ============================================================================
  * Frame Access
@@ -251,7 +251,7 @@ MGSH_API bool exec_set_last_argument_cstr(exec_t *executor, const char *arg);
  * Returns true once the top frame has been fully initialised and execution
  * has begun.  Before this point, pre-execution setters are still accepted.
  */
-MGSH_API bool exec_is_top_frame_initialized(const exec_t *executor);
+MIGA_API bool exec_is_top_frame_initialized(const exec_t *executor);
 
 /**
  * Get the current execution frame.
@@ -259,7 +259,7 @@ MGSH_API bool exec_is_top_frame_initialized(const exec_t *executor);
  * The current frame is the innermost active frame (e.g. inside a function
  * call or dot-script).  Returns NULL if no execution has begun.
  */
-MGSH_API exec_frame_t *exec_get_current_frame(const exec_t *executor);
+MIGA_API exec_frame_t *exec_get_current_frame(const exec_t *executor);
 
 /* ============================================================================
  * Builtin Registration
@@ -286,10 +286,10 @@ MGSH_API exec_frame_t *exec_get_current_frame(const exec_t *executor);
  * @param category  Whether this is a POSIX special or regular builtin.
  * @return true on success, false on failure (e.g. NULL arguments).
  */
-MGSH_API bool exec_register_builtin(exec_t *executor, const string_t *name,
+MIGA_API bool exec_register_builtin(exec_t *executor, const string_t *name,
                                     builtin_fn_t fn,
                                     builtin_category_t category);
-MGSH_API bool exec_register_builtin_cstr(exec_t *executor, const char *name,
+MIGA_API bool exec_register_builtin_cstr(exec_t *executor, const char *name,
                                          builtin_fn_t fn,
                                          builtin_category_t category);
 
@@ -298,14 +298,14 @@ MGSH_API bool exec_register_builtin_cstr(exec_t *executor, const char *name,
  *
  * @return true if the builtin was found and removed, false otherwise.
  */
-MGSH_API bool exec_unregister_builtin(exec_t *executor, const string_t *name);
-MGSH_API bool exec_unregister_builtin_cstr(exec_t *executor, const char *name);
+MIGA_API bool exec_unregister_builtin(exec_t *executor, const string_t *name);
+MIGA_API bool exec_unregister_builtin_cstr(exec_t *executor, const char *name);
 
 /**
  * Check whether a builtin with the given name is registered.
  */
-MGSH_API bool exec_has_builtin(const exec_t *executor, const string_t *name);
-MGSH_API bool exec_has_builtin_cstr(const exec_t *executor, const char *name);
+MIGA_API bool exec_has_builtin(const exec_t *executor, const string_t *name);
+MIGA_API bool exec_has_builtin_cstr(const exec_t *executor, const char *name);
 
 /**
  * Look up a registered builtin by name.
@@ -313,9 +313,9 @@ MGSH_API bool exec_has_builtin_cstr(const exec_t *executor, const char *name);
  * @return The function pointer, or NULL if no builtin is registered under
  *         that name.
  */
-MGSH_API builtin_fn_t exec_get_builtin(const exec_t *executor,
+MIGA_API builtin_fn_t exec_get_builtin(const exec_t *executor,
                                        const string_t *name);
-MGSH_API builtin_fn_t exec_get_builtin_cstr(const exec_t *executor,
+MIGA_API builtin_fn_t exec_get_builtin_cstr(const exec_t *executor,
                                             const char *name);
 
 /**
@@ -327,10 +327,10 @@ MGSH_API builtin_fn_t exec_get_builtin_cstr(const exec_t *executor,
  *                      category.
  * @return true if the builtin exists, false otherwise.
  */
-MGSH_API bool exec_get_builtin_category(const exec_t *executor,
+MIGA_API bool exec_get_builtin_category(const exec_t *executor,
                                         const string_t *name,
                                         builtin_category_t *category_out);
-MGSH_API bool exec_get_builtin_category_cstr(const exec_t *executor,
+MIGA_API bool exec_get_builtin_category_cstr(const exec_t *executor,
                                              const char *name,
                                              builtin_category_t *category_out);
 
@@ -392,10 +392,10 @@ typedef struct exec_command_resolution_t
  * @param check_aliases  If true, check aliases before everything else.
  * @return Resolution result.  Caller must free result.path if non-NULL.
  */
-MGSH_API exec_command_resolution_t exec_resolve_command(const exec_t *executor,
+MIGA_API exec_command_resolution_t exec_resolve_command(const exec_t *executor,
                                                         const string_t *name,
                                                         bool check_aliases);
-MGSH_API exec_command_resolution_t exec_resolve_command_cstr(const exec_t *executor,
+MIGA_API exec_command_resolution_t exec_resolve_command_cstr(const exec_t *executor,
                                                              const char *name,
                                                              bool check_aliases);
 
@@ -414,7 +414,7 @@ MGSH_API exec_command_resolution_t exec_resolve_command_cstr(const exec_t *execu
  *
  * @return EXEC_OK on success, EXEC_ERROR on failure.
  */
-MGSH_API exec_status_t exec_setup_interactive(exec_t *executor);
+MIGA_API exec_status_t exec_setup_interactive(exec_t *executor);
 
 /**
  * Prepare the executor for non-interactive (script / -c) use.
@@ -423,7 +423,7 @@ MGSH_API exec_status_t exec_setup_interactive(exec_t *executor);
  *
  * @return EXEC_OK on success, EXEC_ERROR on failure.
  */
-MGSH_API exec_status_t exec_setup_noninteractive(exec_t *executor);
+MIGA_API exec_status_t exec_setup_noninteractive(exec_t *executor);
 
 /*
  * NOTE: If execution begins without calling one of the setup functions above,
@@ -446,7 +446,7 @@ MGSH_API exec_status_t exec_setup_noninteractive(exec_t *executor);
  * @param fp        Input stream (e.g. stdin, or an open script file).
  * @return Execution status.
  */
-MGSH_API exec_status_t exec_execute_stream(exec_t *executor, FILE *fp);
+MIGA_API exec_status_t exec_execute_stream(exec_t *executor, FILE *fp);
 
 /**
  * Used primarily for the built-in `source` / `.` command to execute a
@@ -455,7 +455,7 @@ MGSH_API exec_status_t exec_execute_stream(exec_t *executor, FILE *fp);
  * State does not persist across multiple calls to this function, so
  * it is not suitable for interactive use.
  */
-MGSH_API exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp);
+MIGA_API exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp);
 
 /**
  * Execute commands from a stream, using the given filename for error messages
@@ -463,7 +463,7 @@ MGSH_API exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp);
  *
  * Intended for non-interactive use (scripts, sourced files).
  */
-MGSH_API exec_status_t exec_execute_named_stream(exec_t *executor, FILE *fp,
+MIGA_API exec_status_t exec_execute_named_stream(exec_t *executor, FILE *fp,
                                                  const char *filename);
 
 /**
@@ -476,7 +476,7 @@ MGSH_API exec_status_t exec_execute_named_stream(exec_t *executor, FILE *fp,
  * @param command   The complete command string.
  * @return Result with status and exit code.
  */
-MGSH_API exec_result_t exec_execute_command_string(exec_t *executor,
+MIGA_API exec_result_t exec_execute_command_string(exec_t *executor,
                                                    const char *command);
 
 /* ── Partial / incremental string execution ──────────────────────────────── */
@@ -501,13 +501,13 @@ typedef struct parse_session_t parse_session_t;
  * If EXECUTOR is NULL, the session will create its own alias state that is independent
  * of any executor.
  */
-MGSH_API parse_session_t *exec_create_parse_session(exec_t *executor);
+MIGA_API parse_session_t *exec_create_parse_session(exec_t *executor);
 
 /**
  * Return the size of parse_session_t so callers can allocate it
  * without including parse_session.h.
  */
-MGSH_API size_t exec_get_parse_session_size(void);
+MIGA_API size_t exec_get_parse_session_size(void);
 
 /**
  * Reset a parse session to prepare for the next command.
@@ -517,7 +517,7 @@ MGSH_API size_t exec_get_parse_session_size(void);
  * The filename and line counter are NOT reset (they keep incrementing).
  * The alias store is NOT reset (aliases persist across commands).
  */
-MGSH_API void exec_reset_parse_session(parse_session_t *session);
+MIGA_API void exec_reset_parse_session(parse_session_t *session);
 
 /**
  * Fully reset a session, including destroying and recreating the tokenizer.
@@ -532,22 +532,22 @@ MGSH_API void exec_reset_parse_session(parse_session_t *session);
  * @param session  The session.
  * @param executor Executor whose alias store will replace the existing one (may be NULL).
  */
-MGSH_API void exec_hard_reset_parse_session(parse_session_t *session, exec_t *executor);
+MIGA_API void exec_hard_reset_parse_session(parse_session_t *session, exec_t *executor);
 
 /* return val may be NULL */
-MGSH_API const char *exec_get_parse_session_filename_cstr(const parse_session_t *session);
+MIGA_API const char *exec_get_parse_session_filename_cstr(const parse_session_t *session);
 /* return value of zero indicates line numbers are not being tracked */
-MGSH_API size_t exec_get_parse_session_line_number(const parse_session_t *session);
+MIGA_API size_t exec_get_parse_session_line_number(const parse_session_t *session);
 /* 'filename' may be NULL */
-MGSH_API void exec_set_parse_session_filename_cstr(parse_session_t *session, const char *filename);
+MIGA_API void exec_set_parse_session_filename_cstr(parse_session_t *session, const char *filename);
 /* set to zero to stop counting line numbers, or set to > 0 to indicate a specific line number. */
-MGSH_API void exec_set_parse_session_line_number(parse_session_t *session, size_t line_number);
+MIGA_API void exec_set_parse_session_line_number(parse_session_t *session, size_t line_number);
 
 /**
  * Destroy a parse session allocated with exec_create_parse_session() and set
  * the pointer to NULL.
  */
-MGSH_API void exec_destroy_parse_session(parse_session_t **session);
+MIGA_API void exec_destroy_parse_session(parse_session_t **session);
 
 /**
  * Execute a command string incrementally. The 'session' argument
@@ -573,13 +573,13 @@ MGSH_API void exec_destroy_parse_session(parse_session_t **session);
  * @return EXEC_OK if the command completed, EXEC_INCOMPLETE if more
  *         input is needed, or an error / control-flow status.
  */
-MGSH_API exec_status_t exec_execute_command_string_partial(exec_t *executor,
+MIGA_API exec_status_t exec_execute_command_string_partial(exec_t *executor,
                                                            const string_t *command,
                                                            const string_t *filename,
                                                            size_t line_number,
                                                            parse_session_t *session);
 
-MGSH_API exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor,
+MIGA_API exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor,
                                                                 const char *command,
                                                                 const char *filename,
                                                                 size_t line_number,
@@ -627,7 +627,7 @@ typedef line_edit_status_t (*line_editor_fn_t)(const char *prompt,
  * @param line_editor_user_data Opaque context for the callback.
  * @return Execution status.
  */
-MGSH_API exec_status_t
+MIGA_API exec_status_t
 exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
                                      line_editor_fn_t line_editor_fn,
                                      void *line_editor_user_data);
@@ -638,8 +638,8 @@ exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 
 /* ── Exit status ─────────────────────────────────────────────────────────── */
 
-MGSH_API int exec_get_exit_status(const exec_t *executor);
-MGSH_API void exec_set_exit_status(exec_t *executor, int status);
+MIGA_API int exec_get_exit_status(const exec_t *executor);
+MIGA_API void exec_set_exit_status(exec_t *executor, int status);
 
 /**
  * Request that the executor exit.
@@ -657,7 +657,7 @@ MGSH_API void exec_set_exit_status(exec_t *executor, int status);
  * @param executor  The executor.
  * @param status    The exit status to report (becomes $?).
  */
-MGSH_API void exec_request_exit(exec_t *executor, int status);
+MIGA_API void exec_request_exit(exec_t *executor, int status);
 
 /**
  * Check whether an exit has been requested.
@@ -665,23 +665,23 @@ MGSH_API void exec_request_exit(exec_t *executor, int status);
  * @return true if exec_request_exit() has been called and the executor has
  *         not yet returned EXEC_EXIT to its caller.
  */
-MGSH_API bool exec_is_exit_requested(const exec_t *executor);
+MIGA_API bool exec_is_exit_requested(const exec_t *executor);
 
 /* ── Error message ───────────────────────────────────────────────────────── */
 
-MGSH_API const string_t *exec_get_error(const exec_t *executor);
-MGSH_API const char *exec_get_error_cstr(const exec_t *executor);
+MIGA_API const string_t *exec_get_error(const exec_t *executor);
+MIGA_API const char *exec_get_error_cstr(const exec_t *executor);
 
-MGSH_API void exec_set_error(exec_t *executor, const string_t *message);
-MGSH_API void exec_set_error_cstr(exec_t *executor, const char *message);
-MGSH_API void exec_set_error_printf(exec_t *executor, const char *format, ...);
-MGSH_API void exec_clear_error(exec_t *executor);
+MIGA_API void exec_set_error(exec_t *executor, const string_t *message);
+MIGA_API void exec_set_error_cstr(exec_t *executor, const char *message);
+MIGA_API void exec_set_error_printf(exec_t *executor, const char *format, ...);
+MIGA_API void exec_clear_error(exec_t *executor);
 
 /* ── Pipe statuses (PIPESTATUS / pipefail) ───────────────────────────────── */
 
-MGSH_API int exec_get_pipe_status_count(const exec_t *executor);
-MGSH_API const int *exec_get_pipe_statuses(const exec_t *executor);
-MGSH_API void exec_reset_pipe_statuses(exec_t *executor);
+MIGA_API int exec_get_pipe_status_count(const exec_t *executor);
+MIGA_API const int *exec_get_pipe_statuses(const exec_t *executor);
+MIGA_API void exec_reset_pipe_statuses(exec_t *executor);
 
 /* ── Prompts ─────────────────────────────────────────────────────────────── */
 
@@ -689,20 +689,20 @@ MGSH_API void exec_reset_pipe_statuses(exec_t *executor);
  * Get the raw PS1 value from the variable store.
  * Returns a default if PS1 is not set.  Caller frees.
  */
-MGSH_API string_t *exec_get_ps1(const exec_t *executor);
-MGSH_API char *exec_get_ps1_cstr(const exec_t *executor);
+MIGA_API string_t *exec_get_ps1(const exec_t *executor);
+MIGA_API char *exec_get_ps1_cstr(const exec_t *executor);
 
 /**
  * Get PS1 with all prompt expansions applied.  Caller frees.
  */
-MGSH_API string_t *exec_get_rendered_ps1(const exec_t *executor);
-MGSH_API char *exec_get_rendered_ps1_cstr(const exec_t *executor);
+MIGA_API string_t *exec_get_rendered_ps1(const exec_t *executor);
+MIGA_API char *exec_get_rendered_ps1_cstr(const exec_t *executor);
 
 /**
  * Get the raw PS2 value.  PS2 is never expanded.  Caller frees.
  */
-MGSH_API string_t *exec_get_ps2(const exec_t *executor);
-MGSH_API char *exec_get_ps2_cstr(const exec_t *executor);
+MIGA_API string_t *exec_get_ps2(const exec_t *executor);
+MIGA_API char *exec_get_ps2_cstr(const exec_t *executor);
 
 /* ── Signal notification ─────────────────────────────────────────────────── */
 
@@ -735,7 +735,7 @@ typedef void (*exec_signal_callback_t)(int signal_number, void *user_data);
  * @param callback   The callback function, or NULL to clear.
  * @param user_data  Opaque context passed to the callback.
  */
-MGSH_API void exec_set_signal_callback(exec_t *executor,
+MIGA_API void exec_set_signal_callback(exec_t *executor,
                                        exec_signal_callback_t callback,
                                        void *user_data);
 
@@ -759,54 +759,54 @@ typedef enum exec_job_state_t
 /**
  * Reap completed background jobs.
  * If @p notify is true, print their status.
- * Only functional in POSIX_API mode; no-op otherwise.
+ * Only functional in MIGA_POSIX_API mode; no-op otherwise.
  */
-MGSH_API void exec_reap_background_jobs(exec_t *executor, bool notify);
+MIGA_API void exec_reap_background_jobs(exec_t *executor, bool notify);
 
 /* ── Enumeration ─────────────────────────────────────────────────────────── */
 
-MGSH_API size_t exec_get_job_count(const exec_t *executor);
-MGSH_API size_t exec_get_job_ids(const exec_t *executor, int *job_ids,
+MIGA_API size_t exec_get_job_count(const exec_t *executor);
+MIGA_API size_t exec_get_job_ids(const exec_t *executor, int *job_ids,
                                  size_t max_jobs);
-MGSH_API int exec_get_current_job_id(const exec_t *executor);
-MGSH_API int exec_get_previous_job_id(const exec_t *executor);
+MIGA_API int exec_get_current_job_id(const exec_t *executor);
+MIGA_API int exec_get_previous_job_id(const exec_t *executor);
 
 /* ── Per-job queries ─────────────────────────────────────────────────────── */
 
-MGSH_API exec_job_state_t exec_job_get_state(const exec_t *executor,
+MIGA_API exec_job_state_t exec_job_get_state(const exec_t *executor,
                                              int job_id);
 
-MGSH_API const string_t *exec_job_get_command(const exec_t *executor,
+MIGA_API const string_t *exec_job_get_command(const exec_t *executor,
                                               int job_id);
-MGSH_API const char *exec_job_get_command_cstr(const exec_t *executor,
+MIGA_API const char *exec_job_get_command_cstr(const exec_t *executor,
                                                int job_id);
 
-MGSH_API bool exec_job_is_background(const exec_t *executor, int job_id);
+MIGA_API bool exec_job_is_background(const exec_t *executor, int job_id);
 
-#ifdef POSIX_API
-MGSH_API pid_t exec_job_get_pgid(const exec_t *executor, int job_id);
+#ifdef MIGA_POSIX_API
+MIGA_API pid_t exec_job_get_pgid(const exec_t *executor, int job_id);
 #else
-MGSH_API int exec_job_get_pgid(const exec_t *executor, int job_id);
+MIGA_API int exec_job_get_pgid(const exec_t *executor, int job_id);
 #endif
 
 /* ── Per-process queries within a job ────────────────────────────────────── */
 
-MGSH_API size_t exec_job_get_process_count(const exec_t *executor, int job_id);
-MGSH_API exec_job_state_t exec_job_get_process_state(const exec_t *executor,
+MIGA_API size_t exec_job_get_process_count(const exec_t *executor, int job_id);
+MIGA_API exec_job_state_t exec_job_get_process_state(const exec_t *executor,
                                                      int job_id, size_t index);
-MGSH_API int exec_job_get_process_exit_status(const exec_t *executor,
+MIGA_API int exec_job_get_process_exit_status(const exec_t *executor,
                                               int job_id, size_t index);
 
-#ifdef POSIX_API
-MGSH_API pid_t exec_job_get_process_pid(const exec_t *executor, int job_id,
+#ifdef MIGA_POSIX_API
+MIGA_API pid_t exec_job_get_process_pid(const exec_t *executor, int job_id,
                                         size_t index);
-#elif defined(UCRT_API)
-MGSH_API int exec_job_get_process_pid(const exec_t *executor,
+#elif defined(MIGA_UCRT_API)
+MIGA_API int exec_job_get_process_pid(const exec_t *executor,
                                       int job_id, size_t index);
-MGSH_API uintptr_t exec_job_get_process_handle(const exec_t *executor,
+MIGA_API uintptr_t exec_job_get_process_handle(const exec_t *executor,
                                                int job_id, size_t index);
 #else
-MGSH_API int exec_job_get_process_pid(const exec_t *executor, int job_id,
+MIGA_API int exec_job_get_process_pid(const exec_t *executor, int job_id,
                                       size_t index);
 #endif
 
@@ -820,13 +820,13 @@ MGSH_API int exec_job_get_process_pid(const exec_t *executor, int job_id,
  * necessary because foregrounded jobs are removed from the job list, so their
  * command strings are freed and no longer accessible.
  */
-MGSH_API bool exec_job_foreground(exec_t *executor, int job_id,
+MIGA_API bool exec_job_foreground(exec_t *executor, int job_id,
                                   string_t **cmd);
-MGSH_API bool exec_job_foreground_cstr(exec_t *executor, int job_id,
+MIGA_API bool exec_job_foreground_cstr(exec_t *executor, int job_id,
                                        char **cmd);
 
-MGSH_API bool exec_job_background(exec_t *executor, int job_id);
-MGSH_API bool exec_job_kill(exec_t *executor, int job_id, int sig);
+MIGA_API bool exec_job_background(exec_t *executor, int job_id);
+MIGA_API bool exec_job_kill(exec_t *executor, int job_id, int sig);
 
 /**
  * Job output format for printing.
@@ -844,22 +844,22 @@ typedef enum exec_jobs_format_t
  *
  * @return Job ID on success, -1 on error.
  */
-MGSH_API int exec_parse_job_id(const exec_t *executor, const string_t *spec);
-MGSH_API int exec_parse_job_id_cstr(const exec_t *executor, const char *spec);
+MIGA_API int exec_parse_job_id(const exec_t *executor, const string_t *spec);
+MIGA_API int exec_parse_job_id_cstr(const exec_t *executor, const char *spec);
 
 /**
  * Print a single job.
  *
  * @return true if the job was found and printed.
  */
-MGSH_API bool exec_print_job_by_id(const exec_t *executor, int job_id,
+MIGA_API bool exec_print_job_by_id(const exec_t *executor, int job_id,
                                    exec_jobs_format_t format,
                                    FILE *output);
 
 /**
  * Print all jobs with a specified verbosity.
  */
-MGSH_API void exec_print_all_jobs(const exec_t *executor,
+MIGA_API void exec_print_all_jobs(const exec_t *executor,
                                   exec_jobs_format_t format,
                                   FILE *output);
 
@@ -868,12 +868,12 @@ MGSH_API void exec_print_all_jobs(const exec_t *executor,
  * that dumps all availabe info.  The output format is not guaranteed to be stable.
  */
 
-MGSH_API void exec_print_jobs_verbose(const exec_t *executor, FILE *output);
+MIGA_API void exec_print_jobs_verbose(const exec_t *executor, FILE *output);
 
 /**
  * Check whether any jobs exist.
  */
-MGSH_API bool exec_has_jobs(const exec_t *executor);
+MIGA_API bool exec_has_jobs(const exec_t *executor);
 
 /* ── Waiting ─────────────────────────────────────────────────────────────── */
 
@@ -893,7 +893,7 @@ MGSH_API bool exec_has_jobs(const exec_t *executor);
  * @return The exit status of the last process in the job's pipeline,
  *         or -1 if the job was not found or waiting was interrupted.
  */
-MGSH_API int exec_wait_for_job(exec_t *executor, int job_id);
+MIGA_API int exec_wait_for_job(exec_t *executor, int job_id);
 
 /**
  * Wait for a specific process to complete.
@@ -911,7 +911,7 @@ MGSH_API int exec_wait_for_job(exec_t *executor, int job_id);
  * @return The exit status of the process, or -1 if not found or
  *         waiting was interrupted.
  */
-MGSH_API int exec_wait_for_pid(exec_t *executor, int pid);
+MIGA_API int exec_wait_for_pid(exec_t *executor, int pid);
 
 /**
  * Wait for all background jobs to complete.
@@ -927,8 +927,8 @@ MGSH_API int exec_wait_for_pid(exec_t *executor, int pid);
  * @return The exit status of the last job that completed, or 0 if there
  *         were no jobs, or -1 if waiting was interrupted.
  */
-MGSH_API int exec_wait_for_all(exec_t *executor);
+MIGA_API int exec_wait_for_all(exec_t *executor);
 
-MGSH_EXTERN_C_END
+MIGA_EXTERN_C_END
 
-#endif /* MGSH_EXEC_H */
+#endif /* MIGA_EXEC_H */

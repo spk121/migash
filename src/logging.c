@@ -4,9 +4,9 @@
 
 #include "logging.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <strings.h> // For strcasecmp
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 #include <string.h> // For _stricmp
 #else
 #include "lib.h" // For ascii_strcasecmp
@@ -102,12 +102,12 @@ static void log_message(LogLevel level, const char *level_str, const char *forma
 
 static int strcompare(const char *s1, const char *s2)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     return strcasecmp(s1, s2);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     return _stricmp(s1, s2);
 #else
-    // Fallback for ISO_C: ASCII-only case-sensitive comparison
+    // Fallback for MIGA_ISO_C: ASCII-only case-sensitive comparison
     return ascii_strcasecmp(s1, s2);
 #endif
 }

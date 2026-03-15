@@ -11,7 +11,7 @@
  * logic and to avoid duplication.
  */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 #ifdef _MSC_VER
@@ -19,14 +19,14 @@
 #endif
 
 
-#include "migash/frame.h"
+#include "miga/frame.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
@@ -37,7 +37,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -54,12 +54,12 @@
 // It should be delegating down to functions from exec_frame.h.
 #include "alias_store.h"
 #include "ast.h"
-#include "migash/exec.h"
+#include "miga/exec.h"
 #include "exec_frame.h"
 #include "exec_frame_expander.h"
 #include "exec_frame_policy.h"
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "func_store.h"
 #include "gnode.h"
 #include "lib.h"
@@ -67,8 +67,8 @@
 #include "lower.h"
 #include "parser.h"
 #include "positional_params.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
 #include "xalloc.h"
@@ -487,7 +487,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     }
 
     /* Export to system environment if supported */
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     /* Get the current value (which might be the value we just set, or the
      * existing value) */
     variable_view_t current_view;
@@ -499,12 +499,12 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     const char *name_str = string_cstr(name);
     const char *value_str = string_cstr(current_view.value);
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     if (setenv(name_str, value_str, 1) != 0)
     {
         return FRAME_EXPORT_SYSTEM_ERROR;
     }
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     if (_putenv_s(name_str, value_str) != 0)
     {
         return FRAME_EXPORT_SYSTEM_ERROR;
@@ -563,12 +563,12 @@ frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name
 
     variable_store_remove(vars, name);
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     if (view.exported)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         unsetenv(string_cstr(name));
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         _putenv_s(string_cstr(name), "");
 #endif
     }
@@ -824,9 +824,9 @@ bool frame_change_directory_cstr(exec_frame_t *frame, const char *path)
     Expects_not_null(frame);
     Expects_not_null(path);
 
-#if defined(POSIX_API)
+#if defined(MIGA_POSIX_API)
     int (*const chdir_func)(const char *) = chdir;
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
     int (*const chdir_func)(const char *) = _chdir;
 #else
     (void)frame;

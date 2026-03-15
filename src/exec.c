@@ -5,7 +5,7 @@
  * Frame management and policy-driven execution is in exec_frame.c.
  */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 #ifdef _MSC_VER
@@ -20,11 +20,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "migash/exec.h"
+#include "miga/exec.h"
 
-#include "migash/strlist.h"
-#include "migash/string_t.h"
-#include "migash/frame.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
+#include "miga/frame.h"
 
 #include "alias_store.h"
 #include "ast.h"
@@ -33,9 +33,9 @@
 #include "exec_frame_policy.h"
 #include "parse_session.h"
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "fd_table.h"
-#include "migash/frame.h"
+#include "miga/frame.h"
 #include "func_store.h"
 #include "gnode.h"
 #include "job_store.h"
@@ -52,7 +52,7 @@
 #include "variable_store.h"
 #include "xalloc.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <limits.h>
@@ -62,7 +62,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -107,7 +107,7 @@ static exec_status_t source_rc_files(struct exec_t *e)
         if (env_raw_rc_path && *env_raw_rc_path)
         {
             char *env_rc_path = exec_expand_pathname(e, env_raw_rc_path);
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
             if (getuid() == geteuid() && getgid() == getegid() && getuid())
             {
                 exec_load_config_file(e, env_rc_path, func_store, alias_store);
@@ -177,7 +177,7 @@ void exec_destroy(exec_t **executor_ptr)
 
     job_store_destroy(&e->jobs);
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     if (e->open_fds)
         fd_table_destroy(&e->open_fds);
 #endif
@@ -578,7 +578,7 @@ bool exec_set_umask(exec_t *executor, int mask)
     return true;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 mode_t exec_get_umask_posix(const exec_t *executor)
 {
     Expects_not_null(executor);
@@ -946,12 +946,12 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
 
     // Finish initializing the top-level parameters that weren't explicitly set by the caller.
     // Override all the frame parameters with the executor's pre-configured values.
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t default_pid = getpid();
     pid_t default_ppid = getppid();
     bool default_pid_valid = true;
     bool default_ppid_valid = true;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     int default_pid = _getpid();
     int default_ppid = 0; /* No getppid in UCRT */
     bool default_pid_valid = true;
@@ -1008,7 +1008,7 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
             e->job_control_disabled = true;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     if (!e->pgid_valid)
     {
         pid_t pgid = getpgrp();
@@ -1018,7 +1018,7 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
             e->pgid_valid = true;
         }
     }
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     e->pgid_valid = false; /* No getpgrp in UCRT, and we don't want to assume pgid == pid */
     e->pgid = -1;
 #else
@@ -1064,7 +1064,7 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     if (e->envp)
         e->env_vars = strlist_create_from_cstr_array((const char **)e->envp, -1);
     else
-        // In POSIX_API and UCRT_API, this gets the env from the `environ` global.
+        // In MIGA_POSIX_API and MIGA_UCRT_API, this gets the env from the `environ` global.
         // In ISO C, there is no `environ`, so this will be initialized as an empty list.
         e->env_vars = strlist_create_from_system_env();
 
@@ -1162,9 +1162,9 @@ static exec_status_t exec_setup_lazy(exec_t *executor, FILE *fp)
     log_warn("Executor setup was not explicitly called. Attempting to guess interactive mode based "
              "on file pointer.");
     bool is_interactive;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     is_interactive = isatty(fileno(fp));
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     is_interactive = _isatty(_fileno(fp));
 #else
     is_interactive = false;
@@ -1198,12 +1198,12 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
      * Shell Identity — PID / PPID
      * -------------------------------------------------------------------------
      */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t default_pid = getpid();
     pid_t default_ppid = getppid();
     bool default_pid_valid = true;
     bool default_ppid_valid = true;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     int default_pid = _getpid();
     int default_ppid = 0; /* No getppid in UCRT */
     bool default_pid_valid = true;
@@ -1275,7 +1275,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     }
     else
     {
-        // In POSIX_API and UCRT_API, this gets the env from the `environ` global.
+        // In MIGA_POSIX_API and MIGA_UCRT_API, this gets the env from the `environ` global.
         // In ISO C, there is no `environ`, so this will be initialized as an empty list.
         e->env_vars = strlist_create_from_system_env();
     }
@@ -1298,9 +1298,9 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
      * Interactive / Login Shell Detection
      * -------------------------------------------------------------------------
      */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     bool default_is_interactive = isatty(STDIN_FILENO);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     bool default_is_interactive = _isatty(_fileno(stdin));
 #else
     bool default_is_interactive = false;
@@ -1319,7 +1319,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     e->job_control_disabled =  !(
         cfg->job_control_enabled_set ? cfg->job_control_enabled : e->is_interactive);
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     if (cfg->pgid_set)
     {
         e->pgid = cfg->pgid;
@@ -1375,7 +1375,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     e->aliases = alias_store_create();
     e->traps = NULL;
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     e->open_fds = NULL;
     e->next_fd = 0;
 #endif
@@ -1389,7 +1389,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
         e->working_directory = NULL;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     e->umask = cfg->umask_set ? cfg->umask : 0;
     e->file_size_limit = cfg->file_size_limit_set ? cfg->file_size_limit : 0;
 #else
@@ -3090,7 +3090,7 @@ bool exec_job_is_background(const exec_t *executor, int job_id)
     return job ? job->is_background : false;
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 pid_t exec_job_get_pgid(const exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
@@ -3154,7 +3154,7 @@ int exec_job_get_process_exit_status(const exec_t *executor, int job_id, size_t 
     return job_get_process_exit_status(job, index);
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
@@ -3165,7 +3165,7 @@ pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
         return -1;
     return job_get_process_pid(job, index);
 }
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
 int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
@@ -3185,7 +3185,7 @@ uintptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t
         return (uintptr_t)-1;
     if (index >= job_process_count(job))
         return (uintptr_t)-1;
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     return job_get_process_handle(job, index);
 #else
     return (intptr_t)-1;
@@ -3219,7 +3219,7 @@ bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **out_cmd)
 
     if (job->state == JOB_STOPPED)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (kill(-job->pgid, SIGCONT) < 0)
         {
             exec_set_error_printf(executor, "fg: cannot resume job: %s", strerror(errno));
@@ -3232,7 +3232,7 @@ bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **out_cmd)
 #endif
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     if (tcsetpgrp(STDIN_FILENO, job->pgid) < 0)
     {
         exec_set_error_printf(executor, "fg: cannot set foreground process group: %s",
@@ -3265,7 +3265,7 @@ bool exec_job_background(exec_t *executor, int job_id)
 
     if (job->state == JOB_STOPPED)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (kill(-job->pgid, SIGCONT) < 0)
         {
             exec_set_error_printf(executor, "bg: cannot resume job: %s", strerror(errno));
@@ -3297,7 +3297,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     if (sig == 0)
     {
         // On POSIX: kill(-pgid, 0) succeeds if we can signal the group
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (kill(-job->pgid, 0) < 0)
         {
             exec_set_error_printf(executor, "kill: job %d: no such process group: %s", job_id,
@@ -3318,7 +3318,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
     }
 
     // Normal case: send real signal
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     // Send to the entire process group (negative pgid)
     if (kill(-job->pgid, sig) < 0)
     {
@@ -3330,7 +3330,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
 
     return true;
 
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
     // Very limited: only attempt forceful termination for common "kill" signals
     if (sig == SIGTERM
 #ifdef SIGKILL
@@ -3531,7 +3531,7 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     int status;
     pid_t pid;
     bool any_reaped = false;
@@ -3555,7 +3555,7 @@ void exec_reap_background_jobs(exec_t *executor, bool notify)
     }
     if (any_reaped)
         job_store_remove_completed(executor->jobs);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     bool any_completed = false;
     job_store_t *store = executor->jobs;
     job_process_iterator_t iter = job_store_active_processes_begin(store);

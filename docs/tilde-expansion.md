@@ -1,4 +1,4 @@
-﻿# Tilde Expansion
+# Tilde Expansion
 
 **Tilde expansion** is a convenient shorthand for referring to home directories. When you type `~` at the start of a word, the shell replaces it with a directory path—usually your home directory, but it can also reference other users' home directories.
 

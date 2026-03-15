@@ -5,7 +5,7 @@
 
 #include "ctest.h"
 #include "pattern_removal.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 /* ============================================================================
@@ -527,7 +527,7 @@ int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    arena_start();
+    miga_setjmp();
 
     CTestEntry *suite[] = {
         /* Prefix smallest tests */
@@ -603,7 +603,7 @@ int main(int argc, char **argv)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

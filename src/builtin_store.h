@@ -22,8 +22,8 @@
 #include <stdio.h>
 
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
-#include "migash/strlist.h"
+#include "miga/type_pub.h"
+#include "miga/strlist.h"
 
 /* ── Forward declarations ────────────────────────────────────────────────── */
 

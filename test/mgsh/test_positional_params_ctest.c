@@ -37,7 +37,7 @@ CTEST(test_create_from_array)
     args[1] = string_create_from_cstr("second");
     args[2] = string_create_from_cstr("third");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
     CTEST_ASSERT_NOT_NULL(ctest, params, "params created");
@@ -50,15 +50,15 @@ CTEST(test_create_from_array)
     positional_params_destroy(&params);
 }
 
-CTEST(test_create_from_string_list)
+CTEST(test_create_from_strlist)
 {
-    string_list_t *list = string_list_create();
-    string_list_push_back(list, string_create_from_cstr("alpha"));
-    string_list_push_back(list, string_create_from_cstr("beta"));
-    string_list_push_back(list, string_create_from_cstr("gamma"));
+    strlist_t *list = strlist_create();
+    strlist_push_back(list, string_create_from_cstr("alpha"));
+    strlist_push_back(list, string_create_from_cstr("beta"));
+    strlist_push_back(list, string_create_from_cstr("gamma"));
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
-    positional_params_t *params = positional_params_create_from_string_list(arg0, list);
+    string_t *arg0 = string_create_from_cstr("miga");
+    positional_params_t *params = positional_params_create_from_strlist(arg0, list);
     string_destroy(&arg0);
     CTEST_ASSERT_NOT_NULL(ctest, params, "params created");
     CTEST_ASSERT_EQ(ctest, 3, positional_params_count(params), "count is 3");
@@ -66,7 +66,7 @@ CTEST(test_create_from_string_list)
     const string_t *p2 = positional_params_get(params, 2);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(p2), "beta", "param 2 is 'beta'");
 
-    string_list_destroy(&list);
+    strlist_destroy(&list);
     positional_params_destroy(&params);
 }
 
@@ -96,7 +96,7 @@ CTEST(test_clone)
     args[0] = string_create_from_cstr("foo");
     args[1] = string_create_from_cstr("bar");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *original = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
     positional_params_set_arg0(original, string_create_from_cstr("test"));
@@ -135,7 +135,7 @@ CTEST(test_get_valid_parameter)
     args[1] = string_create_from_cstr("two");
     args[2] = string_create_from_cstr("three");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -157,7 +157,7 @@ CTEST(test_get_out_of_range_returns_null)
     args[0] = string_create_from_cstr("first");
     args[1] = string_create_from_cstr("second");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -190,7 +190,7 @@ CTEST(test_count_returns_parameter_count)
     for (int i = 0; i < 5; i++)
         args[i] = string_create_from_cstr("param");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *five = positional_params_create_from_array(arg0, 5, (const string_t **)args);
     string_destroy(&arg0);
     CTEST_ASSERT_EQ(ctest, 5, positional_params_count(five), "five count is 5");
@@ -208,22 +208,22 @@ CTEST(test_get_all_returns_list_for_dollar_at)
     args[1] = string_create_from_cstr("beta");
     args[2] = string_create_from_cstr("gamma");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
     // This would be used for "$@" expansion
-    string_list_t *all = positional_params_get_all(params);
+    strlist_t *all = positional_params_get_all(params);
     CTEST_ASSERT_NOT_NULL(ctest, all, "list created");
-    CTEST_ASSERT_EQ(ctest, 3, string_list_size(all), "list size is 3");
+    CTEST_ASSERT_EQ(ctest, 3, strlist_size(all), "list size is 3");
 
-    const string_t *first = string_list_at(all, 0);
+    const string_t *first = strlist_at(all, 0);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(first), "alpha", "first is 'alpha'");
 
-    const string_t *second = string_list_at(all, 1);
+    const string_t *second = strlist_at(all, 1);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(second), "beta", "second is 'beta'");
 
-    string_list_destroy(&all);
+    strlist_destroy(&all);
     positional_params_destroy(&params);
 }
 
@@ -231,11 +231,11 @@ CTEST(test_get_all_empty_returns_empty_list)
 {
     positional_params_t *params = positional_params_create();
 
-    string_list_t *all = positional_params_get_all(params);
+    strlist_t *all = positional_params_get_all(params);
     CTEST_ASSERT_NOT_NULL(ctest, all, "list created");
-    CTEST_ASSERT_EQ(ctest, 0, string_list_size(all), "list size is 0");
+    CTEST_ASSERT_EQ(ctest, 0, strlist_size(all), "list size is 0");
 
-    string_list_destroy(&all);
+    strlist_destroy(&all);
     positional_params_destroy(&params);
 }
 
@@ -246,7 +246,7 @@ CTEST(test_get_all_joined_for_dollar_star)
     args[1] = string_create_from_cstr("two");
     args[2] = string_create_from_cstr("three");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -266,7 +266,7 @@ CTEST(test_get_all_joined_with_custom_separator)
     args[1] = string_create_from_cstr("b");
     args[2] = string_create_from_cstr("c");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -316,7 +316,7 @@ CTEST(test_replace_implements_set_builtin)
     args[0] = string_create_from_cstr("old1");
     args[1] = string_create_from_cstr("old2");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
     CTEST_ASSERT_EQ(ctest, 2, positional_params_count(params), "count is 2");
@@ -343,7 +343,7 @@ CTEST(test_replace_with_empty_clears_parameters)
     args[0] = string_create_from_cstr("param1");
     args[1] = string_create_from_cstr("param2");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -362,7 +362,7 @@ CTEST(test_shift_removes_first_parameter)
     args[1] = string_create_from_cstr("second");
     args[2] = string_create_from_cstr("third");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -390,7 +390,7 @@ CTEST(test_shift_multiple_parameters)
         args[i] = string_create_from_cstr(buf);
     }
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 5, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -412,7 +412,7 @@ CTEST(test_shift_all_parameters)
     args[1] = string_create_from_cstr("b");
     args[2] = string_create_from_cstr("c");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -429,7 +429,7 @@ CTEST(test_shift_zero_is_noop)
     args[0] = string_create_from_cstr("first");
     args[1] = string_create_from_cstr("second");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -446,7 +446,7 @@ CTEST(test_shift_too_many_returns_false)
     args[0] = string_create_from_cstr("a");
     args[1] = string_create_from_cstr("b");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -512,7 +512,7 @@ CTEST(test_single_parameter)
     string_t *args[1];
     args[0] = string_create_from_cstr("only");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 1, (const string_t **)args);
     string_destroy(&arg0);
     CTEST_ASSERT_EQ(ctest, 1, positional_params_count(params), "count is 1");
@@ -529,7 +529,7 @@ CTEST(test_empty_string_parameter)
     args[0] = string_create_from_cstr("");
     args[1] = string_create_from_cstr("nonempty");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -545,7 +545,7 @@ CTEST(test_whitespace_in_parameters)
     args[0] = string_create_from_cstr("has spaces");
     args[1] = string_create_from_cstr("has\ttabs");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 2, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -565,7 +565,7 @@ CTEST(test_special_characters_in_parameters)
     args[1] = string_create_from_cstr("*.txt");
     args[2] = string_create_from_cstr("foo|bar");
 
-    string_t *arg0 = string_create_from_cstr("mgsh");
+    string_t *arg0 = string_create_from_cstr("miga");
     positional_params_t *params = positional_params_create_from_array(arg0, 3, (const string_t **)args);
     string_destroy(&arg0);
 
@@ -587,13 +587,13 @@ int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    arena_start();
+    miga_setjmp();
 
     CTestEntry *suite[] = {
         /* Lifecycle */
         CTEST_ENTRY(test_create_empty),
         CTEST_ENTRY(test_create_from_array),
-        CTEST_ENTRY(test_create_from_string_list),
+        CTEST_ENTRY(test_create_from_strlist),
         CTEST_ENTRY(test_create_from_argv),
         CTEST_ENTRY(test_clone),
         CTEST_ENTRY(test_destroy_sets_to_null),
@@ -637,7 +637,7 @@ int main(int argc, char **argv)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

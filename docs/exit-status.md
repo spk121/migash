@@ -1,4 +1,4 @@
-﻿# Exit Status and Errors
+# Exit Status and Errors
 
 Every command executed by the shell produces an **exit status**—a small integer that indicates whether it succeeded or failed. Shell scripts rely heavily on these values to make decisions, control flow, and detect errors. Understanding how exit statuses work, and how the shell reacts to different kinds of errors, is essential for writing reliable scripts.
 

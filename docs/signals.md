@@ -1,4 +1,4 @@
-﻿# Signals and Error Handling
+# Signals and Error Handling
 
 **Signals** are how Unix-like systems communicate asynchronous events to programs. Think of them as urgent notifications that say things like "the user pressed Ctrl+C" (SIGINT), "this process should terminate" (SIGTERM), or "a child process just finished" (SIGCHLD). Understanding how the shell handles signals is crucial for writing robust scripts and understanding what happens when things go wrong.
 

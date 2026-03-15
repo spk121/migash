@@ -1,4 +1,4 @@
-﻿#  Shell Grammar
+#  Shell Grammar
 
 The shell doesn't just read your commands as plain text—it breaks them down step by step into meaningful pieces. This process is called **parsing**, and it follows strict rules defined in the POSIX standard. Part of the reason that the shell command language can be so tricky is that so much of the interpretation of an input depends on context when things look ambiguous.
 

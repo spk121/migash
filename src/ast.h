@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "token.h"
 
 /* ============================================================================

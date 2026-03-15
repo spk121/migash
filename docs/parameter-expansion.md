@@ -1,4 +1,4 @@
-﻿# Parameter Expansion
+# Parameter Expansion
 
 **Parameter expansion** is one of the most powerful features of the shell. It's how you access variable values, manipulate strings, provide default values, and perform substring operations—all within the shell itself, without calling external commands.
 

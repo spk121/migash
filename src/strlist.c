@@ -4,10 +4,10 @@
 
 #include <string.h>
 
-#include "migash/strlist.h"
+#include "miga/strlist.h"
 
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 /* ============================================================================
@@ -112,10 +112,10 @@ strlist_t *strlist_create_from_system_env(void)
 {
     strlist_t *lst = strlist_create();
     char * const *env;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     extern char **environ;
     env = (char * const *)environ;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     extern char **_environ;
     env = (char * const *)_environ;
 #else

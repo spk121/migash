@@ -1,4 +1,4 @@
-﻿# Pattern Matching and Filename Expansion
+# Pattern Matching and Filename Expansion
 
 When you type `*.txt` or `file?.log` in the shell, you're using **pattern matching**—a powerful feature that lets you specify multiple files with a single expression. This is also called **globbing** or **filename expansion**, and it's one of the shell's most useful capabilities.
 

@@ -19,7 +19,7 @@
 // <signal.h> to ensure we get the right definitions. And this has to happen
 // for all files that include <signal.h>.
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 
@@ -28,7 +28,7 @@
 #include <stddef.h>
 
 /* Use sigaction only where it is actually available (non-Windows POSIX). */
-#if defined(POSIX_API) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MSYS__) &&          \
+#if defined(MIGA_POSIX_API) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MSYS__) &&          \
     !defined(_MSC_VER)
 /* Most Unix-likes + real POSIX environments */
 

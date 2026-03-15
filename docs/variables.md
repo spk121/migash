@@ -1,4 +1,4 @@
-﻿# Shell Variables
+# Shell Variables
 
 **Variables** are named parameters that store values you can use throughout your shell session or script. While we've already covered special parameters like `$1`, `$?`, and `$$` in another section, this section focuses on regular variables—the ones you create and name yourself, plus the special variables the shell maintains for you.
 

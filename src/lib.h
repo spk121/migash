@@ -1,7 +1,7 @@
 #ifndef LIB_OF_LEFTOVER_JUNK_H
 #define LIB_OF_LEFTOVER_JUNK_H
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
 /* lib.h - C23 compatibility layer
  *
@@ -121,7 +121,7 @@ string_t *lib_quote(const string_t *key, const string_t *value);
 string_t *lib_getcwd(void);
 
 /* POSIX-style file descriptor constants for UCRT (Windows) */
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #ifndef STDIN_FILENO
 #define STDIN_FILENO 0
 #endif

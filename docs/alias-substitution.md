@@ -1,4 +1,4 @@
-﻿# Alias Substitution
+# Alias Substitution
 
 **Aliases** are shortcuts that let you define your own command names or abbreviate long commands. When you type an alias name, the shell replaces it with the alias's value before executing the command. This is called **alias substitution**, and it's one of the shell's most convenient features for customizing your environment.
 

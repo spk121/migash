@@ -2,7 +2,7 @@
 #include "parser.h"
 #include "ast.h"
 #include "lexer.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "tokenizer.h"
 #include "xalloc.h"
@@ -285,7 +285,7 @@ CTEST(test_parser_two_heredocs)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
     log_init();
 
     CTestEntry* suite[] = {
@@ -298,6 +298,6 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
     return result;
 }

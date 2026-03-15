@@ -1,4 +1,4 @@
-﻿# Functions
+# Functions
 
 Functions in POSIX shell provide a way to group commands under a user‑defined name. Calling the function name executes its associated compound command with a fresh set of positional parameters, allowing scripts to encapsulate reusable logic cleanly and predictably.
 

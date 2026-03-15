@@ -1,7 +1,7 @@
 #ifndef GNODE_H
 #define GNODE_H
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include <stdbool.h>
 #include <stddef.h>

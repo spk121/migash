@@ -1,4 +1,4 @@
-﻿# The if Conditional Construct
+# The if Conditional Construct
 
 The **if** statement is the primary way to make decisions in shell scripts. It executes a sequence of commands (the condition), checks their exit status, and then runs different blocks of code depending on whether the condition succeeded (exit status 0) or failed (non-zero).
 

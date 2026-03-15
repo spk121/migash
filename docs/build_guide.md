@@ -1,4 +1,4 @@
-﻿# mgsh Build Guide
+# miga Build Guide
 
 ## Quick Start
 
@@ -162,10 +162,10 @@ cmake -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
 
 # Check exported symbols (should be minimal)
-nm -D build-release/bin/mgsh | grep ' T '
+nm -D build-release/bin/miga | grep ' T '
 
 # Or with objdump
-objdump -T build-release/bin/mgsh | grep GLOBAL
+objdump -T build-release/bin/miga | grep GLOBAL
 ```
 
 ## Testing

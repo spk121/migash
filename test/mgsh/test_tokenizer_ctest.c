@@ -1,7 +1,7 @@
 #include "ctest.h"
 #include "alias_store.h"
 #include "lexer.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "tokenizer.h"
 #include "xalloc.h"
@@ -380,7 +380,7 @@ CTEST(test_tokenizer_alias_to_multiple_commands)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
 
     CTestEntry *suite[] = {
         // Basic tests
@@ -413,7 +413,7 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

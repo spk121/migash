@@ -1,4 +1,4 @@
-﻿# Command Substitution
+# Command Substitution
 
 **Command substitution** lets you capture the output of commands and use it as part of another command. It's one of the most powerful shell features, allowing you to build complex operations by combining simpler commands.
 

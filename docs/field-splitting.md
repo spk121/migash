@@ -1,4 +1,4 @@
-﻿# Field Splitting
+# Field Splitting
 
 **Field splitting** is how the shell breaks text into separate words (fields) after expansions. It's one of the most important—and often misunderstood—aspects of shell behavior. Understanding field splitting is crucial for writing correct shell scripts, especially when dealing with filenames that contain spaces.
 

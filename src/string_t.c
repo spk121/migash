@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 

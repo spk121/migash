@@ -1,8 +1,8 @@
 #include <stdint.h>
 #define VARIABLE_MAP_INTERNAL
 #include "logging.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "variable_map.h"
 #include "xalloc.h"
 

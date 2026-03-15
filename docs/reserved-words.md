@@ -1,4 +1,4 @@
-﻿# Reserved Words
+# Reserved Words
 
 **Reserved words** are special words that have specific meanings to the shell and control the flow and structure of shell commands. They're the keywords of the shell command language—words like `if`, `then`, `while`, and `do` that tell the shell what kind of command structure you're building.
 

@@ -13,7 +13,7 @@
  * Library consumers should include only exec.h and frame.h.
  */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 
@@ -21,7 +21,7 @@
 #include <stdbool.h>
 
 /* ── Public API headers (for the types they define) ──────────────────────── */
-#include "migash/exec.h"
+#include "miga/exec.h"
 
 /* ── Internal module headers ─────────────────────────────────────────────── */
 #include "alias_store.h"
@@ -33,17 +33,17 @@
 #include "job_store.h"
 #include "positional_params.h"
 #include "sig_act.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/resource.h>
 #include <sys/types.h>
 #endif
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
 #include "fd_table.h"
 #endif
 
@@ -59,19 +59,19 @@
 #endif
 #endif
 
-#ifdef POSIX_API
-#define EXEC_SYSTEM_RC_PATH "/etc/mgshrc"
-#define EXEC_USER_RC_NAME ".mgshrc"
+#ifdef MIGA_POSIX_API
+#define EXEC_SYSTEM_RC_PATH "/etc/migarc"
+#define EXEC_USER_RC_NAME ".migarc"
 #define EXEC_RC_IN_XDG_CONFIG_HOME
-#elif defined(UCRT_API)
-#define EXEC_USER_RC_NAME "mgshrc"
+#elif defined(MIGA_UCRT_API)
+#define EXEC_USER_RC_NAME "migarc"
 #define EXEC_RC_IN_LOCAL_APP_DATA
 #else
-#define EXEC_USER_RC_NAME "MGSH.RC"
+#define EXEC_USER_RC_NAME "MIGA.RC"
 #define EXEC_RC_IN_CURRENT_DIRECTORY
 #endif
 
-#define EXEC_CFG_FALLBACK_ARGV0 "mgsh"
+#define EXEC_CFG_FALLBACK_ARGV0 "miga"
 
 /* ============================================================================
  * Option Flags (concrete definition)
@@ -119,7 +119,7 @@ struct exec_t
 
     bool shell_pid_valid;
     bool shell_ppid_valid;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t shell_pid;
     pid_t shell_ppid;
 #else
@@ -140,7 +140,7 @@ struct exec_t
     bool job_control_disabled;
 
     bool pgid_valid;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t pgid;
 #else
     int pgid;
@@ -190,13 +190,13 @@ struct exec_t
     /* Parse session (persistent across interactive commands) */
     parse_session_t *session;
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     fd_table_t *open_fds;
     int next_fd;
 #endif
 
     string_t *working_directory;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     mode_t umask;
     rlim_t file_size_limit;
 #else
@@ -356,7 +356,7 @@ struct exec_frame_t
     trap_store_t *traps;
     exec_opt_flags_t *opt_flags;
     string_t *working_directory;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     mode_t *umask;
 #else
     int *umask;
@@ -366,7 +366,7 @@ struct exec_frame_t
      * Frame-local state (always owned by this frame)
      * -------------------------------------------------------------------------
      */
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
     FILE **stdin_fp;
     FILE **stdout_fp;
@@ -422,7 +422,7 @@ typedef struct exec_params_t
     bool pipeline_negated;              /* true for ! pipeline */
 
     /* For pipeline commands (EXEC_FRAME_PIPELINE_CMD) */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t pipeline_pgid; /* Process group to join (0 = create new) */
 #else
     int pipeline_pgid;

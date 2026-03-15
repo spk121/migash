@@ -130,24 +130,24 @@ The ISO C build does provide some workarounds that may make it more useful when 
 
 #### The Environment File
 
-In ISO C mode, when the `MGSH_ENV_FILE` variable has been set, then, upon every call to execute a command by the system, the `mgsh` shell will generate a file with the filename provided by the `MGSH_ENV_FILE` variable. In this file, each line will have one exported variable in `<name>=<value>` format. This file is created just before the command execution and is deleted immediately after, regardless of whether the command execution succeeds or fails.
+In ISO C mode, when the `MIGA_ENV_FILE` variable has been set, then, upon every call to execute a command by the system, the `miga` shell will generate a file with the filename provided by the `MIGA_ENV_FILE` variable. In this file, each line will have one exported variable in `<name>=<value>` format. This file is created just before the command execution and is deleted immediately after, regardless of whether the command execution succeeds or fails.
 
 A command to be executed would have to be adapted to take advantage of this information, of course.
 
 **Example usage:**
 ```sh
-export MGSH_ENV_FILE=/tmp/mgsh_env.txt
+export MIGA_ENV_FILE=/tmp/miga_env.txt
 export MYVAR="Hello, World!"
-mgsh> ./my_command
+miga> ./my_command
 ```
-In this example, before executing `./my_command`, the shell creates `/tmp/mgsh_env.txt` containing:
+In this example, before executing `./my_command`, the shell creates `/tmp/miga_env.txt` containing:
 ```
 MYVAR=Hello, World!
 ```
 
 #### The Redirection File
 
-In ISO C mode, when the `MGSH_REDIR_FILE` variable has been set, then, upon every call to execute a command by the system in which redirections were given, the `mgsh` shell will generate a file with the filename provided by the `MGSH_REDIR_FILE` variable.  In this file, each line will have a description of a requested redirection, such as `>2`. For heredoc string redirection this redirection entry in the file may have multiple lines per entry. This file is created just before the command execution and is deleted immediately after, regardless of whether the command execution succeeds or fails.
+In ISO C mode, when the `MIGA_REDIR_FILE` variable has been set, then, upon every call to execute a command by the system in which redirections were given, the `miga` shell will generate a file with the filename provided by the `MIGA_REDIR_FILE` variable.  In this file, each line will have a description of a requested redirection, such as `>2`. For heredoc string redirection this redirection entry in the file may have multiple lines per entry. This file is created just before the command execution and is deleted immediately after, regardless of whether the command execution succeeds or fails.
 
 A command to be executed would have to be adapted to take advantage of this information, since ISO C provides no way of doing redirections.
 
@@ -155,10 +155,10 @@ When compiled in ISO C mode, the shell built-in commands that generate output su
 
 **Example usage:**
 ```sh
-export MGSH_REDIR_FILE=/tmp/mgsh_redir.txt
-mgsh> ls >output.txt 2>error.txt
+export MIGA_REDIR_FILE=/tmp/miga_redir.txt
+miga> ls >output.txt 2>error.txt
 ```
-In this example, before executing `ls`, the shell creates `/tmp/mgsh_redir.txt` containing:
+In this example, before executing `ls`, the shell creates `/tmp/miga_redir.txt` containing:
 ```
 >1 output.txt
 >2 error.txt
@@ -169,7 +169,7 @@ These workarounds allow commands executed in ISO C mode to at least be aware of 
 ### Pipelines Workaround
 
 The workaround for pipelines in ISO C mode puts the onus on the executed command to handle the pipeline logic itself.
-In ISO C mode, as discussed previously, when the `MGSH_ENV_FILE` environment variable is set, the shell will create a file containing exported variables before executing a command.  The workaround for pipelines is for the shell to set two environment variables before executing a command that contains a pipeline: `MGSH_PIPELINE_INPUT_FILE` and `MGSH_PIPELINE_OUTPUT_FILE`.  Each command in the pipeline may choose to read these environment variables to determine from which file to read input and to which file to write output.
+In ISO C mode, as discussed previously, when the `MIGA_ENV_FILE` environment variable is set, the shell will create a file containing exported variables before executing a command.  The workaround for pipelines is for the shell to set two environment variables before executing a command that contains a pipeline: `MIGA_PIPELINE_INPUT_FILE` and `MIGA_PIPELINE_OUTPUT_FILE`.  Each command in the pipeline may choose to read these environment variables to determine from which file to read input and to which file to write output.
 
 The only help that the shell provides is to create an empty input file for the first command in the pipeline, and, after the last command of the pipeline is executed, to read the output file and provide its contents as the overall output of the pipeline. It will also ensure that the intermediate files are deleted after execution.
 

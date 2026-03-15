@@ -2,7 +2,7 @@
 // trap_store.c
 // ============================================================================
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 

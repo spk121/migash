@@ -92,12 +92,12 @@ void exec_redirect_restore_redirections(exec_frame_t *frame, const exec_redirect
  * Callers should prefer the platform-agnostic wrappers above.
  */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 
 exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redirections_t *redirs);
 void exec_restore_redirections_posix(exec_frame_t *frame);
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 
 exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame,
                                              const exec_redirections_t *redirs);

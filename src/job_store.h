@@ -9,9 +9,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/types.h> // For pid_t
 #endif
 
@@ -35,9 +35,9 @@ typedef struct process_t
 {
     struct process_t *next; // Next process in pipeline
     string_t *command;      // Command string for this process
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t pid; // Process ID
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     int pid; // Process ID (or 0 if not available)
     unsigned long long handle; // Process handle (or 0 if not available)
 #else
@@ -54,7 +54,7 @@ typedef struct process_t
 typedef struct job_t
 {
     int job_id; // Job number (for %1, %2, etc.)
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     pid_t pgid; // Process group ID
 #else
     int pgid; // Process group ID (or 0 if not available)
@@ -133,9 +133,9 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
  * @param command The command string for this process
  * @return true on success, false on failure
  */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 bool job_store_add_process(job_store_t *store, int job_id, pid_t pid, const string_t *command);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 bool job_store_add_process(job_store_t *store, int job_id, int pid, uintptr_t handle,
                             const string_t *command);
 #else
@@ -200,7 +200,7 @@ job_t *job_store_find_by_substring(const job_store_t *store, const char *substri
  * @param pgid The process group ID
  * @return Pointer to the job, or NULL if not found
  */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 job_t *job_store_find_by_pgid(const job_store_t *store, pid_t pgid);
 #else
 job_t *job_store_find_by_pgid(const job_store_t *store, int pgid);
@@ -229,7 +229,7 @@ bool job_store_set_state(job_store_t *store, int job_id, job_state_t new_state);
  * @param exit_status The exit status (if applicable)
  * @return true on success, false if process not found
  */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 bool job_store_set_process_state(job_store_t *store, pid_t pid, job_state_t new_state,
                                  int exit_status);
 #else
@@ -368,9 +368,9 @@ int job_store_get_job_ids(const job_store_t *store, int *job_ids, size_t max_job
 
 size_t job_process_count(const job_t *job);
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 pid_t job_get_process_pid(const job_t *job, size_t index);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 int job_get_process_pid(const job_t *job, size_t index);
 intptr_t job_get_process_handle(const job_t *job, size_t index);
 #else

@@ -1,9 +1,10 @@
 /* test_getopt.c -- Comprehensive test suite for the enhanced getopt_long_plus implementation */
 
-#include "getopt.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include "miga/getopt.h"
 #include "ctest.h"
 
 static int flag_a = 0;

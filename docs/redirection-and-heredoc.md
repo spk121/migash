@@ -1,4 +1,4 @@
-﻿# Redirection and Here-Documents
+# Redirection and Here-Documents
 
 **Redirection** is how you control where commands read their input from and where they send their output to. Instead of reading from the keyboard and writing to the screen, you can redirect to and from files, or even connect one command's output to another's input.
 

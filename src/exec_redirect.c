@@ -1,4 +1,4 @@
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 #ifdef _MSC_VER
@@ -11,13 +11,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -44,7 +44,7 @@
 #include "fd_table.h"
 #include "lib.h"
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "xalloc.h"
 
@@ -173,7 +173,7 @@ static int redirection_default_fd(const exec_redirection_t *r)
     }
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);
@@ -487,7 +487,7 @@ exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redi
             if (content_len > 4096)
             {
                 // Use temp file fallback for large heredocs
-                char tmpname[] = "/tmp/mgsh_heredoc_XXXXXX";
+                char tmpname[] = "/tmp/miga_heredoc_XXXXXX";
                 int tmpfd = mkstemp(tmpname);
                 if (tmpfd < 0)
                 {
@@ -659,7 +659,7 @@ void exec_restore_redirections_posix(exec_frame_t *frame)
     log_debug("restore(posix): complete");
     xfree(saved_fds);
 }
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 
 /* Lowest FD number used for backup copies on Windows.
  * _dup() always picks the lowest available slot, so without forcing a minimum
@@ -1052,7 +1052,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
                     goto error_restore;
                 }
                 // uUnique=0: Windows generates a unique name and creates the file atomically.
-                unsigned int uRet = GetTempFileNameA(temp_path, "mgsh", 0, temp_file);
+                unsigned int uRet = GetTempFileNameA(temp_path, "miga", 0, temp_file);
                 if (uRet == 0)
                 {
                     exec_set_error_cstr(executor, "failed to generate a unique temporary file for heredoc");
@@ -1139,7 +1139,7 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
         }
 
         default:
-            exec_set_error_cstr(executor, "Unsupported redirection operand type in UCRT_API mode");
+            exec_set_error_cstr(executor, "Unsupported redirection operand type in MIGA_UCRT_API mode");
             goto error_restore;
         }
     }
@@ -1242,7 +1242,7 @@ void exec_restore_redirections_ucrt_c(exec_frame_t *frame)
 }
 #endif
 
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
 // If we're calling an internal function like a builtin or a function defined in the current script,
 // in ISO C mode we can support redirections by by setting the *_stdin, *_stdout, and *_stderr
 // fields which can be passed to the exec_builtin_context_t struct which the internal function may
@@ -1250,7 +1250,7 @@ void exec_restore_redirections_ucrt_c(exec_frame_t *frame)
 // up to the builtin function implementation to actually use these fields correctly.
 
 // For external commands, which are called using system(), no redirection mechanism is possible.
-// However, there is the MGSH_ENV_VAR environment variable which will cause a temp file to be
+// However, there is the MIGA_ENV_VAR environment variable which will cause a temp file to be
 // created with environment variable content. This is implemented elsewhere.
 exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redirections_t *redirs)
 {
@@ -1513,14 +1513,14 @@ void exec_restore_redirections_iso_c(exec_frame_t *frame)
     }
     (void)frame;
 }
-#endif /* !POSIX_API && !UCRT_API */
+#endif /* !MIGA_POSIX_API && !MIGA_UCRT_API */
 
 void exec_redirect_restore_redirections(exec_frame_t *frame, const exec_redirections_t *redirections)
 {
     (void)redirections;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     exec_restore_redirections_posix(frame);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     exec_restore_redirections_ucrt_c(frame);
 #else
     exec_restore_redirections_iso_c(frame);
@@ -1752,9 +1752,9 @@ exec_redirections_t *exec_redirections_clone(const exec_redirections_t *redirs)
 exec_status_t exec_redirect_apply_redirectons(exec_frame_t *frame,
                                             const exec_redirections_t *redirections)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     exec_status_t st = exec_apply_redirections_posix(frame, redirections);
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
     exec_status_t st = exec_apply_redirections_ucrt_c(frame, redirections);
 #else
     exec_status_t st = exec_apply_redirections_iso_c(frame, redirections);

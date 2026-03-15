@@ -1,11 +1,11 @@
 #ifndef TYPE_PUB_H
 #define TYPE_PUB_H
 
-#include "migash/api.h"
-#include "migash/mgshconf.h"
-#include "migash/strlist.h"
+#include "miga/api.h"
+#include "miga/migaconf.h"
+#include "miga/strlist.h"
 
-MGSH_EXTERN_C_START
+MIGA_EXTERN_C_START
 
 /* ============================================================================
  * Opaque Types
@@ -179,6 +179,6 @@ typedef enum frame_var_error_t
     FRAME_VAR_ERROR_VALUE_TOO_LONG          /**< Variable value exceeds limits. */
 } frame_var_error_t;
 
-MGSH_EXTERN_C_END
+MIGA_EXTERN_C_END
 
 #endif /* TYPE_PUB_H */

@@ -1,5 +1,5 @@
 /**
- * exec_frame.c - Execution frame management for mgsh
+ * exec_frame.c - Execution frame management for miga
  *
  * This file implements frame creation (push), destruction (pop), and execution.
  * The behavior is driven by the policy table defined in exec_frame_policy.h.
@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <errno.h>
 #include <fnmatch.h>
 #include <limits.h>
@@ -25,7 +25,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #include <direct.h>
 #include <io.h>
 #include <stdlib.h>
@@ -35,14 +35,14 @@
 
 #include "alias_store.h"
 #include "ast.h"
-#include "migash/exec.h"
-#include "migash/frame.h"
+#include "miga/exec.h"
+#include "miga/frame.h"
 #include "exec_command.h"
 #include "exec_frame_expander.h"
 #include "exec_frame_policy.h"
 #include "exec_redirect.h"
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "fd_table.h"
 #include "func_store.h"
 #include "glob_util.h"
@@ -57,8 +57,8 @@
 #include "token.h"
 #include "tokenizer.h"
 #include "positional_params.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
 #include "xalloc.h"
@@ -104,17 +104,17 @@ static exec_frame_execute_result_t exec_frame_execute_background_job(exec_frame_
  * Helper Functions - System Queries
  * ============================================================================ */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 static mode_t get_umask_from_system(void)
 #else
 static int get_umask_from_system(void)
 #endif
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     mode_t current_mask = umask(0);
     umask(current_mask);
     return current_mask;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     int current_mask = _umask(0);
     _umask(current_mask);
     return current_mask;
@@ -353,7 +353,7 @@ static void init_umask(exec_frame_t *frame)
     switch (policy->umask.scope)
     {
     case EXEC_SCOPE_OWN:
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         frame->umask = xmalloc(sizeof(mode_t));
 #else
         frame->umask = xmalloc(sizeof(int));
@@ -373,7 +373,7 @@ static void init_umask(exec_frame_t *frame)
         break;
     case EXEC_SCOPE_COPY:
         Expects_not_null(frame->parent);
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         frame->umask = xmalloc(sizeof(mode_t));
 #else
         frame->umask = xmalloc(sizeof(int));
@@ -425,7 +425,7 @@ exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec
     init_umask(frame);
     init_functions(frame);
     init_aliases(frame);
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->policy->stdio.inherits_redirected_stdio)
     {
         frame->stdin_fp = parent ? parent->stdin_fp : NULL;
@@ -525,7 +525,7 @@ exec_frame_t *exec_frame_create_top_level(exec_t *exec)
         exec->traps = NULL;
     }
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     if (exec->open_fds)
     {
         fd_table_destroy(&frame->open_fds);
@@ -649,7 +649,7 @@ static void cleanup_frame_resources(exec_frame_t *frame)
     {
         string_destroy(&frame->source_name);
     }
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     // It is a coding error if these aren't properly closed. They
     // should have been closed/destroyed when the redirections closed up.
     if (*frame->stdin_fp && (!frame->parent || *frame->parent->stdin_fp != *frame->stdin_fp))
@@ -726,7 +726,7 @@ exec_frame_t *exec_frame_pop(exec_frame_t **frame_ptr)
  */
 static void setup_process_group(exec_frame_t *frame, exec_params_t *params)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     switch (frame->policy->process.pgroup)
     {
     case EXEC_PGROUP_NONE:
@@ -871,7 +871,7 @@ static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_
     }
 
     /* Handle pipe FD setup for EXEC_FRAME_PIPELINE_CMD */
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     if (params->stdin_pipe_fd >= 0)
     {
         dup2(params->stdin_pipe_fd, STDIN_FILENO);
@@ -1096,7 +1096,7 @@ exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, str
 }
 
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 
 // Returns number of arguments parsed, or -1 on error
 // Allocates *argvp with malloc(); caller must free(*argvp) and each (*argvp)[i]
@@ -1205,7 +1205,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
     /* Handle forking if required */
     if (policy->process.forks)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         pid_t pid = fork();
         if (pid < 0)
         {
@@ -1244,7 +1244,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
             }
         }
         /* Child process continues below */
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         /* While POSIX can fork and get a PID before executing a command,
          * in UCRT, we can't get a handle until when the command is spawned.
          * In POSIX, because of fork, you handle both background and foreground
@@ -1284,7 +1284,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
     /* Handle process termination for forked processes */
     if (policy->exit.terminates_process)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         _exit(result.exit_status);
 #else
         /* For ISO C mode, just return */
@@ -2270,7 +2270,7 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
  * Helper: EINTR-safe waitpid
  * ============================================================================ */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 /**
  * waitpid wrapper that retries on EINTR.
  * Returns the pid on success, -1 on real error (with errno set).
@@ -2345,7 +2345,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t
         return cmd_result;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     /*
      * Allocate pipes and PID array on the heap to avoid VLA stack overflow
      * with pathological input. We need (ncmds - 1) pipes, each being 2 fds.
@@ -2655,7 +2655,7 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, 
 
             /* Match pattern against word */
             bool pattern_matches = false;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
             pattern_matches = (fnmatch(string_cstr(pattern), string_cstr(word), 0) == 0);
 #else
             pattern_matches = glob_util_match(string_cstr(pattern), string_cstr(word), 0);

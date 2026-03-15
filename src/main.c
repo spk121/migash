@@ -6,13 +6,13 @@
 //#include "tokenizer.h"
 #include "shell.h"
 #include "logging.h"
-#include "migash/getopt.h"
+#include "miga/getopt.h"
 #include "lib.h"
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <unistd.h>
 #include <sys/types.h>
 #endif
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #include <io.h>
 #include <process.h>
 #endif
@@ -71,7 +71,7 @@ static void add_o_option(strlist_t *o_opts, const char *value, int is_plus)
 
 static int check_command_file_readable(const char *command_file)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     // Check if file exists
     if (access(command_file, F_OK) != 0)
     {
@@ -82,7 +82,7 @@ static int check_command_file_readable(const char *command_file)
     {
         return SH_EXIT_COMMAND_FILE_READ_ERROR;
     }
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     // Check if file exists
     if (_access(command_file, 0) != 0)
     {
@@ -114,7 +114,7 @@ static shell_mode_t compute_shell_mode(int c_flag, int s_flag, int i_flag, const
         mode = SHELL_MODE_COMMAND_STRING;
     else if (i_flag)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (getuid() != geteuid() || getgid() != getegid())
             return SHELL_MODE_INVALID_UID_GID;
 #endif
@@ -128,10 +128,10 @@ static shell_mode_t compute_shell_mode(int c_flag, int s_flag, int i_flag, const
     /* Upgrade non-interactive stdin to interactive if connected to a terminal */
     if (mode == SHELL_MODE_STDIN)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (isatty(STDIN_FILENO))
             mode = SHELL_MODE_INTERACTIVE;
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
         if (_isatty(_fileno(stdin)))
             mode = SHELL_MODE_INTERACTIVE;
 #endif
@@ -167,17 +167,17 @@ static void print_usage(const string_t *prog)
 
 // In gcc on POSIX and with cl on UCRT, you can have an envp in main().
 // In ISO C, there is no guarantee of an envp.
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
 int main(int argc, char **argv, char **envp)
 #else
 int main(int argc, char **argv)
 #endif
 {
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     char **envp = NULL;
 #endif
 
-    arena_init();
+    miga_arena_init();
     log_init();
     lib_setlocale();
 
@@ -490,9 +490,9 @@ int main(int argc, char **argv)
 
     // On memory allocation failures, the shell
     // will longjmp out to here.
-    arena_start();
+    miga_setjmp();
     shell_t *sh = shell_create(&cfg);
-    arena_set_cleanup(shell_cleanup, (void *)sh);
+    miga_set_out_of_memory_cleanup_cb(shell_cleanup, (void *)sh);
     sh_status_t status;
     status = shell_execute(sh);
 
@@ -511,8 +511,8 @@ int main(int argc, char **argv)
     strlist_destroy(&argv_list);
     string_destroy(&optstring);
 
-    // Don't call shell_destroy here - arena_end will call shell_cleanup
-    arena_end();
+    // Don't call shell_destroy here - miga_arena_end will call shell_cleanup
+    miga_arena_end();
 
     free(arg_array);
     return status;

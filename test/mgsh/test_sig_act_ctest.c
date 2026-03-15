@@ -278,7 +278,7 @@ CTEST(test_sig_act_posix_null_action_fails)
     sig_act_store_destroy(&store);
 }
 
-#else  // Non-POSIX (UCRT_API or ISO_C)
+#else  // Non-POSIX (MIGA_UCRT_API or ISO_C)
 
 // ============================================================================
 // UCRT/ISO_C-Specific Tests
@@ -388,7 +388,7 @@ CTEST(test_sig_act_nonposix_invalid_signal_returns_error)
     sig_act_store_destroy(&store);
 }
 
-#endif  // POSIX_API vs non-POSIX
+#endif  // MIGA_POSIX_API vs non-POSIX
 
 // ============================================================================
 // Main - Conditionally build test suite
@@ -398,7 +398,7 @@ int main(int argc, const char *argv[])
 {
     (void)argc;
     (void)argv;
-    arena_start();
+    miga_setjmp();
 
     CTestEntry *suite[] = {
         // Common tests (all platforms)
@@ -439,7 +439,7 @@ int main(int argc, const char *argv[])
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

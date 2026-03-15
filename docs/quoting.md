@@ -1,4 +1,4 @@
-﻿# Quoting
+# Quoting
 
 One of the most important concepts in shell scripting is **quoting**—the art of telling the shell "treat this literally" or "don't interpret these special characters." Without proper quoting, your scripts will break when filenames have spaces, variables are empty, or patterns are interpreted when they shouldn't be.
 

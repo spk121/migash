@@ -1,4 +1,4 @@
-﻿# Lists
+# Lists
 
 A **list** is a sequence of one or more pipelines combined with control operators to control execution flow and order.
 

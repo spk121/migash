@@ -2,7 +2,7 @@
 #define EXEC_COMMAND_H
 
 /**
- * exec_command.h - Simple command execution for mgsh
+ * exec_command.h - Simple command execution for miga
  *
  * This file declares the interface for executing simple commands within an
  * execution frame. It handles assignment-only commands, variable expansion,
@@ -13,7 +13,7 @@
 
 #include "ast.h"
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 
 /* Forward declarations */
 struct ast_node_t;

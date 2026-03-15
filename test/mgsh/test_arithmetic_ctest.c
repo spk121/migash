@@ -5,10 +5,10 @@
 
 #include "ctest.h"
 #include "arithmetic.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "variable_store.h"
 #include "positional_params.h"
-#include "exec.h"
+#include "miga/exec.h"
 #include "exec_frame.h"
 #include "xalloc.h"
 
@@ -675,7 +675,7 @@ CTEST(test_arithmetic_complex_expression)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
     log_init();
 
     CTestEntry *suite[] = {
@@ -744,6 +744,6 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
     return result;
 }

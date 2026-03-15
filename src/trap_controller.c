@@ -1,6 +1,6 @@
 #include "trap_controller.h"
 
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "logging.h"
 #include "xalloc.h"
 

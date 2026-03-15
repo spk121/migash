@@ -4,12 +4,12 @@
 
 #include <string.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <fnmatch.h>
 #include <wordexp.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #include <errno.h>
 #include <io.h>
 #endif
@@ -17,8 +17,8 @@
 #include "glob_util.h"
 
 #include "logging.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 
 /* ============================================================================
  * Internal Helpers
@@ -54,7 +54,7 @@ static inline int is_protected_dot(const char *s, const char *string, int flags)
  * Pattern Matching Implementation
  * ============================================================================ */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 
 bool glob_util_match(const char *pattern, const char *string, int flags)
 {
@@ -375,7 +375,7 @@ bool glob_util_match_str(const string_t *pattern, const string_t *string, int fl
  * Pathname Expansion Implementation
  * ============================================================================ */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 
 strlist_t *glob_util_expand_path(const string_t *pattern)
 {
@@ -439,7 +439,7 @@ strlist_t *glob_util_expand_path(const string_t *pattern)
     return result;
 }
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 
 strlist_t *glob_util_expand_path(const string_t *pattern)
 {
@@ -558,11 +558,11 @@ strlist_t *glob_util_expand_path(const string_t *pattern)
 }
 
 #else
-/* ISO_C unchanged */
+/* MIGA_ISO_C */
 strlist_t *glob_util_expand_path(const string_t *pattern)
 {
     (void)pattern;
-    log_warn("glob_util_expand_path: No glob implementation available in ISO_C mode");
+    log_warn("glob_util_expand_path: No glob implementation available in MIGA_ISO_C mode");
     return NULL;
 }
 #endif

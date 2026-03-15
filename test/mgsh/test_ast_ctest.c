@@ -1,6 +1,6 @@
 #include "ctest.h"
 #include "ast.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "xalloc.h"
 #include "logging.h"
@@ -97,7 +97,7 @@ CTEST(test_ast_node_type_to_string)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
     log_init();
 
 
@@ -120,7 +120,7 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

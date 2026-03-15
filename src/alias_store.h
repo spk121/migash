@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
 /**
  * @file alias_store.h

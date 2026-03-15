@@ -1,7 +1,7 @@
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #define _CRT_SECURE_NO_WARNINGS
 #endif
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 
@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -21,7 +21,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -39,27 +39,27 @@
 #include "builtin_store.h"
 #include "builtins.h"
 
-#include "migash/exec.h"
-#include "migash/getopt.h"
-#include "migash/frame.h"
+#include "miga/exec.h"
+#include "miga/getopt.h"
+#include "miga/frame.h"
 #include "exec_types_internal.h"
 #include "func_store.h"
 #include "job_store.h"
 #include "lib.h"
 #include "logging.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "variable_store.h"
 #include "xalloc.h"
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define CHDIR chdir
 #define GETCWD getcwd
 #define STAT stat
 #define STAT_T struct stat
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 /* Constants not always available without full Windows.h */
 #ifndef INFINITE
 #define INFINITE 0xFFFFFFFF
@@ -74,7 +74,7 @@
 #ifndef S_ISDIR
 #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #endif
-#endif // UCRT_API
+#endif // MIGA_UCRT_API
 
 /* ============================================================================
  * colon - do nothing builtin
@@ -269,7 +269,7 @@ static search_path_result_t dot_search_path(exec_frame_t *frame, const string_t 
         return (search_path_result_t){.full_path = NULL, .found = false};
     }
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     const char path_sep = ';';
     const char *dir_sep = "\\";
 #else
@@ -352,7 +352,7 @@ int builtin_dot(exec_frame_t *frame, const strlist_t *args)
 
     if (!fp)
     {
-#if defined(POSIX_API)
+#if defined(MIGA_POSIX_API)
         if (errno == EACCES)
         {
             fprintf(stderr, "dot: %s: permission denied\n", filename);
@@ -360,7 +360,7 @@ int builtin_dot(exec_frame_t *frame, const strlist_t *args)
             return 1;
         }
 #endif
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
         char *cwd = GETCWD(NULL, 0);
         if (filename[0] == '.' && cwd)
             fprintf(stderr, "dot: %s: not found relative to '%s'\n", filename, cwd);
@@ -504,7 +504,7 @@ int builtin_exec(exec_frame_t *frame, const strlist_t *args)
         return 0;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     // Build argv for execvp
     char **argv = xmalloc((argc) * sizeof(char *));
     for (int i = 1; i < argc; ++i)
@@ -518,7 +518,7 @@ int builtin_exec(exec_frame_t *frame, const strlist_t *args)
     fprintf(stderr, "exec: %s: %s\n", argv[0], strerror(errno));
     xfree(argv);
     return 127;
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
     // Build argv for _execvp
     char **argv = xmalloc((argc) * sizeof(char *));
     for (int i = 1; i < argc; ++i)
@@ -583,9 +583,9 @@ int builtin_exit(exec_frame_t *frame, const strlist_t *args)
     // If this is the top-level frame, terminate the process
     if (!frame->parent)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         _exit(exit_status);
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
         _exit(exit_status);
 #else
         exit(exit_status);
@@ -1331,7 +1331,7 @@ static void times_format_time(double seconds, char *buf, size_t buf_size)
     snprintf(buf, buf_size, "%dm%.3fs", minutes, secs);
 }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/times.h>
 
 int builtin_times(exec_frame_t *frame, const strlist_t *args)
@@ -1378,7 +1378,7 @@ int builtin_times(exec_frame_t *frame, const strlist_t *args)
     return 0;
 }
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 
 int builtin_times(exec_frame_t *frame, const strlist_t *args)
 {
@@ -2179,7 +2179,7 @@ int builtin_getopts(exec_frame_t *frame, const strlist_t *args)
  * cd - Change the shell working directory
  * ============================================================================
  */
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #define SECOND_HOME_VAR "USERPROFILE"
 #else
 #define SECOND_HOME_VAR NULL
@@ -2203,7 +2203,7 @@ static string_t *resolve_home(exec_frame_t *frame)
     return NULL;
 }
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
 
 /**
  * Canonicalize a path using string_t and strlist_t.
@@ -2335,7 +2335,7 @@ static int cd_do_chdir(exec_frame_t *frame,
     return exit_status;
 }
 
-#endif // POSIX_API || UCRT_API
+#endif // MIGA_POSIX_API || MIGA_UCRT_API
 
 int builtin_cd(exec_frame_t *frame, const strlist_t *args)
 {
@@ -2384,7 +2384,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
         return 2;
     }
 
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     fprintf(stderr, "cd: directory change not supported on this platform\n");
     return 1;
 #else
@@ -2435,7 +2435,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
             print_dir = true;
         }
         else if (string_starts_with_cstr(arg, "/")
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
                  || string_starts_with_cstr(arg, "\\")
 #endif
                  || string_starts_with_cstr(arg, ".") || string_contains_cstr(arg, "/"))
@@ -2449,7 +2449,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
             bool found = false;
             if (frame_has_variable_cstr(frame, "CDPATH"))
             {
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
                 const char sep = ';';
 #else
                 const char sep = ':';
@@ -2495,7 +2495,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
     // Steps 7-8: prepend PWD if curpath is not absolute, to get a full
     // logical path for canonicalization
     if (!flag_P && !string_starts_with_cstr(curpath, "/")
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
         && !string_starts_with_cstr(curpath, "\\")
 #endif
     )
@@ -2523,9 +2523,9 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
     if (flag_P)
     {
         char *physical = NULL;
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         physical = realpath(string_cstr(curpath), NULL);
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         physical = _fullpath(NULL, string_cstr(curpath), 0);
 #endif
         if (!physical)
@@ -2553,7 +2553,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
     string_destroy(&curpath);
     string_destroy(&target);
     return result;
-#endif // POSIX_API || UCRT_API
+#endif // MIGA_POSIX_API || MIGA_UCRT_API
 }
 
 /* ============================================================================
@@ -2622,7 +2622,7 @@ int builtin_pwd(exec_frame_t *frame, const strlist_t *args)
         // PWD not set or empty: fall through
     }
 
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     // No getcwd available — if we get here, PWD was unset/empty or -P was requested
     fprintf(stderr, "pwd: cannot determine current directory: platform not supported\n");
     return 1;
@@ -2639,7 +2639,7 @@ int builtin_pwd(exec_frame_t *frame, const strlist_t *args)
 #endif
 }
 
-#if defined(POSIX_API) || defined(UCRT_API)
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
 #undef CHDIR
 #undef GETCWD
 #undef STAT
@@ -2978,7 +2978,7 @@ static void kill_list_signal_for_status(int status)
  */
 static int kill_send_signal(exec_frame_t *frame, int signum, intptr_t pid, const char *target_str)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     (void)frame;
     if (kill((pid_t)pid, signum) != 0)
     {
@@ -2986,7 +2986,7 @@ static int kill_send_signal(exec_frame_t *frame, int signum, intptr_t pid, const
         return 1;
     }
     return 0;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     /* On Windows, we can only terminate processes, not send arbitrary signals */
     if (signum == SIGTERM
 #ifdef SIGKILL
@@ -3074,7 +3074,7 @@ static int kill_send_to_job(exec_frame_t *frame, int signum, int job_id, const c
         return 1;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     /* Send signal to the process group */
     if (kill(-job->pgid, signum) != 0)
     {
@@ -3082,7 +3082,7 @@ static int kill_send_to_job(exec_frame_t *frame, int signum, int job_id, const c
         return 1;
     }
     return 0;
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     /* On Windows, iterate through processes in the job using the iterator */
     if (signum != SIGTERM
 #ifdef SIGKILL
@@ -3371,7 +3371,7 @@ static int wait_for_job(exec_frame_t *frame, int job_id, const char *target_str)
         return 0;
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     /* Wait for the process group */
     int status;
     pid_t result;
@@ -3408,7 +3408,7 @@ static int wait_for_job(exec_frame_t *frame, int job_id, const char *target_str)
     }
     return 0;
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     /* On Windows, wait for all processes in the job using their handles */
     int last_exit_status = 0;
 
@@ -3464,7 +3464,7 @@ static int wait_for_job(exec_frame_t *frame, int job_id, const char *target_str)
  */
 static int wait_for_pid(exec_frame_t *frame, intptr_t pid, const char *target_str)
 {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     int status;
     pid_t result = waitpid((pid_t)pid, &status, 0);
 
@@ -3500,7 +3500,7 @@ static int wait_for_pid(exec_frame_t *frame, intptr_t pid, const char *target_st
 
     return 0;
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     /* Search for the PID in the job store to get its handle */
     if (frame && frame->executor && frame->executor->jobs)
     {
@@ -3557,7 +3557,7 @@ static int wait_for_all(exec_frame_t *frame)
 
     int last_exit_status = 0;
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     int status;
     pid_t result;
 
@@ -3581,7 +3581,7 @@ static int wait_for_all(exec_frame_t *frame)
         }
     }
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
 /* Collect all active process handles and wait for them */
 #define MAX_WAIT_HANDLES 64
     HANDLE handles[MAX_WAIT_HANDLES];
@@ -3787,7 +3787,7 @@ int builtin_fg(exec_frame_t *frame, const strlist_t *args)
         printf("%s\n", string_cstr(job->command_line));
     }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
     /* Give the job's process group control of the terminal */
     if (isatty(STDIN_FILENO))
     {
@@ -3854,7 +3854,7 @@ int builtin_fg(exec_frame_t *frame, const strlist_t *args)
 
     return exit_status;
 
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
     /* Windows doesn't have true foreground/background job control */
     /* We can wait for the job, but can't give it terminal control */
 
@@ -3952,7 +3952,7 @@ int builtin_bg(exec_frame_t *frame, const strlist_t *args)
             return 1;
         }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         /* Send SIGCONT to resume the job */
         if (kill(-current->pgid, SIGCONT) < 0)
         {
@@ -3964,7 +3964,7 @@ int builtin_bg(exec_frame_t *frame, const strlist_t *args)
         /* Print the job info */
         printf("[%d]+ %s &\n", current->job_id,
                current->command_line ? string_cstr(current->command_line) : "");
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
         return 1;
 #else
@@ -4002,7 +4002,7 @@ int builtin_bg(exec_frame_t *frame, const strlist_t *args)
                 continue;
             }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
             /* Send SIGCONT to resume the job */
             if (kill(-job->pgid, SIGCONT) < 0)
             {
@@ -4017,7 +4017,7 @@ int builtin_bg(exec_frame_t *frame, const strlist_t *args)
             printf("[%d]%c %s &\n", job_id,
                    (job == job_store_get_current(frame->executor->jobs)) ? '+' : '-',
                    job->command_line ? string_cstr(job->command_line) : "");
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
             fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
             exit_status = 1;
 #else
@@ -4034,7 +4034,7 @@ int builtin_bg(exec_frame_t *frame, const strlist_t *args)
  * ls - list files
  * ===========================================================================
  */
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 /**
  * builtin_ls - List directory contents (Windows UCRT implementation)
  *
@@ -5237,9 +5237,9 @@ int builtin_bracket(exec_frame_t *frame, const strlist_t *args)
                 return 2;
             }
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
             return isatty((int)fd) ? 0 : 1;
-#elif defined UCRT_API
+#elif defined MIGA_UCRT_API
             return _isatty((int)fd) ? 0 : 1;
 #endif
             /* else, fallthrough to failure */
@@ -5637,24 +5637,24 @@ int builtin_dirname(exec_frame_t *frame, const strlist_t *args)
 }
 
 /* ============================================================================
- * mgsh_dirnamevar - Compute dirname and assign to a variable
+ * miga_dirnamevar - Compute dirname and assign to a variable
  *
- * Usage: mgsh_dirnamevar varname string
+ * Usage: miga_dirnamevar varname string
  *
  * This is a workaround for platforms where command substitution doesn't work
  * reliably (like UCRT). Instead of:
  *   SCRIPT_DIR=$(dirname "$0")
  * Use:
- *   mgsh_dirnamevar SCRIPT_DIR "$0"
+ *   miga_dirnamevar SCRIPT_DIR "$0"
  *
  * Examples:
- *   mgsh_dirnamevar mydir /usr/bin/sort    -> sets mydir="/usr/bin"
- *   mgsh_dirnamevar mydir stdio.h          -> sets mydir="."
- *   mgsh_dirnamevar mydir /                -> sets mydir="/"
+ *   miga_dirnamevar mydir /usr/bin/sort    -> sets mydir="/usr/bin"
+ *   miga_dirnamevar mydir stdio.h          -> sets mydir="."
+ *   miga_dirnamevar mydir /                -> sets mydir="/"
  * ============================================================================
  */
 
-int builtin_mgsh_dirnamevar(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_dirnamevar(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5664,18 +5664,18 @@ int builtin_mgsh_dirnamevar(exec_frame_t *frame, const strlist_t *args)
     /* Usage check */
     if (argc != 3)
     {
-        fprintf(stderr, "mgsh_dirnamevar: usage: mgsh_dirnamevar varname string\n");
+        fprintf(stderr, "miga_dirnamevar: usage: miga_dirnamevar varname string\n");
         return 2;
     }
 
     const string_t *varname_arg = strlist_at(args, 1);
     const string_t *path_arg = strlist_at(args, 2);
-    log_debug("mgsh_dirnamevar: (%s, %s)", string_cstr(varname_arg), string_cstr(path_arg));
+    log_debug("miga_dirnamevar: (%s, %s)", string_cstr(varname_arg), string_cstr(path_arg));
 
     /* Validate variable name is not empty */
     if (!varname_arg || string_empty(varname_arg))
     {
-        fprintf(stderr, "mgsh_dirnamevar: variable name cannot be empty\n");
+        fprintf(stderr, "miga_dirnamevar: variable name cannot be empty\n");
         return 2;
     }
 
@@ -5776,15 +5776,15 @@ int builtin_mgsh_dirnamevar(exec_frame_t *frame, const strlist_t *args)
 }
 
 /* ============================================================================
- * mgsh_printfvar - Format data and assign to a variable
+ * miga_printfvar - Format data and assign to a variable
  *
- * Usage: mgsh_printfvar varname format [arguments...]
+ * Usage: miga_printfvar varname format [arguments...]
  *
  * This is a workaround for platforms where command substitution doesn't work
  * reliably (like UCRT). Instead of:
  *   RESULT=$(printf "%s-%d" "$name" "$count")
  * Use:
- *   mgsh_printfvar RESULT "%s-%d" "$name" "$count"
+ *   miga_printfvar RESULT "%s-%d" "$name" "$count"
  *
  * Supports the same format specifiers as printf:
  *   %b    - String with backslash escapes interpreted
@@ -6102,7 +6102,7 @@ static int printfvar_process_format(string_t *output, const char **fmt, const ch
     return 0;
 }
 
-int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_printfvar(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -6112,7 +6112,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
     /* Need at least variable name and format string */
     if (argc < 3)
     {
-        fprintf(stderr, "mgsh_printfvar: usage: mgsh_printfvar varname format [arguments...]\n");
+        fprintf(stderr, "miga_printfvar: usage: miga_printfvar varname format [arguments...]\n");
         return 2;
     }
 
@@ -6121,7 +6121,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
     /* Validate variable name is not empty */
     if (!varname_arg || string_empty(varname_arg))
     {
-        fprintf(stderr, "mgsh_printfvar: variable name cannot be empty\n");
+        fprintf(stderr, "miga_printfvar: variable name cannot be empty\n");
         return 2;
     }
 
@@ -6164,7 +6164,7 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
                 int err = printfvar_process_format(output, &f, arg, &stop_output);
                 if (err)
                 {
-                    frame_set_error_printf(frame, "mgsh_printfvar: invalid format");
+                    frame_set_error_printf(frame, "miga_printfvar: invalid format");
                     string_destroy(&output);
                     return 1;
                 }
@@ -6254,11 +6254,11 @@ int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args)
 }
 
 /* ==========================================================================
- * mgsh_cat - Print contents of a file line by line
- * Usage: mgsh_cat filename
+ * miga_cat - Print contents of a file line by line
+ * Usage: miga_cat filename
  * ==========================================================================
  */
-int builtin_mgsh_cat(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_cat(exec_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -6267,7 +6267,7 @@ int builtin_mgsh_cat(exec_frame_t *frame, const strlist_t *args)
     int argc = strlist_size(args);
     if (argc != 2)
     {
-        fprintf(stderr, "mgsh_cat: usage: mgsh_cat filename\n");
+        fprintf(stderr, "miga_cat: usage: miga_cat filename\n");
         return 2;
     }
 
@@ -6277,7 +6277,7 @@ int builtin_mgsh_cat(exec_frame_t *frame, const strlist_t *args)
     FILE *fp = fopen(filename, "r");
     if (!fp)
     {
-        fprintf(stderr, "mgsh_cat: cannot open '%s': %s\n", filename, strerror(errno));
+        fprintf(stderr, "miga_cat: cannot open '%s': %s\n", filename, strerror(errno));
         return 1;
     }
 

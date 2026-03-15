@@ -363,7 +363,7 @@ void builtin_store_for_each(const builtin_store_t *store, builtin_store_iter_fn_
 
 FILE *builtin_stdin(exec_frame_t *frame)
 {
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stdin_fp && *frame->stdin_fp)
         return *frame->stdin_fp;
 #endif
@@ -373,7 +373,7 @@ FILE *builtin_stdin(exec_frame_t *frame)
 
 FILE *builtin_stdout(exec_frame_t *frame)
 {
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stdout_fp && *frame->stdout_fp)
         return *frame->stdout_fp;
 #endif
@@ -383,7 +383,7 @@ FILE *builtin_stdout(exec_frame_t *frame)
 
 FILE *builtin_stderr(exec_frame_t *frame)
 {
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stderr_fp && *frame->stderr_fp)
         return *frame->stderr_fp;
 #endif
@@ -424,7 +424,7 @@ bool builtins_init_default(builtin_store_t *store)
     ok = ok && builtin_store_set(store, "unset", (builtin_fn_t)builtin_unset, BUILTIN_SPECIAL);
 
     /* -- Regular builtins ------------------------------------------------- */
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
     ok = ok && builtin_store_set(store, "cd", (builtin_fn_t)builtin_cd, BUILTIN_REGULAR);
     ok = ok && builtin_store_set(store, "pwd", (builtin_fn_t)builtin_pwd, BUILTIN_REGULAR);
     ok = ok && builtin_store_set(store, "ls", (builtin_fn_t)builtin_ls, BUILTIN_REGULAR);
@@ -446,13 +446,13 @@ bool builtins_init_default(builtin_store_t *store)
     ok = ok && builtin_store_set(store, "true", (builtin_fn_t)builtin_true, BUILTIN_REGULAR);
     ok = ok && builtin_store_set(store, "false", (builtin_fn_t)builtin_false, BUILTIN_REGULAR);
 
-    /* -- mgsh extensions -------------------------------------------------- */
-    ok = ok && builtin_store_set(store, "mgsh_dirnamevar", (builtin_fn_t)builtin_mgsh_dirnamevar,
+    /* -- miga extensions -------------------------------------------------- */
+    ok = ok && builtin_store_set(store, "miga_dirnamevar", (builtin_fn_t)builtin_miga_dirnamevar,
                                  BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "mgsh_printfvar", (builtin_fn_t)builtin_mgsh_printfvar,
+    ok = ok && builtin_store_set(store, "miga_printfvar", (builtin_fn_t)builtin_miga_printfvar,
                                  BUILTIN_REGULAR);
     ok =
-        ok && builtin_store_set(store, "mgsh_cat", (builtin_fn_t)builtin_mgsh_cat, BUILTIN_REGULAR);
+        ok && builtin_store_set(store, "miga_cat", (builtin_fn_t)builtin_miga_cat, BUILTIN_REGULAR);
 
     return ok;
 }

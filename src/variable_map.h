@@ -6,8 +6,8 @@
     "variable_map.h is an internal header. Only variable_store.c and variable_map.c may include it."
 #endif
 
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include <stdbool.h>
 #include <stdint.h>
 

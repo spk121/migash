@@ -1,4 +1,4 @@
-﻿# The `while` and `until` Loop Constructs
+# The `while` and `until` Loop Constructs
 
 The **while** and **until** statements provide the primary looping mechanisms in POSIX shell scripts. They repeatedly execute a block of commands (the *loop body*) as long as a condition command list evaluates to a particular exit status.
 - `while` loops continue **while the condition succeeds** (exit status 0).

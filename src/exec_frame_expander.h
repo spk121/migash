@@ -19,9 +19,9 @@
  */
 
 #include "exec_types_internal.h"
-#include "migash/exec.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/exec.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include <stdbool.h>
 

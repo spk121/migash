@@ -19,7 +19,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
 /* Forward declarations — concrete definitions live in their own headers. */
 typedef struct lexer_t lexer_t;

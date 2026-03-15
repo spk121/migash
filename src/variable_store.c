@@ -3,8 +3,8 @@
 
 #define VARIABLE_MAP_INTERNAL
 #include "logging.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "variable_map.h"
 #include "variable_store.h"
 #include "xalloc.h"
@@ -931,15 +931,15 @@ string_t *variable_store_write_env_file(variable_store_t *vars)
 {
     Expects_not_null(vars);
 
-    if (!variable_store_has_name_cstr(vars, "MGSH_ENV_FILE"))
+    if (!variable_store_has_name_cstr(vars, "MIGA_ENV_FILE"))
         return NULL;
 
-    const char *fname = variable_store_get_value_cstr(vars, "MGSH_ENV_FILE");
+    const char *fname = variable_store_get_value_cstr(vars, "MIGA_ENV_FILE");
 
     if (!fname || *fname == '\0')
     {
         if (fname && *fname == '\0')
-            log_debug("variable_store_write_env_file: MGSH_ENV_FILE is empty");
+            log_debug("variable_store_write_env_file: MIGA_ENV_FILE is empty");
         return NULL;
     }
 

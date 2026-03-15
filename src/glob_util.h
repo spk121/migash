@@ -3,8 +3,8 @@
 
 #include <stdbool.h>
 
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 
 /* ============================================================================
  * Pattern Matching (fnmatch-like API)
@@ -69,7 +69,7 @@ bool glob_util_match_str(const string_t *pattern, const string_t *string, int fl
  * Platform behaviors:
  * - POSIX: Uses wordexp() for full expansion including tilde, variables, etc.
  * - UCRT: Uses _findfirst()/_findnext() for basic wildcard matching in current directory
- * - ISO_C: Returns NULL (no filesystem access available)
+ * - MIGA_ISO_C: Returns NULL (no filesystem access available)
  *
  * The returned list contains filenames that match the pattern. If no matches
  * are found, returns NULL to signal that the pattern should be kept literal

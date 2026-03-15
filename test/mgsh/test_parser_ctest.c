@@ -4,11 +4,11 @@
 #include "parser.h"
 
 #include "ast.h"
-#include "exec.h"
+#include "miga/exec.h"
 #include "gnode.h"
 #include "logging.h"
 #include "lower.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "xalloc.h"
 
@@ -818,7 +818,7 @@ CTEST(test_parser_complex_case)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
     log_init();
 
 
@@ -898,10 +898,10 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    printf("About to call arena_end...\n");
+    printf("About to call miga_arena_end...\n");
     fflush(stdout);
-    arena_end();
-    printf("arena_end completed\n");
+    miga_arena_end();
+    printf("miga_arena_end completed\n");
 
     return result;
 }

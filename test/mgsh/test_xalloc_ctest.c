@@ -3,8 +3,8 @@
 #include "ctest.h"
 #include "xalloc.h"
 
-// Helper macros to handle ARENA_DEBUG and non-ARENA_DEBUG modes
-#ifdef ARENA_DEBUG
+// Helper macros to handle MIGA_ARENA_DEBUG and non-MIGA_ARENA_DEBUG modes
+#ifdef MIGA_ARENA_DEBUG
 #define TEST_ARENA_XMALLOC(arena, size) arena_xmalloc((arena), (size), __FILE__, __LINE__)
 #define TEST_ARENA_XCALLOC(arena, n, size) arena_xcalloc((arena), (n), (size), __FILE__, __LINE__)
 #define TEST_ARENA_XREALLOC(arena, ptr, size) arena_xrealloc((arena), (ptr), (size), __FILE__, __LINE__)
@@ -21,7 +21,7 @@
 // Test arena_xmalloc basic allocation
 CTEST(test_arena_xmalloc_basic)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     // Set up jump point for error handling
@@ -40,7 +40,7 @@ CTEST(test_arena_xmalloc_basic)
 // Test arena_xcalloc zero initialization
 CTEST(test_arena_xcalloc_zero_init)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -64,7 +64,7 @@ CTEST(test_arena_xcalloc_zero_init)
 // Test arena_xrealloc resizing
 CTEST(test_arena_xrealloc_resize)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -98,7 +98,7 @@ CTEST(test_arena_xrealloc_resize)
 // Test arena_xstrdup string duplication
 CTEST(test_arena_xstrdup_duplicate)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -120,7 +120,7 @@ CTEST(test_arena_xstrdup_duplicate)
 // Test TEST_ARENA_XFREE and basic tracking
 CTEST(test_arena_xfree_tracking)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -146,7 +146,7 @@ CTEST(test_arena_xfree_tracking)
 // Test arena lifecycle (init/reset/end)
 CTEST(test_arena_lifecycle)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -178,7 +178,7 @@ CTEST(test_arena_lifecycle)
 // Test multiple allocations and frees
 CTEST(test_arena_multiple_allocs)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)
@@ -217,7 +217,7 @@ CTEST(test_arena_multiple_allocs)
 // Test that NULL can be safely passed to TEST_ARENA_XFREE
 CTEST(test_arena_xfree_null)
 {
-    arena_t arena = {0};
+    miga_arena_t arena = {0};
     arena_init_ex(&arena);
 
     if (setjmp(arena.rollback_point) == 0)

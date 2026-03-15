@@ -6,7 +6,7 @@
 #include <string.h>
 #include "ctest.h"
 #include "variable_store.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 // ------------------------------------------------------------
@@ -623,7 +623,7 @@ CTEST(test_variable_store_generation_tracking)
     {
         (void)argc;
         (void)argv;
-        arena_start();
+        miga_setjmp();
 
         CTestEntry *suite[] = {
             // Creation and destruction
@@ -687,6 +687,6 @@ CTEST(test_variable_store_generation_tracking)
 
         int result = ctest_run_suite(suite);
 
-        arena_end();
+        miga_arena_end();
         return result;
     }

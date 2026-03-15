@@ -11,7 +11,7 @@
 // The controller prevents race conditions, ensures cleanup, and provides
 // simplified API for shell builtins that need coordinated access.
 
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "trap_store.h"
 #include "sig_act.h"
 

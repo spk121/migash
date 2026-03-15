@@ -1,4 +1,4 @@
-﻿# Simple Commands
+# Simple Commands
 
 A **simple command** is the most basic executable unit in the shell—it's what you use every time you run a program, assign a variable, or redirect I/O. Despite the name, simple commands have complex behavior involving variable assignments, redirections, expansions, and command lookup.
 

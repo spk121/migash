@@ -1,4 +1,4 @@
-﻿# Job Control
+# Job Control
 
 When you're working in the shell, you're not limited to running just one command at a time and waiting for it to finish. **Job control** is a powerful feature that lets you stop (suspend) programs, run them in the background, and bring them back to the foreground when you need them. This is managed jointly by your terminal driver and the shell, and it's what makes multitasking in the shell possible.
 

@@ -67,7 +67,7 @@ static inline int get_max_signal_number_fallback(void)
     return max;
 }
 
-#elif defined(UCRT_API)
+#elif defined(MIGA_UCRT_API)
 // UCRT signals: ABRT, FPE, ILL, INT, SEGV, TERM
 #define NUM_SHELL_SIGNALS 3
 
@@ -198,7 +198,7 @@ int sig_act_store_set_and_save(sig_act_store_t *store, int signo,
     return 0;
 }
 
-#else  // UCRT_API or ISO_C
+#else  // MIGA_UCRT_API or MIGA_ISO_C
 
 void (*sig_act_store_set_and_save(sig_act_store_t *store, int signo,
                                     void (*new_handler)(int)))(int)

@@ -6,20 +6,20 @@
 #include "ctest.h"
 #include "exec_expander.h"
 #include "token.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "ast.h"
 #include "variable_store.h"
 #include "positional_params.h"
 #include "xalloc.h"
 
 // Test-specific pathname expansion callback that returns two fixed filenames
-static string_list_t *test_pathname_expansion_callback(void *user_data, const string_t *pattern)
+static strlist_t *test_pathname_expansion_callback(void *user_data, const string_t *pattern)
 {
     (void)pattern;
     (void)user_data;
-    string_list_t *lst = string_list_create();
-    string_list_push_back(lst, string_create_from_cstr("foo.txt"));
-    string_list_push_back(lst, string_create_from_cstr("bar.txt"));
+    strlist_t *lst = strlist_create();
+    strlist_push_back(lst, string_create_from_cstr("foo.txt"));
+    strlist_push_back(lst, string_create_from_cstr("bar.txt"));
     return lst;
 }
 
@@ -58,16 +58,16 @@ CTEST(test_expander_pathname_expansion_callback)
     word->needs_pathname_expansion = true;
 
     // Expand the word
-    string_list_t *res = exec_expand_word(exp, word);
+    strlist_t *res = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, res, "expansion returned list");
-    CTEST_ASSERT_EQ(ctest, string_list_size(res), 2, "two matches returned");
-    const string_t *s0 = string_list_at(res, 0);
-    const string_t *s1 = string_list_at(res, 1);
+    CTEST_ASSERT_EQ(ctest, strlist_size(res), 2, "two matches returned");
+    const string_t *s0 = strlist_at(res, 0);
+    const string_t *s1 = strlist_at(res, 1);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(s0), "foo.txt", "first match is foo.txt");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(s1), "bar.txt", "second match is bar.txt");
 
     // Cleanup
-    string_list_destroy(&res);
+    strlist_destroy(&res);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -96,9 +96,9 @@ CTEST(test_expander_recursive_param_assign_default)
     token_add_part(word, p);
     word->needs_expansion = true;
 
-    string_list_t *res = exec_expand_word(exp, word);
-    CTEST_ASSERT_EQ(ctest, string_list_size(res), 1, "one field produced");
-    const string_t *out = string_list_at(res, 0);
+    strlist_t *res = exec_expand_word(exp, word);
+    CTEST_ASSERT_EQ(ctest, strlist_size(res), 1, "one field produced");
+    const string_t *out = strlist_at(res, 0);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(out), "B", "assign default uses expanded ${bar}");
 
     // Verify foo was assigned to B in variable store
@@ -108,7 +108,7 @@ CTEST(test_expander_recursive_param_assign_default)
     if (foo_val)
         CTEST_ASSERT_STR_EQ(ctest, foo_val, "B", "foo == B");
 
-    string_list_destroy(&res);
+    strlist_destroy(&res);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -134,12 +134,12 @@ CTEST(test_expander_recursive_param_use_default)
     p->word = string_create_from_cstr("${bar}");
     token_add_part(word, p);
 
-    string_list_t *res = exec_expand_word(exp, word);
-    CTEST_ASSERT_EQ(ctest, string_list_size(res), 1, "one field produced");
-    const string_t *out = string_list_at(res, 0);
+    strlist_t *res = exec_expand_word(exp, word);
+    CTEST_ASSERT_EQ(ctest, strlist_size(res), 1, "one field produced");
+    const string_t *out = strlist_at(res, 0);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(out), "X", "use default expands ${bar}");
 
-    string_list_destroy(&res);
+    strlist_destroy(&res);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -167,12 +167,12 @@ CTEST(test_expander_recursive_param_use_alternate)
     p->word = string_create_from_cstr("${bar}");
     token_add_part(word, p);
 
-    string_list_t *res = exec_expand_word(exp, word);
-    CTEST_ASSERT_EQ(ctest, string_list_size(res), 1, "one field produced");
-    const string_t *out = string_list_at(res, 0);
+    strlist_t *res = exec_expand_word(exp, word);
+    CTEST_ASSERT_EQ(ctest, strlist_size(res), 1, "one field produced");
+    const string_t *out = strlist_at(res, 0);
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(out), "Z", "use alternate expands ${bar}");
 
-    string_list_destroy(&res);
+    strlist_destroy(&res);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -202,13 +202,13 @@ CTEST(test_expander_ifs)
     // Mark as needing field splitting (assume token_needs_expansion sets it)
     word->needs_field_splitting = true;
 
-    string_list_t *res = exec_expand_word(exp, word);
-    CTEST_ASSERT_EQ(ctest, string_list_size(res), 3, "IFS splits on :");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(res, 0)), "a", "first field");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(res, 1)), "b", "second field");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(res, 2)), "c", "third field");
+    strlist_t *res = exec_expand_word(exp, word);
+    CTEST_ASSERT_EQ(ctest, strlist_size(res), 3, "IFS splits on :");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(res, 0)), "a", "first field");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(res, 1)), "b", "second field");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(res, 2)), "c", "third field");
 
-    string_list_destroy(&res);
+    strlist_destroy(&res);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -235,16 +235,16 @@ CTEST(test_expander_expand_simple_word)
     string_destroy(&text);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back a list with one string "hello"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "hello", "expanded string is 'hello'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -275,16 +275,16 @@ CTEST(test_expander_expand_concatenated_word)
     string_destroy(&text2);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back a list with one string "helloworld"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "helloworld", "expanded string is 'helloworld'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -311,16 +311,16 @@ CTEST(test_expander_arithmetic_simple)
     string_destroy(&expr);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Stub returns "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "arithmetic stub returns '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -350,16 +350,16 @@ CTEST(test_expander_arithmetic_with_variable)
     string_destroy(&expr);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Stub returns "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "arithmetic stub returns '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -390,16 +390,16 @@ CTEST(test_expander_arithmetic_complex)
     string_destroy(&expr);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Stub returns "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "arithmetic stub returns '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -426,16 +426,16 @@ CTEST(test_expander_arithmetic_empty)
     string_destroy(&expr);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Stub returns "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "arithmetic stub returns '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -462,16 +462,16 @@ CTEST(test_expander_arithmetic_nested)
     string_destroy(&expr);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Stub returns "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "arithmetic stub returns '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -499,16 +499,16 @@ CTEST(test_expander_special_param_exit_status)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "42"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "42", "expanded $? is '42'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -536,16 +536,16 @@ CTEST(test_expander_special_param_exit_zero)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back empty string
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "", "expanded $? is empty when not set");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -573,16 +573,16 @@ CTEST(test_expander_special_param_braced)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "127"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "127", "expanded $? is '127'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -610,16 +610,16 @@ CTEST(test_expander_special_param_pid)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "12345"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "12345", "expanded $$ is '12345'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -647,16 +647,16 @@ CTEST(test_expander_special_param_pid_braced)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "99999"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "99999", "expanded ${$} is '99999'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -683,16 +683,16 @@ CTEST(test_expander_special_param_pid_default)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back empty string
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "", "expanded $$ is empty when not set");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -720,16 +720,16 @@ CTEST(test_expander_special_param_background_pid)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "54321"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "54321", "expanded $! is '54321'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -757,16 +757,16 @@ CTEST(test_expander_special_param_background_pid_braced)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back "11111"
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "11111", "expanded ${!} is '11111'");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -793,16 +793,16 @@ CTEST(test_expander_special_param_background_pid_default)
     string_destroy(&param);
 
     // Expand the word
-    string_list_t *result = exec_expand_word(exp, word);
+    strlist_t *result = exec_expand_word(exp, word);
     CTEST_ASSERT_NOT_NULL(ctest, result, "expansion result not NULL");
 
     // Should get back empty string
-    CTEST_ASSERT_EQ(ctest, string_list_size(result), 1, "result has one string");
-    const string_t *expanded = string_list_at(result, 0);
+    CTEST_ASSERT_EQ(ctest, strlist_size(result), 1, "result has one string");
+    const string_t *expanded = strlist_at(result, 0);
     CTEST_ASSERT_NOT_NULL(ctest, expanded, "expanded string not NULL");
     CTEST_ASSERT_STR_EQ(ctest, string_cstr(expanded), "", "expanded $! is empty when not set");
 
-    string_list_destroy(&result);
+    strlist_destroy(&result);
     token_destroy(&word);
     expander_destroy(&exp);
     positional_params_destroy(&params);
@@ -818,7 +818,7 @@ CTEST(test_expander_positionals_basic)
     variable_store_t *vars = variable_store_create();
 
     // Set positional params
-    string_t *parg0 = string_create_from_cstr("mgsh");
+    string_t *parg0 = string_create_from_cstr("miga");
     string_t *p1 = string_create_from_cstr("one");
     string_t *p2 = string_create_from_cstr("two");
     const string_t *pargs[] = { p1, p2 };
@@ -835,10 +835,10 @@ CTEST(test_expander_positionals_basic)
     string_t *ph = string_create_from_cstr("#");
     token_append_parameter(w_hash, ph);
     string_destroy(&ph);
-    string_list_t *r_hash = exec_expand_word(exp, w_hash);
-    CTEST_ASSERT_EQ(ctest, string_list_size(r_hash), 1, "one field for $#");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(r_hash,0)), "2", "$# == 2");
-    string_list_destroy(&r_hash);
+    strlist_t *r_hash = exec_expand_word(exp, w_hash);
+    CTEST_ASSERT_EQ(ctest, strlist_size(r_hash), 1, "one field for $#");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(r_hash,0)), "2", "$# == 2");
+    strlist_destroy(&r_hash);
     token_destroy(&w_hash);
 
     // $0
@@ -846,9 +846,9 @@ CTEST(test_expander_positionals_basic)
     string_t *p0 = string_create_from_cstr("0");
     token_append_parameter(w0, p0);
     string_destroy(&p0);
-    string_list_t *r0 = exec_expand_word(exp, w0);
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(r0,0)), "mgsh", "$0 == mgsh");
-    string_list_destroy(&r0);
+    strlist_t *r0 = exec_expand_word(exp, w0);
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(r0,0)), "miga", "$0 == miga");
+    strlist_destroy(&r0);
     token_destroy(&w0);
 
     // $1
@@ -856,9 +856,9 @@ CTEST(test_expander_positionals_basic)
     string_t *p1_str = string_create_from_cstr("1");
     token_append_parameter(w1, p1_str);
     string_destroy(&p1_str);
-    string_list_t *r1 = exec_expand_word(exp, w1);
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(r1,0)), "one", "$1 == one");
-    string_list_destroy(&r1);
+    strlist_t *r1 = exec_expand_word(exp, w1);
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(r1,0)), "one", "$1 == one");
+    strlist_destroy(&r1);
     token_destroy(&w1);
 
     // $2
@@ -866,9 +866,9 @@ CTEST(test_expander_positionals_basic)
     string_t *p2_str = string_create_from_cstr("2");
     token_append_parameter(w2, p2_str);
     string_destroy(&p2_str);
-    string_list_t *r2 = exec_expand_word(exp, w2);
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(r2,0)), "two", "$2 == two");
-    string_list_destroy(&r2);
+    strlist_t *r2 = exec_expand_word(exp, w2);
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(r2,0)), "two", "$2 == two");
+    strlist_destroy(&r2);
     token_destroy(&w2);
 
     expander_destroy(&exp);
@@ -903,12 +903,12 @@ CTEST(test_expander_positionals_at_star)
     string_t *pat = string_create_from_cstr("@");
     token_append_parameter(wat, pat);
     string_destroy(&pat);
-    string_list_t *rat = exec_expand_word(exp, wat);
-    CTEST_ASSERT_EQ(ctest, string_list_size(rat), 3, "$@ expands to 3 fields");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(rat,0)), "a", "first field");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(rat,1)), "b", "second field");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(rat,2)), "c", "third field");
-    string_list_destroy(&rat);
+    strlist_t *rat = exec_expand_word(exp, wat);
+    CTEST_ASSERT_EQ(ctest, strlist_size(rat), 3, "$@ expands to 3 fields");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(rat,0)), "a", "first field");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(rat,1)), "b", "second field");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(rat,2)), "c", "third field");
+    strlist_destroy(&rat);
     token_destroy(&wat);
 
     // $* unquoted -> single word joined by first IFS (space by default)
@@ -916,10 +916,10 @@ CTEST(test_expander_positionals_at_star)
     string_t *pst = string_create_from_cstr("*");
     token_append_parameter(wst, pst);
     string_destroy(&pst);
-    string_list_t *rst = exec_expand_word(exp, wst);
-    CTEST_ASSERT_EQ(ctest, string_list_size(rst), 1, "$* expands to single field");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(string_list_at(rst,0)), "a b c", "joined by space");
-    string_list_destroy(&rst);
+    strlist_t *rst = exec_expand_word(exp, wst);
+    CTEST_ASSERT_EQ(ctest, strlist_size(rst), 1, "$* expands to single field");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(strlist_at(rst,0)), "a b c", "joined by space");
+    strlist_destroy(&rst);
     token_destroy(&wst);
 
     expander_destroy(&exp);
@@ -934,7 +934,7 @@ CTEST(test_expander_positionals_at_star)
 
 int main(void)
 {
-    arena_start();
+    miga_setjmp();
     log_init();
 
 
@@ -968,6 +968,6 @@ int main(void)
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
     return result;
 }

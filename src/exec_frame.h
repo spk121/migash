@@ -12,11 +12,11 @@
  * - Convenience wrappers for common frame types
  */
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #define _POSIX_C_SOURCE 202405L
 #endif
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <sys/types.h>
 #endif
 
@@ -24,10 +24,10 @@
 
 #include "ast.h"
 #include "exec_types_internal.h"
-#include "migash/type_pub.h"
+#include "miga/type_pub.h"
 #include "fd_table.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "trap_store.h"
 #include "variable_store.h"
 #include "parse_session.h"

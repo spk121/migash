@@ -8,7 +8,7 @@
 #include "lexer.h"
 #include "token.h"
 #include "tokenizer.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 #include <string.h>

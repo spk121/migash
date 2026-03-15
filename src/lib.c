@@ -5,7 +5,7 @@
 
 #include "lib.h"
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "logging.h"
 
 static inline uint8_t ascii_tolower(uint8_t c)
@@ -284,9 +284,9 @@ string_t *lib_getcwd(void)
     char *result = NULL;
     while (true)
     {
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         result = getcwd(string_data(cwd), string_capacity(cwd));
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         result = _getcwd(string_data(cwd), string_capacity(cwd));
 #else /* ISO C fallback */
         string_set_cstr(cwd, ".");

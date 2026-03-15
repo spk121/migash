@@ -3,7 +3,7 @@
 
 #include "ast.h"
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -482,11 +482,11 @@ char *const *variable_store_get_envp(variable_store_t *vs);
 
 /**
  * Write the environment variables from `vars` to the env file specified by the
- * MGSH_ENV_FILE variable, if set.
+ * MIGA_ENV_FILE variable, if set.
  *
  * @param vars Variable store to export.
  * @return Path to the env file as a newly allocated string (caller must free),
- *         or NULL on failure or if MGSH_ENV_FILE is not set.
+ *         or NULL on failure or if MIGA_ENV_FILE is not set.
  */
 string_t *variable_store_write_env_file(variable_store_t *vars);
 

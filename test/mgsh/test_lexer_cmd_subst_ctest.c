@@ -5,7 +5,7 @@
 #include "lexer_normal.h"
 #include "lexer_cmd_subst.h"
 #include "token.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 /* ============================================================================
@@ -463,7 +463,7 @@ int main(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
-    arena_start();
+    miga_setjmp();
 
     CTestEntry *suite[] = {
         // $(...) tests
@@ -493,7 +493,7 @@ int main(int argc, char *argv[])
 
     int result = ctest_run_suite(suite);
 
-    arena_end();
+    miga_arena_end();
 
     return result;
 }

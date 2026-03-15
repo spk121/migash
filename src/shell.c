@@ -3,15 +3,9 @@
 
 #include "shell.h"
 
-// FIXME: both shell.c and builtins.c should be using the public interface exclusively,
-// which is in frame.h and exec.h.
-#define MGSH_USE_PUBLIC_INTERFACES
-
-#include "migash/exec.h"
-#include "migash/frame.h"
-#include "logging.h"
-// #include "positional_params.h"
-#include "migash/string_t.h"
+#include "miga/exec.h"
+#include "miga/frame.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 

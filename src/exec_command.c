@@ -8,13 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
 #include <limits.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
 
-#ifdef UCRT_API
+#ifdef MIGA_UCRT_API
 #if defined(_WIN64)
 #define _AMD64_
 #elif defined(_WIN32)
@@ -30,7 +30,7 @@
 #include "ast.h"
 // #include "builtins.h"
 #include "builtin_store.h"
-#include "migash/exec.h"
+#include "miga/exec.h"
 #include "exec_frame.h"
 #include "exec_frame_expander.h"
 #include "exec_frame_policy.h"
@@ -39,8 +39,8 @@
 #include "func_store.h"
 #include "job_store.h"
 #include "logging.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include "trap_store.h"
 #include "variable_store.h"
@@ -396,7 +396,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
     {
         const char *cmd_name = string_cstr(strlist_at(expanded_words, 0));
 
-#ifdef POSIX_API
+#ifdef MIGA_POSIX_API
         if (!cmd_name || *cmd_name == '\0')
         {
             exec_set_error_cstr(executor, "empty command name");
@@ -523,7 +523,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t 
         {
             exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
-#elifdef UCRT_API
+#elifdef MIGA_UCRT_API
         int argc = strlist_size(expanded_words);
         char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
         for (int i = 0; i < argc; i++)

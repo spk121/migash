@@ -20,7 +20,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
 /**
  * @brief Flags that can be associated with file descriptors

@@ -52,7 +52,7 @@ typedef enum exec_scope_t
 typedef enum exec_process_group_t
 {
     EXEC_PGROUP_NONE,    // No process group manipulation
-    EXEC_PGROUP_START,   // Create new group: setpgid(0, 0) — background jobs
+    EXEC_PGROUP_START,   // Create new group: setpgid(0, 0) ï¿½ background jobs
     EXEC_PGROUP_PIPELINE // Pipeline semantics: first cmd starts group, others join
 } exec_process_group_t;
 
@@ -235,7 +235,7 @@ typedef struct exec_frame_policy_t
     /* -------------------------------------------------------------------------
      * Functions
      * -------------------------------------------------------------------------
-     * Function definitions are typically shared—defining a function inside
+     * Function definitions are typically sharedï¿½defining a function inside
      * a brace group or loop makes it available to the parent scope.
      * Subshells get a copy.
      */
@@ -293,7 +293,7 @@ typedef struct exec_frame_policy_t
     /* -------------------------------------------------------------------------
      * Classification
      * -------------------------------------------------------------------------
-     * Convenience flags—technically derivable from other fields, but useful
+     * Convenience flagsï¿½technically derivable from other fields, but useful
      * for readability and debugging.
      */
     struct
@@ -302,7 +302,7 @@ typedef struct exec_frame_policy_t
         bool is_background;
     } classification;
 
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
     struct
     {
@@ -403,7 +403,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = true /* top-level builtins see redirections */
@@ -494,7 +494,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = true,
                  .is_background = false,
              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = false /* subshell isolation + no real fork */
@@ -585,7 +585,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = true /* redirs on { ... } affect everything inside */
@@ -676,7 +676,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio =
@@ -767,7 +767,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
 #endif
 
@@ -856,7 +856,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
 #endif
     },
@@ -945,7 +945,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = true,
                 },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio =
                           false} /* system() cannot be redirected in ISO C */
 #endif
@@ -1036,7 +1036,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = false,
                     .is_background = false,
                 },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio = false} /* too complicated */
 #endif
 
@@ -1126,7 +1126,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = false,
                 },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio = false} /* too complicated */
 #endif
 
@@ -1216,7 +1216,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                        .is_subshell = false,
                                        .is_background = false,
                                    },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                                .stdio = {.inherits_redirected_stdio = true}
 #endif
 
@@ -1305,7 +1305,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(POSIX_API) && !defined(UCRT_API)
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
 #endif
 

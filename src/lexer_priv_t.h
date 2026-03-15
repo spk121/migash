@@ -19,7 +19,7 @@
  */
 
 #include "lexer_t.h" /* lex_status_t, forward decl of lexer_t */
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 #include "token.h"
 #include <stdbool.h>
 #include <stddef.h>

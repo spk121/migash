@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "migash/getopt.h"
+#include "miga/getopt.h"
 #include "xalloc.h"
 
 /* ============================================================================
@@ -638,7 +638,7 @@ static int _getopt_internal_r(int argc, char *const argv[], const char *optstrin
 }
 
 /* ============================================================================
- * Non-reentrant APIs (all MGSH_LOCAL)
+ * Non-reentrant APIs (all MIGA_LOCAL)
  * ============================================================================ */
 
 static void sync_globals(const struct getopt_state *st)
@@ -717,7 +717,7 @@ int getopt_long_plus(int argc, char *const argv[], const char *optstring,
     return rc;
 }
 
-MGSH_LOCAL int getopt_long_only_plus(int argc, char *const argv[], const char *optstring,
+MIGA_LOCAL int getopt_long_only_plus(int argc, char *const argv[], const char *optstring,
                                      const struct option_ex *longopts, int *longind)
 {
     static struct getopt_state state = {0};
@@ -736,7 +736,7 @@ MGSH_LOCAL int getopt_long_only_plus(int argc, char *const argv[], const char *o
 }
 
 /* ============================================================================
- * Raw char** reentrant variants (all MGSH_LOCAL)
+ * Raw char** reentrant variants (all MIGA_LOCAL)
  * ============================================================================ */
 
 int getopt_r(int argc, char *const argv[], const char *optstring,
@@ -784,7 +784,7 @@ int getopt_long_only_plus_r(int argc, char *const argv[], const char *optstring,
 }
 
 /* ============================================================================
- * State reset functions (MGSH_LOCAL)
+ * State reset functions (MIGA_LOCAL)
  * ============================================================================ */
 
 void getopt_reset(void)
@@ -796,7 +796,7 @@ void getopt_reset(void)
 }
 
 /* ============================================================================
- * State initialization (MGSH_API)
+ * State initialization (MIGA_API)
  * ============================================================================ */
 
 void getopt_state_init(struct getopt_state *state)
@@ -846,7 +846,7 @@ static char **strlist_to_argv(const strlist_t *list, int *argc)
 }
 
 /* ============================================================================
- * Public API — reentrant, strlist-based wrappers (MGSH_API)
+ * Public API — reentrant, strlist-based wrappers (MIGA_API)
  * ============================================================================ */
 
 int getopt_r_string(const strlist_t *argv, const string_t *optstring,

@@ -1,10 +1,10 @@
 #ifndef BUILTINS_H
 #define BUILTINS_H
 
-#include "migash/type_pub.h"
-#include "migash/frame.h"
-#include "migash/strlist.h"
-#include "migash/string_t.h"
+#include "miga/type_pub.h"
+#include "miga/frame.h"
+#include "miga/strlist.h"
+#include "miga/string_t.h"
 
 /* ============================================================================
  * Builtin Commands
@@ -83,9 +83,9 @@ int builtin_unalias(exec_frame_t *frame, const strlist_t *args);
 
 int builtin_basename(exec_frame_t *frame, const strlist_t *args);
 int builtin_dirname(exec_frame_t *frame, const strlist_t *args);
-int builtin_mgsh_dirnamevar(exec_frame_t *frame, const strlist_t *args);
-int builtin_mgsh_printfvar(exec_frame_t *frame, const strlist_t *args);
-int builtin_mgsh_cat(exec_frame_t *frame, const strlist_t *args);
+int builtin_miga_dirnamevar(exec_frame_t *frame, const strlist_t *args);
+int builtin_miga_printfvar(exec_frame_t *frame, const strlist_t *args);
+int builtin_miga_cat(exec_frame_t *frame, const strlist_t *args);
 
 int builtin_true(exec_frame_t *frame, const strlist_t *args);
 int builtin_false(exec_frame_t *frame, const strlist_t *args);

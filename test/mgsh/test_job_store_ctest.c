@@ -6,7 +6,7 @@
 #include <string.h>
 #include "ctest.h"
 #include "job_store.h"
-#include "string_t.h"
+#include "miga/string_t.h"
 #include "xalloc.h"
 
 // ------------------------------------------------------------

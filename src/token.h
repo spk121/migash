@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include "logging.h"
-#include "migash/string_t.h"
+#include "miga/string_t.h"
 
 /* ============================================================================
  * Token Type Enumeration
