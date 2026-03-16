@@ -25,7 +25,7 @@ typedef struct {
     string_t *input;
     int pos;
     int padding;
-    exec_frame_t *frame;
+    miga_frame_t *frame;
 } math_parser_t;
 
 // Token types for arithmetic lexer
@@ -86,7 +86,7 @@ static bool is_alnum_or_underscore(char c) {
 }
 
 // Initialize parser
-static void parser_init(math_parser_t *parser, exec_frame_t *frame, const string_t *input) {
+static void parser_init(math_parser_t *parser, miga_frame_t *frame, const string_t *input) {
     parser->input = string_create_from(input);
     parser->pos = 0;
     parser->frame = frame;
@@ -727,7 +727,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
  * 4. Expand the AST (parameter expansion, command substitution, quote removal)
  * 5. Return the fully expanded string
  */
-static string_t *arithmetic_expand_expression(exec_frame_t *frame, const string_t *expr_text)
+static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_t *expr_text)
 {
     // Step 1: Re-lex the raw text inside $(())
     lexer_t *lx = lexer_create();
@@ -816,7 +816,7 @@ static string_t *arithmetic_expand_expression(exec_frame_t *frame, const string_
 }
 
 // Evaluate arithmetic expression
-ArithmeticResult arithmetic_evaluate(exec_frame_t *frame, const string_t *expression) {
+ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expression) {
     // Validate inputs
     if (!frame) {
         return make_error("Execution frame is NULL");

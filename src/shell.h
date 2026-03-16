@@ -118,7 +118,7 @@ const char *shell_get_ps1(const shell_t *sh);
 const char *shell_get_ps2(const shell_t *sh);
 
 // Get the current execution environment
-exec_t *shell_get_exec(shell_t *sh);
+miga_exec_t *shell_get_exec(shell_t *sh);
 
 
 #ifdef FUTURE

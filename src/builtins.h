@@ -20,31 +20,31 @@
  *   other - command-specific error codes
  */
 
-int builtin_colon(exec_frame_t *frame, const strlist_t *args);
+int builtin_colon(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_dot(exec_frame_t *frame, const strlist_t *args);
+int builtin_dot(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_eval(exec_frame_t *frame, const strlist_t *args);
+int builtin_eval(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_export(exec_frame_t *frame, const strlist_t *args);
+int builtin_export(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_readonly(exec_frame_t *frame, const strlist_t *args);
+int builtin_readonly(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_times(exec_frame_t *frame, const strlist_t *args);
+int builtin_times(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_trap(exec_frame_t *frame, const strlist_t *args);
+int builtin_trap(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_return(exec_frame_t *frame, const strlist_t *args);
+int builtin_return(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_break(exec_frame_t *frame, const strlist_t *args);
+int builtin_break(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_continue(exec_frame_t *frame, const strlist_t *args);
+int builtin_continue(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_exec(exec_frame_t *frame, const strlist_t *args);
+int builtin_exec(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_exit(exec_frame_t *frame, const strlist_t *args);
+int builtin_exit(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_shift(exec_frame_t *frame, const strlist_t *args);
+int builtin_shift(miga_frame_t *frame, const strlist_t *args);
 
 /**
  * set - Set or unset shell options and positional parameters
@@ -53,41 +53,41 @@ int builtin_shift(exec_frame_t *frame, const strlist_t *args);
  * @param args The argument list (including "set" as args[0])
  * @return Exit status code
  */
-int builtin_set(exec_frame_t *frame, const strlist_t *args);
+int builtin_set(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_unset(exec_frame_t *frame, const strlist_t *args);
+int builtin_unset(miga_frame_t *frame, const strlist_t *args);
 
 /* ============================================================================
  * Regular (non-special) built-ins
  * ============================================================================
  */
-int builtin_cd(exec_frame_t *frame, const strlist_t *args);
-int builtin_pwd(exec_frame_t *frame, const strlist_t *args);
+int builtin_cd(miga_frame_t *frame, const strlist_t *args);
+int builtin_pwd(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_echo(exec_frame_t *frame, const strlist_t *args);
-int builtin_printf(exec_frame_t *frame, const strlist_t *args);
+int builtin_echo(miga_frame_t *frame, const strlist_t *args);
+int builtin_printf(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_bracket(exec_frame_t *frame, const strlist_t *args);
+int builtin_bracket(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_jobs(exec_frame_t *frame, const strlist_t *args);
-int builtin_kill(exec_frame_t *frame, const strlist_t *args);
-int builtin_wait(exec_frame_t *frame, const strlist_t *args);
-int builtin_fg(exec_frame_t *frame, const strlist_t *args);
-int builtin_bg(exec_frame_t *frame, const strlist_t *args);
+int builtin_jobs(miga_frame_t *frame, const strlist_t *args);
+int builtin_kill(miga_frame_t *frame, const strlist_t *args);
+int builtin_wait(miga_frame_t *frame, const strlist_t *args);
+int builtin_fg(miga_frame_t *frame, const strlist_t *args);
+int builtin_bg(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_getopts(exec_frame_t *frame, const strlist_t *args);
-int builtin_ls(exec_frame_t *frame, const strlist_t *args);
+int builtin_getopts(miga_frame_t *frame, const strlist_t *args);
+int builtin_ls(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_alias(exec_frame_t *frame, const strlist_t *args);
-int builtin_unalias(exec_frame_t *frame, const strlist_t *args);
+int builtin_alias(miga_frame_t *frame, const strlist_t *args);
+int builtin_unalias(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_basename(exec_frame_t *frame, const strlist_t *args);
-int builtin_dirname(exec_frame_t *frame, const strlist_t *args);
-int builtin_miga_dirnamevar(exec_frame_t *frame, const strlist_t *args);
-int builtin_miga_printfvar(exec_frame_t *frame, const strlist_t *args);
-int builtin_miga_cat(exec_frame_t *frame, const strlist_t *args);
+int builtin_basename(miga_frame_t *frame, const strlist_t *args);
+int builtin_dirname(miga_frame_t *frame, const strlist_t *args);
+int builtin_miga_dirnamevar(miga_frame_t *frame, const strlist_t *args);
+int builtin_miga_printfvar(miga_frame_t *frame, const strlist_t *args);
+int builtin_miga_cat(miga_frame_t *frame, const strlist_t *args);
 
-int builtin_true(exec_frame_t *frame, const strlist_t *args);
-int builtin_false(exec_frame_t *frame, const strlist_t *args);
+int builtin_true(miga_frame_t *frame, const strlist_t *args);
+int builtin_false(miga_frame_t *frame, const strlist_t *args);
 
 #endif /* BUILTINS_H */

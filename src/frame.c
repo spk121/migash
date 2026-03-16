@@ -1,5 +1,5 @@
-/**
- * frame.c - Public API implementation for exec_frame_t
+﻿/**
+ * frame.c - Public API implementation for miga_frame_t
  *
  * This file implements the public API defined in frame.h, providing a clean
  * interface to execution frames without exposing internal implementation details.
@@ -82,7 +82,7 @@
  * Error Handling
  * ============================================================================ */
 
-bool frame_has_error(const exec_frame_t *frame)
+bool frame_has_error(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
@@ -91,7 +91,7 @@ bool frame_has_error(const exec_frame_t *frame)
     return (err != NULL && err[0] != '\0');
 }
 
-const string_t *frame_get_error_message(const exec_frame_t *frame)
+const string_t *frame_get_error_message(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
@@ -99,7 +99,7 @@ const string_t *frame_get_error_message(const exec_frame_t *frame)
     return exec_get_error(frame->executor);
 }
 
-void frame_clear_error(exec_frame_t *frame)
+void frame_clear_error(miga_frame_t *frame)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
@@ -107,7 +107,7 @@ void frame_clear_error(exec_frame_t *frame)
     exec_clear_error(frame->executor);
 }
 
-void frame_set_error(exec_frame_t *frame, const string_t *error)
+void frame_set_error(miga_frame_t *frame, const string_t *error)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
@@ -116,7 +116,7 @@ void frame_set_error(exec_frame_t *frame, const string_t *error)
     exec_set_error_printf(frame->executor, "%s", string_cstr(error));
 }
 
-void frame_set_error_printf(exec_frame_t *frame, const char *format, ...)
+void frame_set_error_printf(miga_frame_t *frame, const char *format, ...)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
@@ -137,7 +137,7 @@ void frame_set_error_printf(exec_frame_t *frame, const char *format, ...)
  * Variable Access
  * ============================================================================ */
 
-bool frame_has_variable(const exec_frame_t *frame, const string_t *name)
+bool frame_has_variable(const miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -146,7 +146,7 @@ bool frame_has_variable(const exec_frame_t *frame, const string_t *name)
     return (value != NULL);
 }
 
-bool frame_has_variable_cstr(const exec_frame_t *frame, const char *name)
+bool frame_has_variable_cstr(const miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -157,7 +157,7 @@ bool frame_has_variable_cstr(const exec_frame_t *frame, const char *name)
     return result;
 }
 
-string_t *frame_get_variable_value(exec_frame_t *frame, const string_t *name)
+string_t *frame_get_variable_value(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -170,7 +170,7 @@ string_t *frame_get_variable_value(exec_frame_t *frame, const string_t *name)
     return string_create();
 }
 
-string_t *frame_get_variable_cstr(exec_frame_t *frame, const char *name)
+string_t *frame_get_variable_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -181,7 +181,7 @@ string_t *frame_get_variable_cstr(exec_frame_t *frame, const char *name)
     return result;
 }
 
-bool frame_variable_is_exported(exec_frame_t *frame, const string_t *name)
+bool frame_variable_is_exported(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -195,7 +195,7 @@ bool frame_variable_is_exported(exec_frame_t *frame, const string_t *name)
     return false;
 }
 
-bool frame_variable_is_exported_cstr(exec_frame_t *frame, const char *name)
+bool frame_variable_is_exported_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -206,7 +206,7 @@ bool frame_variable_is_exported_cstr(exec_frame_t *frame, const char *name)
     return result;
 }
 
-bool frame_variable_is_readonly(exec_frame_t *frame, const string_t *name)
+bool frame_variable_is_readonly(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -220,7 +220,7 @@ bool frame_variable_is_readonly(exec_frame_t *frame, const string_t *name)
     return false;
 }
 
-bool frame_variable_is_readonly_cstr(exec_frame_t *frame, const char *name)
+bool frame_variable_is_readonly_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -231,7 +231,7 @@ bool frame_variable_is_readonly_cstr(exec_frame_t *frame, const char *name)
     return result;
 }
 
-string_t *frame_get_ps1(exec_frame_t *frame)
+string_t *frame_get_ps1(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -251,7 +251,7 @@ string_t *frame_get_ps1(exec_frame_t *frame)
     return string_create_from_cstr("$ ");
 }
 
-string_t *frame_get_ps2(exec_frame_t *frame)
+string_t *frame_get_ps2(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -271,7 +271,7 @@ string_t *frame_get_ps2(exec_frame_t *frame)
     return string_create_from_cstr("> ");
 }
 
-frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
+miga_var_status_t frame_set_variable(miga_frame_t *frame, const string_t *name,
                                      const string_t *value)
 {
     Expects_not_null(frame);
@@ -281,7 +281,7 @@ frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     variable_store_t *vars = frame->local_variables ? frame->local_variables : frame->variables;
     if (!vars)
     {
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     }
 
     variable_view_t view;
@@ -291,9 +291,9 @@ frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     {
         if (string_compare(view.value, value) != 0)
         {
-            return FRAME_VAR_ERROR_READ_ONLY;
+            return MIGA_VAR_STATUS_READ_ONLY;
         }
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 
     bool exported = exists ? view.exported : false;
@@ -305,17 +305,17 @@ frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     case VAR_STORE_ERROR_READ_ONLY:
-        return FRAME_VAR_ERROR_READ_ONLY;
+        return MIGA_VAR_STATUS_READ_ONLY;
     case VAR_STORE_ERROR_NOT_FOUND:
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     default:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 }
 
-frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name, const char *value)
+miga_var_status_t frame_set_variable_cstr(miga_frame_t *frame, const char *name, const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -323,13 +323,13 @@ frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame, const char *name,
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *value_str = string_create_from_cstr(value);
-    frame_var_error_t result = frame_set_variable(frame, name_str, value_str);
+    miga_var_status_t result = frame_set_variable(frame, name_str, value_str);
     string_destroy(&name_str);
     string_destroy(&value_str);
     return result;
 }
 
-frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
+miga_var_status_t frame_set_persistent_variable(miga_frame_t *frame, const string_t *name,
                                                 const string_t *value)
 {
     Expects_not_null(frame);
@@ -339,7 +339,7 @@ frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const strin
     variable_store_t *vars = frame->saved_variables ? frame->saved_variables : frame->variables;
     if (!vars)
     {
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     }
 
     variable_view_t view;
@@ -349,9 +349,9 @@ frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const strin
     {
         if (string_compare(view.value, value) != 0)
         {
-            return FRAME_VAR_ERROR_READ_ONLY;
+            return MIGA_VAR_STATUS_READ_ONLY;
         }
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 
     bool exported = exists ? view.exported : false;
@@ -362,17 +362,17 @@ frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const strin
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     case VAR_STORE_ERROR_READ_ONLY:
-        return FRAME_VAR_ERROR_READ_ONLY;
+        return MIGA_VAR_STATUS_READ_ONLY;
     case VAR_STORE_ERROR_NOT_FOUND:
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     default:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 }
 
-frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
+miga_var_status_t frame_set_persistent_variable_cstr(miga_frame_t *frame, const char *name,
                                                      const char *value)
 {
     Expects_not_null(frame);
@@ -381,13 +381,13 @@ frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const 
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *value_str = string_create_from_cstr(value);
-    frame_var_error_t result = frame_set_persistent_variable(frame, name_str, value_str);
+    miga_var_status_t result = frame_set_persistent_variable(frame, name_str, value_str);
     string_destroy(&name_str);
     string_destroy(&value_str);
     return result;
 }
 
-frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
+miga_var_status_t frame_set_variable_exported(miga_frame_t *frame, const string_t *name,
                                               bool exported)
 {
     Expects_not_null(frame);
@@ -399,15 +399,15 @@ frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     case VAR_STORE_ERROR_NOT_FOUND:
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     default:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 }
 
-frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t *name,
+miga_export_status_t frame_export_variable(miga_frame_t *frame, const string_t *name,
                                             const string_t *value)
 {
     Expects_not_null(frame);
@@ -419,7 +419,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     /* Validate variable name */
     if (string_empty(name))
     {
-        return FRAME_EXPORT_INVALID_NAME;
+        return MIGA_EXPORT_STATUS_INVALID_NAME;
     }
 
     /* Check for invalid characters in variable name */
@@ -432,7 +432,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
         {
             if (!(*p == '_' || (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')))
             {
-                return FRAME_EXPORT_INVALID_NAME;
+                return MIGA_EXPORT_STATUS_INVALID_NAME;
             }
         }
         else
@@ -440,7 +440,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
             if (!(*p == '_' || (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
                   (*p >= '0' && *p <= '9')))
             {
-                return FRAME_EXPORT_INVALID_NAME;
+                return MIGA_EXPORT_STATUS_INVALID_NAME;
             }
         }
     }
@@ -454,32 +454,32 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
         /* Check if we're trying to change the value */
         if (value && !string_eq(view.value, value))
         {
-            return FRAME_EXPORT_READONLY;
+            return MIGA_EXPORT_STATUS_READONLY;
         }
     }
 
     /* Set or update the variable value if provided */
     if (value)
     {
-        frame_var_error_t set_result = frame_set_variable(frame, name, value);
-        if (set_result != FRAME_VAR_ERROR_NONE)
+        miga_var_status_t set_result = frame_set_variable(frame, name, value);
+        if (set_result != MIGA_VAR_STATUS_OK)
         {
-            if (set_result == FRAME_VAR_ERROR_READ_ONLY)
+            if (set_result == MIGA_VAR_STATUS_READ_ONLY)
             {
-                return FRAME_EXPORT_READONLY;
+                return MIGA_EXPORT_STATUS_READONLY;
             }
-            return FRAME_EXPORT_SYSTEM_ERROR;
+            return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
         }
     }
     else if (!exists)
     {
         /* If value is NULL and variable doesn't exist, create with empty value */
         string_t *empty = string_create();
-        frame_var_error_t set_result = frame_set_variable(frame, name, empty);
+        miga_var_status_t set_result = frame_set_variable(frame, name, empty);
         string_destroy(&empty);
-        if (set_result != FRAME_VAR_ERROR_NONE)
+        if (set_result != MIGA_VAR_STATUS_OK)
         {
-            return FRAME_EXPORT_SYSTEM_ERROR;
+            return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
         }
     }
 
@@ -487,7 +487,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     var_store_error_t export_result = variable_store_set_exported(vars, name, true);
     if (export_result != VAR_STORE_ERROR_NONE)
     {
-        return FRAME_EXPORT_SYSTEM_ERROR;
+        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
     }
 
     /* Export to system environment if supported */
@@ -497,7 +497,7 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
     variable_view_t current_view;
     if (!variable_store_get_variable(vars, name, &current_view))
     {
-        return FRAME_EXPORT_SYSTEM_ERROR;
+        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
     }
 
     const char *name_str = string_cstr(name);
@@ -506,24 +506,24 @@ frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t 
 #ifdef MIGA_POSIX_API
     if (setenv(name_str, value_str, 1) != 0)
     {
-        return FRAME_EXPORT_SYSTEM_ERROR;
+        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
     }
 #elifdef MIGA_UCRT_API
     if (_putenv_s(name_str, value_str) != 0)
     {
-        return FRAME_EXPORT_SYSTEM_ERROR;
+        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
     }
 #endif
 
 #else
     /* Platform doesn't support environment export */
-    return FRAME_EXPORT_NOT_SUPPORTED;
+    return MIGA_EXPORT_STATUS_NOT_SUPPORTED;
 #endif
 
-    return FRAME_EXPORT_SUCCESS;
+    return MIGA_EXPORT_STATUS_SUCCESS;
 }
 
-frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
+miga_var_status_t frame_set_variable_readonly(miga_frame_t *frame, const string_t *name,
                                               bool readonly)
 {
     Expects_not_null(frame);
@@ -535,15 +535,15 @@ frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_
     switch (internal_result)
     {
     case VAR_STORE_ERROR_NONE:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     case VAR_STORE_ERROR_NOT_FOUND:
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     default:
-        return FRAME_VAR_ERROR_NONE;
+        return MIGA_VAR_STATUS_OK;
     }
 }
 
-frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name)
+miga_var_status_t frame_unset_variable(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -551,18 +551,18 @@ frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name
     variable_store_t *vars = frame->local_variables ? frame->local_variables : frame->variables;
     if (!vars)
     {
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     }
 
     variable_view_t view;
     if (!variable_store_get_variable(vars, name, &view))
     {
-        return FRAME_VAR_ERROR_NOT_FOUND;
+        return MIGA_VAR_STATUS_NOT_FOUND;
     }
 
     if (view.read_only)
     {
-        return FRAME_VAR_ERROR_READ_ONLY;
+        return MIGA_VAR_STATUS_READ_ONLY;
     }
 
     variable_store_remove(vars, name);
@@ -578,16 +578,16 @@ frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name
     }
 #endif
 
-    return FRAME_VAR_ERROR_NONE;
+    return MIGA_VAR_STATUS_OK;
 }
 
-frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name)
+miga_var_status_t frame_unset_variable_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     string_t *name_str = string_create_from_cstr(name);
-    frame_var_error_t result = frame_unset_variable(frame, name_str);
+    miga_var_status_t result = frame_unset_variable(frame, name_str);
     string_destroy(&name_str);
     return result;
 }
@@ -611,7 +611,7 @@ static void print_exported_var_callback(const string_t *name, const string_t *va
     }
 }
 
-void frame_print_exported_variables_in_export_format(exec_frame_t *frame, FILE *output)
+void frame_print_exported_variables_in_export_format(miga_frame_t *frame, FILE *output)
 {
     Expects_not_null(frame);
     Expects_not_null(output);
@@ -635,7 +635,7 @@ static void print_readonly_var_callback(const string_t *name, const string_t *va
     }
 }
 
-void frame_print_readonly_variables(exec_frame_t *frame, FILE *output)
+void frame_print_readonly_variables(miga_frame_t *frame, FILE *output)
 {
     Expects_not_null(frame);
     Expects_not_null(output);
@@ -738,7 +738,7 @@ static void print_var_callback(const string_t *name, const string_t *value, bool
     }
 }
 
-void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *output)
+void frame_print_variables(miga_frame_t *frame, bool reusable_format, FILE *output)
 {
     Expects_not_null(frame);
     Expects_not_null(output);
@@ -780,7 +780,7 @@ void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *outp
 
 /* -- IFS convenience ------------------------------------------------------- */
 
-string_t *frame_get_ifs(exec_frame_t *frame)
+string_t *frame_get_ifs(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -799,7 +799,7 @@ string_t *frame_get_ifs(exec_frame_t *frame)
     return string_create_from_cstr(" \t\n");
 }
 
-char *frame_get_ifs_cstr(exec_frame_t *frame)
+char *frame_get_ifs_cstr(miga_frame_t *frame)
 {
     string_t *ifs = frame_get_ifs(frame);
     char *result = string_release(&ifs);
@@ -808,7 +808,7 @@ char *frame_get_ifs_cstr(exec_frame_t *frame)
 
 /* -- Working directory ----------------------------------------------------- */
 
-bool frame_change_directory(exec_frame_t *frame, const string_t *path)
+bool frame_change_directory(miga_frame_t *frame, const string_t *path)
 {
     Expects_not_null(frame);
     Expects_not_null(path);
@@ -823,7 +823,7 @@ static int chdir_stub(const char *path)
     return -1;
 }
 
-bool frame_change_directory_cstr(exec_frame_t *frame, const char *path)
+bool frame_change_directory_cstr(miga_frame_t *frame, const char *path)
 {
     Expects_not_null(frame);
     Expects_not_null(path);
@@ -867,25 +867,25 @@ bool frame_change_directory_cstr(exec_frame_t *frame, const char *path)
  * Word and String Expansion
  * ============================================================================ */
 
-static expand_flags_t convert_frame_expand_flags(frame_expand_flags_t frame_flags)
+static expand_flags_t convert_frame_expand_flags(miga_expand_flags_t frame_flags)
 {
     expand_flags_t flags = EXPAND_NONE;
-    if (frame_flags & FRAME_EXPAND_TILDE)
+    if (frame_flags & MIGA_EXPAND_TILDE)
         flags |= EXPAND_TILDE;
-    if (frame_flags & FRAME_EXPAND_PARAMETER)
+    if (frame_flags & MIGA_EXPAND_PARAMETER)
         flags |= EXPAND_PARAMETER;
-    if (frame_flags & FRAME_EXPAND_COMMAND_SUBST)
+    if (frame_flags & MIGA_EXPAND_COMMAND_SUBST)
         flags |= EXPAND_COMMAND_SUBST;
-    if (frame_flags & FRAME_EXPAND_ARITHMETIC)
+    if (frame_flags & MIGA_EXPAND_ARITHMETIC)
         flags |= EXPAND_ARITHMETIC;
-    if (frame_flags & FRAME_EXPAND_FIELD_SPLIT)
+    if (frame_flags & MIGA_EXPAND_FIELD_SPLIT)
         flags |= EXPAND_FIELD_SPLIT;
-    if (frame_flags & FRAME_EXPAND_PATHNAME)
+    if (frame_flags & MIGA_EXPAND_PATHNAME)
         flags |= EXPAND_PATHNAME;
     return flags;
 }
 
-string_t *frame_expand_string(exec_frame_t *frame, const string_t *text, frame_expand_flags_t flags)
+string_t *frame_expand_string(miga_frame_t *frame, const string_t *text, miga_expand_flags_t flags)
 {
     Expects_not_null(frame);
     Expects_not_null(text);
@@ -897,14 +897,14 @@ string_t *frame_expand_string(exec_frame_t *frame, const string_t *text, frame_e
  * Positional Parameters
  * ============================================================================ */
 
-bool frame_has_positional_params(const exec_frame_t *frame)
+bool frame_has_positional_params(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
     return (frame->positional_params != NULL);
 }
 
-int frame_count_positional_params(const exec_frame_t *frame)
+int frame_count_positional_params(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -916,7 +916,7 @@ int frame_count_positional_params(const exec_frame_t *frame)
     return positional_params_count(frame->positional_params);
 }
 
-void frame_shift_positional_params(exec_frame_t *frame, int shift_count)
+void frame_shift_positional_params(miga_frame_t *frame, int shift_count)
 {
     Expects_not_null(frame);
 
@@ -928,7 +928,7 @@ void frame_shift_positional_params(exec_frame_t *frame, int shift_count)
     positional_params_shift(frame->positional_params, shift_count);
 }
 
-void frame_replace_positional_params(exec_frame_t *frame, const strlist_t *new_params)
+void frame_replace_positional_params(miga_frame_t *frame, const strlist_t *new_params)
 {
     Expects_not_null(frame);
 
@@ -952,7 +952,7 @@ void frame_replace_positional_params(exec_frame_t *frame, const strlist_t *new_p
     positional_params_replace(frame->positional_params, params, count);
 }
 
-void frame_set_arg0(exec_frame_t *frame, const string_t *new_arg0)
+void frame_set_arg0(miga_frame_t *frame, const string_t *new_arg0)
 {
     Expects_not_null(frame);
 
@@ -964,7 +964,7 @@ void frame_set_arg0(exec_frame_t *frame, const string_t *new_arg0)
     positional_params_set_arg0(frame->positional_params, new_arg0);
 }
 
-void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0)
+void frame_set_arg0_cstr(miga_frame_t *frame, const char *new_arg0)
 {
     Expects_not_null(frame);
     if (!frame->positional_params)
@@ -976,7 +976,7 @@ void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0)
     string_destroy(&new_arg0_str);
 }
 
-string_t *frame_get_positional_param(const exec_frame_t *frame, int index)
+string_t *frame_get_positional_param(const miga_frame_t *frame, int index)
 {
     Expects_not_null(frame);
 
@@ -1004,7 +1004,7 @@ string_t *frame_get_positional_param(const exec_frame_t *frame, int index)
     return string_create();
 }
 
-strlist_t *frame_get_all_positional_params(const exec_frame_t *frame)
+strlist_t *frame_get_all_positional_params(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -1032,7 +1032,7 @@ strlist_t *frame_get_all_positional_params(const exec_frame_t *frame)
  * Named Options
  * ============================================================================ */
 
-bool frame_has_named_option(const exec_frame_t *frame, const string_t *option_name)
+bool frame_has_named_option(const miga_frame_t *frame, const string_t *option_name)
 {
     Expects_not_null(frame);
     Expects_not_null(option_name);
@@ -1070,7 +1070,7 @@ bool frame_has_named_option(const exec_frame_t *frame, const string_t *option_na
     return false;
 }
 
-bool frame_has_named_option_cstr(const exec_frame_t *frame, const char *option_name)
+bool frame_has_named_option_cstr(const miga_frame_t *frame, const char *option_name)
 {
     Expects_not_null(frame);
     Expects_not_null(option_name);
@@ -1081,7 +1081,7 @@ bool frame_has_named_option_cstr(const exec_frame_t *frame, const char *option_n
     return result;
 }
 
-bool frame_get_named_option(const exec_frame_t *frame, const string_t *option_name)
+bool frame_get_named_option(const miga_frame_t *frame, const string_t *option_name)
 {
     Expects_not_null(frame);
     Expects_not_null(option_name);
@@ -1120,7 +1120,7 @@ bool frame_get_named_option(const exec_frame_t *frame, const string_t *option_na
     return false;
 }
 
-bool frame_get_named_option_cstr(const exec_frame_t *frame, const char *option_name)
+bool frame_get_named_option_cstr(const miga_frame_t *frame, const char *option_name)
 {
     Expects_not_null(frame);
     Expects_not_null(option_name);
@@ -1131,7 +1131,7 @@ bool frame_get_named_option_cstr(const exec_frame_t *frame, const char *option_n
     return result;
 }
 
-bool frame_set_named_option(exec_frame_t *frame, const string_t *option_name, bool value,
+bool frame_set_named_option(miga_frame_t *frame, const string_t *option_name, bool value,
                             bool plus_prefix)
 {
     Expects_not_null(frame);
@@ -1206,7 +1206,7 @@ bool frame_set_named_option(exec_frame_t *frame, const string_t *option_name, bo
     return false;
 }
 
-bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, bool value,
+bool frame_set_named_option_cstr(miga_frame_t *frame, const char *option_name, bool value,
                                  bool plus_prefix)
 {
     Expects_not_null(frame);
@@ -1222,7 +1222,7 @@ bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, b
  * Shell Functions
  * ============================================================================ */
 
-bool frame_has_function(const exec_frame_t *frame, const string_t *name)
+bool frame_has_function(const miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1235,7 +1235,7 @@ bool frame_has_function(const exec_frame_t *frame, const string_t *name)
     return func_store_has_name(frame->functions, name);
 }
 
-frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
+miga_func_status_t frame_get_function(miga_frame_t *frame, const string_t *name,
                                       string_t **out_body)
 {
     Expects_not_null(frame);
@@ -1245,21 +1245,21 @@ frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
     if (!frame->functions)
     {
         *out_body = NULL;
-        return FRAME_FUNC_ERROR_NOT_FOUND;
+        return MIGA_FUNC_STATUS_NOT_FOUND;
     }
 
     const ast_node_t *func_def = func_store_get_def(frame->functions, name);
     if (!func_def)
     {
         *out_body = NULL;
-        return FRAME_FUNC_ERROR_NOT_FOUND;
+        return MIGA_FUNC_STATUS_NOT_FOUND;
     }
 
     *out_body = ast_node_to_string(func_def);
-    return FRAME_FUNC_ERROR_NONE;
+    return MIGA_FUNC_STATUS_OK;
 }
 
-frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body)
+miga_func_status_t frame_get_function_cstr(miga_frame_t *frame, const char *name, char **out_body)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1267,10 +1267,10 @@ frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *body = NULL;
-    frame_func_error_t result = frame_get_function(frame, name_str, &body);
+    miga_func_status_t result = frame_get_function(frame, name_str, &body);
     string_destroy(&name_str);
 
-    if (result == FRAME_FUNC_ERROR_NONE && body)
+    if (result == MIGA_FUNC_STATUS_OK && body)
     {
         *out_body = string_release(&body);
     }
@@ -1284,7 +1284,7 @@ frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name
     return result;
 }
 
-frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
+miga_func_status_t frame_set_function(miga_frame_t *frame, const string_t *name,
                                       const string_t *value)
 {
     Expects_not_null(frame);
@@ -1298,7 +1298,7 @@ frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
     if (status != PARSE_OK)
     {
         g_node_destroy(&root);
-        return FRAME_FUNC_ERROR_PARSE_FAILURE;
+        return MIGA_FUNC_STATUS_PARSE_FAILURE;
     }
     ast_t *node = ast_lower(root);
 
@@ -1307,17 +1307,17 @@ frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
     switch (internal_result)
     {
     case FUNC_STORE_ERROR_NONE:
-        return FRAME_FUNC_ERROR_NONE;
+        return MIGA_FUNC_STATUS_OK;
     case FUNC_STORE_ERROR_NOT_FOUND:
-        return FRAME_FUNC_ERROR_NOT_FOUND;
+        return MIGA_FUNC_STATUS_NOT_FOUND;
     case FUNC_STORE_ERROR_READONLY:
-        return FRAME_FUNC_ERROR_READONLY;
+        return MIGA_FUNC_STATUS_READONLY;
     default:
-        return FRAME_FUNC_ERROR_SYSTEM_ERROR;
+        return MIGA_FUNC_STATUS_SYSTEM_ERROR;
     }
 }
 
-frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name, const char *value)
+miga_func_status_t frame_set_function_cstr(miga_frame_t *frame, const char *name, const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1325,20 +1325,20 @@ frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name
 
     string_t *name_str = string_create_from_cstr(name);
     string_t *value_str = string_create_from_cstr(value);
-    frame_func_error_t result = frame_set_function(frame, name_str, value_str);
+    miga_func_status_t result = frame_set_function(frame, name_str, value_str);
     string_destroy(&name_str);
     string_destroy(&value_str);
     return result;
 }
 
-frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *name)
+miga_func_status_t frame_unset_function(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     if (!frame->functions)
     {
-        return FRAME_FUNC_ERROR_NOT_FOUND;
+        return MIGA_FUNC_STATUS_NOT_FOUND;
     }
 
     func_store_error_t internal_result = func_store_remove(frame->functions, name);
@@ -1346,28 +1346,28 @@ frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *nam
     switch (internal_result)
     {
     case FUNC_STORE_ERROR_NONE:
-        return FRAME_FUNC_ERROR_NONE;
+        return MIGA_FUNC_STATUS_OK;
     case FUNC_STORE_ERROR_NOT_FOUND:
-        return FRAME_FUNC_ERROR_NOT_FOUND;
+        return MIGA_FUNC_STATUS_NOT_FOUND;
     case FUNC_STORE_ERROR_READONLY:
-        return FRAME_FUNC_ERROR_READONLY;
+        return MIGA_FUNC_STATUS_READONLY;
     default:
-        return FRAME_FUNC_ERROR_SYSTEM_ERROR;
+        return MIGA_FUNC_STATUS_SYSTEM_ERROR;
     }
 }
 
-frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name)
+miga_func_status_t frame_unset_function_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
 
     string_t *name_str = string_create_from_cstr(name);
-    frame_func_error_t result = frame_unset_function(frame, name_str);
+    miga_func_status_t result = frame_unset_function(frame, name_str);
     string_destroy(&name_str);
     return result;
 }
 
-exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
+miga_exec_status_t frame_call_function(miga_frame_t *frame, const string_t *name,
                                   const strlist_t *args)
 {
     Expects_not_null(frame);
@@ -1375,37 +1375,37 @@ exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
 
     if (!frame->functions)
     {
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     const ast_node_t *func_def = func_store_get_def(frame->functions, name);
     if (!func_def)
     {
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     /* Execute the function body in a new function frame */
     exec_frame_execute_result_t result =
         exec_frame_execute_function_body(frame, func_def, (strlist_t *)args, NULL);
 
-    if (result.status == EXEC_ERROR)
-        return EXEC_ERROR;
+    if (result.status == MIGA_EXEC_STATUS_ERROR)
+        return MIGA_EXEC_STATUS_ERROR;
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 }
 
 /* ============================================================================
  * Exit Status
  * ============================================================================ */
 
-int frame_get_last_exit_status(const exec_frame_t *frame)
+int frame_get_last_exit_status(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
     return frame->last_exit_status;
 }
 
-void frame_set_last_exit_status(exec_frame_t *frame, int status)
+void frame_set_last_exit_status(miga_frame_t *frame, int status)
 {
     Expects_not_null(frame);
 
@@ -1416,11 +1416,11 @@ void frame_set_last_exit_status(exec_frame_t *frame, int status)
  * Control Flow
  * ============================================================================ */
 
-void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t flow, int depth)
+void frame_set_pending_control_flow(miga_frame_t *frame, miga_frame_flow_t flow, int depth)
 {
     Expects_not_null(frame);
 
-    if (flow == FRAME_FLOW_TOP)
+    if (flow == MIGA_FRAME_FLOW_TOP)
     {
         /* Unwind all frames to top level � request exit on the executor */
         exec_request_exit(frame->executor, frame->last_exit_status);
@@ -1429,7 +1429,7 @@ void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t fl
     frame->pending_flow_depth = depth;
 }
 
-exec_frame_t *frame_find_return_target(exec_frame_t *frame)
+miga_frame_t *frame_find_return_target(miga_frame_t *frame)
 {
     /* Just delegate to the internal API function */
     return exec_frame_find_return_target(frame);
@@ -1440,7 +1440,7 @@ exec_frame_t *frame_find_return_target(exec_frame_t *frame)
  * ============================================================================ */
 
 /* Helper: Get trap store from frame */
-static trap_store_t *get_trap_store(exec_frame_t *frame)
+static trap_store_t *get_trap_store(miga_frame_t *frame)
 {
     if (frame->traps)
         return frame->traps;
@@ -1449,7 +1449,7 @@ static trap_store_t *get_trap_store(exec_frame_t *frame)
     return NULL;
 }
 
-void frame_run_exit_traps(exec_frame_t *frame)
+void frame_run_exit_traps(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -1484,7 +1484,7 @@ static void trap_callback_adapter(int signal_number, const trap_action_t *trap, 
     adapter->callback(signal_number, trap->action, trap->is_ignored, adapter->context);
 }
 
-void frame_for_each_set_trap(exec_frame_t *frame, frame_trap_callback_t callback, void *context)
+void frame_for_each_set_trap(miga_frame_t *frame, frame_trap_callback_t callback, void *context)
 {
     Expects_not_null(frame);
     Expects_not_null(callback);
@@ -1497,7 +1497,7 @@ void frame_for_each_set_trap(exec_frame_t *frame, frame_trap_callback_t callback
     trap_store_for_each_set_trap(traps, trap_callback_adapter, &adapter);
 }
 
-const string_t *frame_get_trap(exec_frame_t *frame, int signal_number, bool *out_is_ignored)
+const string_t *frame_get_trap(miga_frame_t *frame, int signal_number, bool *out_is_ignored)
 {
     Expects_not_null(frame);
 
@@ -1523,7 +1523,7 @@ const string_t *frame_get_trap(exec_frame_t *frame, int signal_number, bool *out
     return trap->action;
 }
 
-const string_t *frame_get_exit_trap(exec_frame_t *frame)
+const string_t *frame_get_exit_trap(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -1534,7 +1534,7 @@ const string_t *frame_get_exit_trap(exec_frame_t *frame)
     return trap_store_get_exit(traps);
 }
 
-bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
+bool frame_set_trap(miga_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
                     bool is_reset)
 {
     Expects_not_null(frame);
@@ -1546,7 +1546,7 @@ bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *acti
     return trap_store_set(traps, signal_number, (string_t *)action, is_ignored, is_reset);
 }
 
-bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action, bool is_ignored,
+bool frame_set_exit_trap(miga_frame_t *frame, const string_t *action, bool is_ignored,
                          bool is_reset)
 {
     Expects_not_null(frame);
@@ -1584,7 +1584,7 @@ bool frame_trap_name_is_unsupported(const char *name)
  * ============================================================================ */
 
 /* Helper: Get alias store from frame */
-static alias_store_t *get_alias_store(exec_frame_t *frame)
+static alias_store_t *get_alias_store(miga_frame_t *frame)
 {
     if (frame->aliases)
         return frame->aliases;
@@ -1594,7 +1594,7 @@ static alias_store_t *get_alias_store(exec_frame_t *frame)
 }
 
 /* Helper: Get alias store from frame (const version) */
-static const alias_store_t *get_alias_store_const(const exec_frame_t *frame)
+static const alias_store_t *get_alias_store_const(const miga_frame_t *frame)
 {
     if (frame->aliases)
         return frame->aliases;
@@ -1603,7 +1603,7 @@ static const alias_store_t *get_alias_store_const(const exec_frame_t *frame)
     return NULL;
 }
 
-bool frame_has_alias(const exec_frame_t *frame, const string_t *name)
+bool frame_has_alias(const miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1615,7 +1615,7 @@ bool frame_has_alias(const exec_frame_t *frame, const string_t *name)
     return alias_store_has_name(aliases, name);
 }
 
-bool frame_has_alias_cstr(const exec_frame_t *frame, const char *name)
+bool frame_has_alias_cstr(const miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1627,7 +1627,7 @@ bool frame_has_alias_cstr(const exec_frame_t *frame, const char *name)
     return alias_store_has_name_cstr(aliases, name);
 }
 
-const string_t *frame_get_alias(const exec_frame_t *frame, const string_t *name)
+const string_t *frame_get_alias(const miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1639,7 +1639,7 @@ const string_t *frame_get_alias(const exec_frame_t *frame, const string_t *name)
     return alias_store_get_value(aliases, name);
 }
 
-const char *frame_get_alias_cstr(const exec_frame_t *frame, const char *name)
+const char *frame_get_alias_cstr(const miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1651,7 +1651,7 @@ const char *frame_get_alias_cstr(const exec_frame_t *frame, const char *name)
     return alias_store_get_value_cstr(aliases, name);
 }
 
-bool frame_set_alias(exec_frame_t *frame, const string_t *name, const string_t *value)
+bool frame_set_alias(miga_frame_t *frame, const string_t *name, const string_t *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1665,7 +1665,7 @@ bool frame_set_alias(exec_frame_t *frame, const string_t *name, const string_t *
     return true;
 }
 
-bool frame_set_alias_cstr(exec_frame_t *frame, const char *name, const char *value)
+bool frame_set_alias_cstr(miga_frame_t *frame, const char *name, const char *value)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1679,7 +1679,7 @@ bool frame_set_alias_cstr(exec_frame_t *frame, const char *name, const char *val
     return true;
 }
 
-bool frame_remove_alias(exec_frame_t *frame, const string_t *name)
+bool frame_remove_alias(miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1691,7 +1691,7 @@ bool frame_remove_alias(exec_frame_t *frame, const string_t *name)
     return alias_store_remove(aliases, name);
 }
 
-bool frame_remove_alias_cstr(exec_frame_t *frame, const char *name)
+bool frame_remove_alias_cstr(miga_frame_t *frame, const char *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1703,7 +1703,7 @@ bool frame_remove_alias_cstr(exec_frame_t *frame, const char *name)
     return alias_store_remove_cstr(aliases, name);
 }
 
-int frame_alias_count(const exec_frame_t *frame)
+int frame_alias_count(const miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -1714,7 +1714,7 @@ int frame_alias_count(const exec_frame_t *frame)
     return alias_store_size(aliases);
 }
 
-void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback, void *context)
+void frame_for_each_alias(const miga_frame_t *frame, frame_alias_callback_t callback, void *context)
 {
     Expects_not_null(frame);
     Expects_not_null(callback);
@@ -1727,7 +1727,7 @@ void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t call
     alias_store_foreach(aliases, (alias_store_foreach_fn)callback, context);
 }
 
-void frame_clear_all_aliases(exec_frame_t *frame)
+void frame_clear_all_aliases(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -1759,32 +1759,32 @@ bool frame_alias_name_is_valid(const char *name)
  * where you have a complete command as a string.
  *
  * A terminal newline is appended if not already present.  Any result other
- * than EXEC_OK (including EXEC_INCOMPLETE, EXEC_EMPTY, EXEC_ERROR) is
- * promoted to EXEC_ERROR in the returned status.
+ * than MIGA_EXEC_STATUS_OK (including MIGA_EXEC_STATUS_INCOMPLETE, MIGA_EXEC_STATUS_EMPTY, MIGA_EXEC_STATUS_ERROR) is
+ * promoted to MIGA_EXEC_STATUS_ERROR in the returned status.
  *
  * @param frame   The execution frame.
  * @param command The complete command string to execute.
- * @return exec_result_t with .status == EXEC_OK or EXEC_ERROR.
+ * @return miga_exec_result_t with .status == MIGA_EXEC_STATUS_OK or MIGA_EXEC_STATUS_ERROR.
  */
-static exec_result_t execute_command_string(exec_frame_t *frame, const char *command)
+static miga_exec_result_t execute_command_string(miga_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
     Expects_not_null(frame->executor);
 
-    exec_result_t result = {.status = EXEC_OK, .exit_code = 0};
+    miga_exec_result_t result = {.status = MIGA_EXEC_STATUS_OK, .exit_code = 0};
 
     /* Empty or NULL command is success */
     if (!command || !*command)
         return result;
 
-    exec_t *executor = frame->executor;
+    miga_exec_t *executor = frame->executor;
 
     /* Create a temporary parse session */
     parse_session_t *session = exec_create_parse_session(executor);
     if (!session)
     {
         frame_set_error_printf(frame, "Failed to create parse session for command string");
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_code = EXEC_EXIT_FAILURE;
         return result;
     }
@@ -1798,20 +1798,20 @@ static exec_result_t execute_command_string(exec_frame_t *frame, const char *com
     }
 
     /* Execute the command string */
-    exec_status_t status = exec_frame_string_core(frame, string_cstr(cmd_with_newline), session);
+    miga_exec_status_t status = exec_frame_string_core(frame, string_cstr(cmd_with_newline), session);
 
     string_destroy(&cmd_with_newline);
     parse_session_destroy(&session);
 
-    /* Map result: only EXEC_OK passes through; everything else is an error */
-    if (status == EXEC_OK)
+    /* Map result: only MIGA_EXEC_STATUS_OK passes through; everything else is an error */
+    if (status == MIGA_EXEC_STATUS_OK)
     {
-        result.status = EXEC_OK;
+        result.status = MIGA_EXEC_STATUS_OK;
         result.exit_code = frame->last_exit_status;
     }
     else
     {
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_code = frame->last_exit_status ? frame->last_exit_status : EXEC_EXIT_FAILURE;
     }
 
@@ -1819,69 +1819,69 @@ static exec_result_t execute_command_string(exec_frame_t *frame, const char *com
 }
 
 
-exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *command)
+miga_exec_status_t frame_execute_string(miga_frame_t *frame, const string_t *command)
 {
     Expects_not_null(frame);
 
     if (!command || string_empty(command))
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
     return frame_execute_string_cstr(frame, string_cstr(command));
 }
 
-exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command)
+miga_exec_status_t frame_execute_string_cstr(miga_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
 
     if (!command || !*command)
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
-    exec_result_t result = execute_command_string(frame, command);
+    miga_exec_result_t result = execute_command_string(frame, command);
 
     switch(result.status)
     {
-        case EXEC_OK:
-        case EXEC_EMPTY:
-        case EXEC_EXIT:
-            return EXEC_OK;
-        case EXEC_ERROR:
-        case EXEC_NOT_IMPL:
-        case EXEC_INCOMPLETE:
+        case MIGA_EXEC_STATUS_OK:
+        case MIGA_EXEC_STATUS_EMPTY:
+        case MIGA_EXEC_STATUS_EXIT:
+            return MIGA_EXEC_STATUS_OK;
+        case MIGA_EXEC_STATUS_ERROR:
+        case MIGA_EXEC_STATUS_NOT_IMPL:
+        case MIGA_EXEC_STATUS_INCOMPLETE:
         default:
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
     }
 }
 
-exec_status_t frame_execute_eval_string_cstr(exec_frame_t *frame, const char *command)
+miga_exec_status_t frame_execute_eval_string_cstr(miga_frame_t *frame, const char *command)
 {
     Expects_not_null(frame);
 
     if (!command || !*command)
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
     /* Push an EXEC_FRAME_EVAL frame so that control flow (return, break,
      * continue) passes through to enclosing contexts correctly. */
-    exec_frame_t *eval_frame = exec_frame_push(frame, EXEC_FRAME_EVAL, frame->executor, NULL);
+    miga_frame_t *eval_frame = exec_frame_push(frame, EXEC_FRAME_EVAL, frame->executor, NULL);
 
-    exec_result_t result = execute_command_string(eval_frame, command);
+    miga_exec_result_t result = execute_command_string(eval_frame, command);
 
     exec_frame_pop(&eval_frame);
 
     /* Update caller frame's exit status */
     frame->last_exit_status = result.exit_code;
 
-    if (result.status == EXEC_ERROR)
-        return EXEC_ERROR;
+    if (result.status == MIGA_EXEC_STATUS_ERROR)
+        return MIGA_EXEC_STATUS_ERROR;
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 }
 
-exec_status_t frame_execute_string_as_eval(exec_frame_t *frame, const string_t *command)
+miga_exec_status_t frame_execute_string_as_eval(miga_frame_t *frame, const string_t *command)
 {
     Expects_not_null(frame);
 
     if (!command || string_empty(command))
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
     return frame_execute_eval_string_cstr(frame, string_cstr(command));
 }

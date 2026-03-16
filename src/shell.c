@@ -18,7 +18,7 @@ struct shell_t
     shell_mode_t mode;         // Interactive, non-interactive, etc.
     string_t *script_filename; // Script file name (if any)
     string_t *command_string;  // Command string (if any)
-    exec_t *executor;          // Points to the currently executing exec_t
+    miga_exec_t *executor;          // Points to the currently executing miga_exec_t
 };
 
 static sh_status_t shell_execute_script_file(shell_t *sh);
@@ -192,28 +192,28 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
         return SH_RUNTIME_ERROR;
     }
 
-    exec_status_t setup_status = exec_setup_noninteractive(sh->executor);
-    if (setup_status != EXEC_OK)
+    miga_exec_status_t setup_status = exec_setup_noninteractive(sh->executor);
+    if (setup_status != MIGA_EXEC_STATUS_OK)
     {
         fprintf(stderr, "Failed to parse RC file: %s\n", exec_get_error_cstr(sh->executor));
         // Not a fatal error.
     }
 
     /* Set $0 to the script filename */
-    exec_frame_t *frame = exec_get_current_frame(sh->executor);
+    miga_frame_t *frame = exec_get_current_frame(sh->executor);
     frame_set_arg0(frame, sh->script_filename);
 
-    exec_status_t status = exec_execute_stream(sh->executor, fp);
+    miga_exec_status_t status = exec_execute_stream(sh->executor, fp);
     fclose(fp);
 
-    // Convert exec_status_t to sh_status_t
+    // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
-    case EXEC_OK:
+    case MIGA_EXEC_STATUS_OK:
         return SH_OK;
-    case EXEC_ERROR:
+    case MIGA_EXEC_STATUS_ERROR:
         return SH_RUNTIME_ERROR;
-    case EXEC_NOT_IMPL:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
         return SH_INTERNAL_ERROR;
     }
@@ -226,15 +226,15 @@ sh_status_t shell_execute_command_string(shell_t *sh)
 
     const char *cmd = string_cstr(sh->command_string);
 
-    exec_result_t result = exec_execute_command_string(sh->executor, cmd);
+    miga_exec_result_t result = exec_execute_command_string(sh->executor, cmd);
 
     switch (result.status)
     {
-    case EXEC_OK:
+    case MIGA_EXEC_STATUS_OK:
         return SH_OK;
-    case EXEC_ERROR:
+    case MIGA_EXEC_STATUS_ERROR:
         return SH_RUNTIME_ERROR;
-    case EXEC_NOT_IMPL:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
         return SH_INTERNAL_ERROR;
     }
@@ -300,15 +300,15 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
     Expects_not_null(sh);
 
     exec_setup_interactive(sh->executor);
-    exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
 
     switch (status)
     {
-    case EXEC_OK:
+    case MIGA_EXEC_STATUS_OK:
         return SH_OK;
-    case EXEC_ERROR:
+    case MIGA_EXEC_STATUS_ERROR:
         return SH_RUNTIME_ERROR;
-    case EXEC_NOT_IMPL:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
         return SH_INTERNAL_ERROR;
     }
@@ -317,15 +317,15 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
 sh_status_t shell_execute_stdin(shell_t *sh)
 {
     Expects_not_null(sh);
-    exec_status_t status = exec_execute_stream(sh->executor, stdin);
-    // Convert exec_status_t to sh_status_t
+    miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
-    case EXEC_OK:
+    case MIGA_EXEC_STATUS_OK:
         return SH_OK;
-    case EXEC_ERROR:
+    case MIGA_EXEC_STATUS_ERROR:
         return SH_RUNTIME_ERROR;
-    case EXEC_NOT_IMPL:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
         return SH_INTERNAL_ERROR;
     }
@@ -373,7 +373,7 @@ const char *shell_get_ps2(const shell_t *sh)
     return exec_get_ps2_cstr(sh->executor);
 }
 
-exec_t *shell_get_exec(shell_t *sh)
+miga_exec_t *shell_get_exec(shell_t *sh)
 {
     Expects_not_null(sh);
     return sh->executor;

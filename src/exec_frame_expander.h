@@ -70,7 +70,7 @@ typedef enum expand_flags_t
  * @param tok    Token to expand (must be TOKEN_WORD)
  * @return       List of expanded strings, or NULL on error
  */
-strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok);
+strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *tok);
 
 /**
  * Expand multiple word tokens.
@@ -79,7 +79,7 @@ strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *t
  * @param tokens  List of tokens to expand
  * @return        List of all expanded strings, or NULL on error
  */
-strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens);
+strlist_t *expand_words(miga_frame_t *frame, const token_list_t *tokens);
 
 /**
  * Expand a single word token without field splitting or pathname expansion.
@@ -95,7 +95,7 @@ strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens);
  * @param tok    Token to expand (must be TOKEN_WORD)
  * @return       Expanded string, or NULL on error
  */
-string_t *expand_word_nosplit(exec_frame_t *frame, const token_t *tok);
+string_t *expand_word_nosplit(miga_frame_t *frame, const token_t *tok);
 
 /**
  * Expand a string with specified expansion flags.
@@ -107,7 +107,7 @@ string_t *expand_word_nosplit(exec_frame_t *frame, const token_t *tok);
  * @param flags  Which expansions to perform
  * @return       Expanded string, or NULL on error
  */
-string_t *expand_string(exec_frame_t *frame, const string_t *text, expand_flags_t flags);
+string_t *expand_string(miga_frame_t *frame, const string_t *text, expand_flags_t flags);
 
 /**
  * Expand a redirection target.
@@ -118,7 +118,7 @@ string_t *expand_string(exec_frame_t *frame, const string_t *text, expand_flags_
  * @param tok    Redirection target token
  * @return       Expanded string, or NULL on error
  */
-string_t *expand_redirection_target(exec_frame_t *frame, const token_t *tok);
+string_t *expand_redirection_target(miga_frame_t *frame, const token_t *tok);
 
 /**
  * Expand an assignment value.
@@ -129,7 +129,7 @@ string_t *expand_redirection_target(exec_frame_t *frame, const token_t *tok);
  * @param tok    Assignment token (must be TOKEN_ASSIGNMENT_WORD)
  * @return       Expanded value string, or NULL on error
  */
-string_t *expand_assignment_value(exec_frame_t *frame, const token_t *tok);
+string_t *expand_assignment_value(miga_frame_t *frame, const token_t *tok);
 
 /**
  * Expand a heredoc body.
@@ -142,7 +142,7 @@ string_t *expand_assignment_value(exec_frame_t *frame, const token_t *tok);
  * @param is_quoted  Whether the heredoc delimiter was quoted
  * @return           Expanded heredoc body, or NULL on error
  */
-string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quoted);
+string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quoted);
 
 /* ============================================================================
  * Specific Expansion Functions
@@ -157,7 +157,7 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
  * @param username  Username after tilde (empty string for current user)
  * @return          Expanded path, or NULL if expansion fails
  */
-string_t *expand_tilde(exec_frame_t *frame, const string_t *username);
+string_t *expand_tilde(miga_frame_t *frame, const string_t *username);
 
 /**
  * Perform parameter expansion.
@@ -168,7 +168,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username);
  * @param name   Parameter name
  * @return       Expanded value (empty string if unset)
  */
-string_t *expand_parameter(exec_frame_t *frame, const string_t *name);
+string_t *expand_parameter(miga_frame_t *frame, const string_t *name);
 
 /**
  * Perform command substitution.
@@ -179,7 +179,7 @@ string_t *expand_parameter(exec_frame_t *frame, const string_t *name);
  * @param command  Command to execute
  * @return         Command output with trailing newlines stripped
  */
-string_t *expand_command_subst(exec_frame_t *frame, const string_t *command);
+string_t *expand_command_subst(miga_frame_t *frame, const string_t *command);
 
 /**
  * Perform arithmetic expansion.
@@ -190,7 +190,7 @@ string_t *expand_command_subst(exec_frame_t *frame, const string_t *command);
  * @param expression  Arithmetic expression
  * @return            Result as decimal string
  */
-string_t *expand_arithmetic(exec_frame_t *frame, const string_t *expression);
+string_t *expand_arithmetic(miga_frame_t *frame, const string_t *expression);
 
 /**
  * Perform field splitting on a string.
@@ -201,7 +201,7 @@ string_t *expand_arithmetic(exec_frame_t *frame, const string_t *expression);
  * @param text   Text to split
  * @return       List of fields
  */
-strlist_t *expand_field_split(exec_frame_t *frame, const string_t *text);
+strlist_t *expand_field_split(miga_frame_t *frame, const string_t *text);
 
 /**
  * Perform pathname expansion (globbing).
@@ -211,7 +211,7 @@ strlist_t *expand_field_split(exec_frame_t *frame, const string_t *text);
  * @return         List of matching pathnames, or single-element list with
  *                 original pattern if no matches
  */
-strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern);
+strlist_t *expand_pathname(miga_frame_t *frame, const string_t *pattern);
 
 
 /* ============================================================================
@@ -227,7 +227,7 @@ strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern);
  * @param name   Parameter name (without $)
  * @return       Parameter value, or NULL if not a special parameter
  */
-string_t *expand_special_param(const exec_frame_t *frame, const string_t *name);
+string_t *expand_special_param(const miga_frame_t *frame, const string_t *name);
 
 /**
  * Check if a name is a special parameter.

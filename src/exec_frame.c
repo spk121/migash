@@ -70,39 +70,39 @@
 #include "variable_store.h"
 #include "miga/xalloc.h"
 
-exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t *frame,
                                                                     exec_params_t *params);
-static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame,
+static exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_t *frame,
                                                                      exec_params_t *params);
-exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_iteration_loop(miga_frame_t *frame,
                                                               exec_params_t *params);
-exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame,
                                                              const ast_node_t *list);
-exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, ast_node_t *list);
-exec_frame_execute_result_t exec_frame_execute_pipeline(exec_frame_t *frame, ast_node_t *list);
-exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, ast_node_t *list);
+exec_frame_execute_result_t exec_frame_execute_pipeline(miga_frame_t *frame, ast_node_t *list);
+exec_frame_execute_result_t exec_frame_execute_simple_command(miga_frame_t *frame,
                                                               ast_node_t *node);
 
-exec_frame_execute_result_t exec_frame_execute_subshell(exec_frame_t *frame, ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_brace_group(exec_frame_t *frame, ast_node_t *node,
+exec_frame_execute_result_t exec_frame_execute_subshell(miga_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_brace_group(miga_frame_t *frame, ast_node_t *node,
                                                            exec_redirections_t *redirs);
-exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame, ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_if_clause(miga_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_while_clause(miga_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_for_clause(miga_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_redirected_command(miga_frame_t *frame,
                                                                   ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, ast_node_t *node);
+exec_frame_execute_result_t exec_frame_execute_function_def_clause(miga_frame_t *frame,
                                                                    ast_node_t *node);
-exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_pipeline_group(miga_frame_t *frame,
                                                               ast_node_list_t *node,
                                                               bool is_negated);
-exec_frame_execute_result_t exec_frame_execute_while_loop(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_while_loop(miga_frame_t *frame,
                                                           ast_node_t *condition, ast_node_t *node,
                                                           bool is_negated);
-exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name,
+exec_frame_execute_result_t exec_frame_execute_for_loop(miga_frame_t *frame, string_t *var_name,
                                                         strlist_t *words, ast_node_t *body);
-static exec_frame_execute_result_t exec_frame_execute_background_job(exec_frame_t *parent,
+static exec_frame_execute_result_t exec_frame_execute_background_job(miga_frame_t *parent,
                                                                      ast_node_t *body,
                                                                      strlist_t *command_args);
 
@@ -181,7 +181,7 @@ static void exec_opt_flags_destroy(exec_opt_flags_t **opts_ptr)
         }                                                                                          \
     } while (0)
 
-static void init_variables(exec_frame_t *frame, exec_t *exec)
+static void init_variables(miga_frame_t *frame, miga_exec_t *exec)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -227,7 +227,7 @@ static void init_variables(exec_frame_t *frame, exec_t *exec)
     }
 }
 
-static void init_positional_params(exec_frame_t *frame, exec_t *exec, exec_params_t *params)
+static void init_positional_params(miga_frame_t *frame, miga_exec_t *exec, exec_params_t *params)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -300,12 +300,12 @@ static void init_positional_params(exec_frame_t *frame, exec_t *exec, exec_param
     }
 }
 
-static void init_fds(exec_frame_t *frame)
+static void init_fds(miga_frame_t *frame)
 {
     INIT_BY_SCOPE(frame, open_fds, frame->policy->fds.scope, fd_table_create, fd_table_clone);
 }
 
-static void init_traps(exec_frame_t *frame)
+static void init_traps(miga_frame_t *frame)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -318,13 +318,13 @@ static void init_traps(exec_frame_t *frame)
     }
 }
 
-static void init_options(exec_frame_t *frame)
+static void init_options(miga_frame_t *frame)
 {
     INIT_BY_SCOPE(frame, opt_flags, frame->policy->options.scope, exec_opt_flags_create,
                   exec_opt_flags_clone);
 }
 
-static void init_cwd(exec_frame_t *frame)
+static void init_cwd(miga_frame_t *frame)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -353,7 +353,7 @@ static void init_cwd(exec_frame_t *frame)
     }
 }
 
-static void init_umask(exec_frame_t *frame)
+static void init_umask(miga_frame_t *frame)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -396,13 +396,13 @@ static void init_umask(exec_frame_t *frame)
     }
 }
 
-static void init_functions(exec_frame_t *frame)
+static void init_functions(miga_frame_t *frame)
 {
     INIT_BY_SCOPE(frame, functions, frame->policy->functions.scope, func_store_create,
                   func_store_clone);
 }
 
-static void init_aliases(exec_frame_t *frame)
+static void init_aliases(miga_frame_t *frame)
 {
     INIT_BY_SCOPE(frame, aliases, frame->policy->aliases.scope, alias_store_create,
                   alias_store_clone);
@@ -412,10 +412,10 @@ static void init_aliases(exec_frame_t *frame)
  * Frame Push - Create and Initialize a New Frame
  * ============================================================================ */
 
-exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec_t *exec,
+miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga_exec_t *exec,
                               exec_params_t *params)
 {
-    exec_frame_t *frame = xcalloc(1, sizeof(exec_frame_t));
+    miga_frame_t *frame = xcalloc(1, sizeof(miga_frame_t));
 
     frame->type = type;
     frame->policy = &EXEC_FRAME_POLICIES[type];
@@ -452,7 +452,7 @@ exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec
     frame->last_bg_pid = parent ? parent->last_bg_pid : 0;
 
     /* Control flow state */
-    frame->pending_control_flow = FRAME_FLOW_NORMAL;
+    frame->pending_control_flow = MIGA_FRAME_FLOW_NORMAL;
     frame->pending_flow_depth = 0;
 
     /* Source tracking */
@@ -490,13 +490,13 @@ exec_frame_t *exec_frame_push(exec_frame_t *parent, exec_frame_type_t type, exec
     return frame;
 }
 
-exec_frame_t *exec_frame_create_top_level(exec_t *exec)
+miga_frame_t *exec_frame_create_top_level(miga_exec_t *exec)
 {
     Expects_not_null(exec);
 
-    exec_frame_t *frame = exec_frame_push(NULL, EXEC_FRAME_TOP_LEVEL, exec, NULL);
+    miga_frame_t *frame = exec_frame_push(NULL, EXEC_FRAME_TOP_LEVEL, exec, NULL);
 
-    /* Transfer any pre-initialized top-frame state from exec_t */
+    /* Transfer any pre-initialized top-frame state from miga_exec_t */
     if (exec->variables)
     {
         variable_store_destroy(&frame->variables);
@@ -577,7 +577,7 @@ exec_frame_t *exec_frame_create_top_level(exec_t *exec)
 /**
  * Cleanup helper - only frees resources this frame owns.
  */
-static void cleanup_frame_resources(exec_frame_t *frame)
+static void cleanup_frame_resources(miga_frame_t *frame)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
@@ -680,13 +680,13 @@ static void cleanup_frame_resources(exec_frame_t *frame)
 #endif
 }
 
-exec_frame_t *exec_frame_pop(exec_frame_t **frame_ptr)
+miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr)
 {
     Expects_not_null(frame_ptr);
-    exec_frame_t *frame = *frame_ptr;
+    miga_frame_t *frame = *frame_ptr;
     Expects_not_null(frame);
 
-    exec_frame_t *parent = frame->parent;
+    miga_frame_t *parent = frame->parent;
     if (parent)
     {
         parent->executor->current_frame = parent;
@@ -731,7 +731,7 @@ exec_frame_t *exec_frame_pop(exec_frame_t **frame_ptr)
 /**
  * Handle process group setup based on policy.
  */
-static void setup_process_group(exec_frame_t *frame, exec_params_t *params)
+static void setup_process_group(miga_frame_t *frame, exec_params_t *params)
 {
 #ifdef MIGA_POSIX_API
     switch (frame->policy->process.pgroup)
@@ -763,25 +763,25 @@ static void setup_process_group(exec_frame_t *frame, exec_params_t *params)
 /**
  * Handle control flow based on policy.
  */
-static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
+static exec_frame_execute_result_t handle_control_flow(miga_frame_t *frame,
                                                        exec_frame_execute_result_t result)
 {
     const exec_frame_policy_t *policy = frame->policy;
 
     switch (result.flow)
     {
-    case FRAME_FLOW_NORMAL:
+    case MIGA_FRAME_FLOW_NORMAL:
         /* Nothing special to do */
         return result;
 
-    case FRAME_FLOW_RETURN:
+    case MIGA_FRAME_FLOW_RETURN:
         switch (policy->flow.return_behavior)
         {
         case EXEC_RETURN_TARGET:
             /* We're the target; return completes here */
             return (exec_frame_execute_result_t){.exit_status = result.exit_status,
                                                  .has_exit_status = true,
-                                                 .flow = FRAME_FLOW_NORMAL,
+                                                 .flow = MIGA_FRAME_FLOW_NORMAL,
                                                  .flow_depth = 0};
         case EXEC_RETURN_TRANSPARENT:
             /* Pass it up to parent */
@@ -791,17 +791,17 @@ static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
             log_error("return: not valid in this context");
             return (exec_frame_execute_result_t){.exit_status = 1,
                                                  .has_exit_status = true,
-                                                 .flow = FRAME_FLOW_NORMAL,
+                                                 .flow = MIGA_FRAME_FLOW_NORMAL,
                                                  .flow_depth = 0};
         }
         break;
 
-    case FRAME_FLOW_TOP:
+    case MIGA_FRAME_FLOW_TOP:
         /* Unwind all frames to top level (exit); always propagate */
         return result;
 
-    case FRAME_FLOW_BREAK:
-    case FRAME_FLOW_CONTINUE:
+    case MIGA_FRAME_FLOW_BREAK:
+    case MIGA_FRAME_FLOW_CONTINUE:
         switch (policy->flow.loop_control)
         {
         case EXEC_LOOP_TARGET:
@@ -809,12 +809,12 @@ static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
             if (result.flow_depth <= 1)
             {
                 /* This loop is the target */
-                if (result.flow == FRAME_FLOW_BREAK)
+                if (result.flow == MIGA_FRAME_FLOW_BREAK)
                 {
                     /* Break: exit loop with current status */
                     return (exec_frame_execute_result_t){.exit_status = result.exit_status,
                                                          .has_exit_status = result.has_exit_status,
-                                                         .flow = FRAME_FLOW_NORMAL,
+                                                         .flow = MIGA_FRAME_FLOW_NORMAL,
                                                          .flow_depth = 0};
                 }
                 else
@@ -823,7 +823,7 @@ static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
                     return (exec_frame_execute_result_t){
                         .exit_status = 0,
                         .has_exit_status = true,
-                        .flow = FRAME_FLOW_CONTINUE,
+                        .flow = MIGA_FRAME_FLOW_CONTINUE,
                         .flow_depth = 0 /* Consumed by this loop */
                     };
                 }
@@ -844,7 +844,7 @@ static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
             log_error("break/continue: not valid in this context");
             return (exec_frame_execute_result_t){.exit_status = 1,
                                                  .has_exit_status = true,
-                                                 .flow = FRAME_FLOW_NORMAL,
+                                                 .flow = MIGA_FRAME_FLOW_NORMAL,
                                                  .flow_depth = 0};
         }
         break;
@@ -856,10 +856,10 @@ static exec_frame_execute_result_t handle_control_flow(exec_frame_t *frame,
 /**
  * Execute the frame's body based on params.
  */
-static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_params_t *params)
+static exec_frame_execute_result_t execute_frame_body(miga_frame_t *frame, exec_params_t *params)
 {
     exec_frame_execute_result_t result = {
-        .exit_status = 0, .has_exit_status = true, .flow = FRAME_FLOW_NORMAL, .flow_depth = 0};
+        .exit_status = 0, .has_exit_status = true, .flow = MIGA_FRAME_FLOW_NORMAL, .flow_depth = 0};
 
     if (!params)
     {
@@ -869,8 +869,8 @@ static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_
     /* Apply redirections */
     if (params->redirections)
     {
-        exec_status_t redir_result = exec_redirect_apply_redirectons(frame, params->redirections);
-        if (redir_result != EXEC_OK)
+        miga_exec_status_t redir_result = exec_redirect_apply_redirectons(frame, params->redirections);
+        if (redir_result != MIGA_EXEC_STATUS_OK)
         {
             result.exit_status = 1;
             return result;
@@ -966,7 +966,7 @@ static exec_frame_execute_result_t execute_frame_body(exec_frame_t *frame, exec_
  * @param params Parameters including condition, body, and until_mode flag
  * @return exec_frame_execute_result_t with final loop status and any pending control flow
  */
-static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame,
+static exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_t *frame,
                                                                      exec_params_t *params)
 {
     Expects_not_null(frame);
@@ -975,7 +975,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
     Expects_not_null(params->body);
 
     exec_frame_execute_result_t result = {
-        .exit_status = 0, .has_exit_status = true, .flow = FRAME_FLOW_NORMAL, .flow_depth = 0};
+        .exit_status = 0, .has_exit_status = true, .flow = MIGA_FRAME_FLOW_NORMAL, .flow_depth = 0};
     bool is_until = params->until_mode;
 
     while (true)
@@ -983,7 +983,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
         // Execute condition
         exec_frame_execute_result_t cond_result =
             exec_frame_execute_dispatch(frame, params->condition);
-        if (cond_result.status != EXEC_OK)
+        if (cond_result.status != MIGA_EXEC_STATUS_OK)
         {
             return cond_result;
         }
@@ -1004,7 +1004,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
             body_result = exec_frame_execute_dispatch(frame, params->body);
 
         // Handle control flow
-        if (body_result.flow == FRAME_FLOW_BREAK)
+        if (body_result.flow == MIGA_FRAME_FLOW_BREAK)
         {
             if (body_result.flow_depth > 1)
             {
@@ -1020,7 +1020,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
                 break;
             }
         }
-        else if (body_result.flow == FRAME_FLOW_CONTINUE)
+        else if (body_result.flow == MIGA_FRAME_FLOW_CONTINUE)
         {
             if (body_result.flow_depth > 1)
             {
@@ -1033,12 +1033,12 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
             result.has_exit_status = body_result.has_exit_status;
             continue;
         }
-        else if (body_result.flow == FRAME_FLOW_RETURN || body_result.flow == FRAME_FLOW_TOP)
+        else if (body_result.flow == MIGA_FRAME_FLOW_RETURN || body_result.flow == MIGA_FRAME_FLOW_TOP)
         {
             // Return/exit propagates up
             return body_result;
         }
-        else if (body_result.status != EXEC_OK)
+        else if (body_result.status != MIGA_EXEC_STATUS_OK)
         {
             return body_result;
         }
@@ -1051,7 +1051,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
     return result;
 }
 
- static exec_frame_execute_result_t exec_frame_execute_background_job(exec_frame_t *parent, ast_node_t *body,
+ static exec_frame_execute_result_t exec_frame_execute_background_job(miga_frame_t *parent, ast_node_t *body,
                                  strlist_t *command_args)
  {
      exec_params_t params = {
@@ -1062,7 +1062,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
      return exec_in_frame(parent, EXEC_FRAME_BACKGROUND_JOB, &params);
  }
 
- exec_frame_execute_result_t exec_frame_execute_subshell(exec_frame_t *parent, ast_node_t *body)
+ exec_frame_execute_result_t exec_frame_execute_subshell(miga_frame_t *parent, ast_node_t *body)
  {
      exec_params_t params = {
          .body = body,
@@ -1070,7 +1070,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_
      return exec_in_frame(parent, EXEC_FRAME_SUBSHELL, &params);
  }
 
-exec_frame_execute_result_t exec_frame_execute_brace_group(exec_frame_t *parent, ast_node_t *node,
+exec_frame_execute_result_t exec_frame_execute_brace_group(miga_frame_t *parent, ast_node_t *node,
                                                             exec_redirections_t *redirs)
 {
     exec_params_t params = {
@@ -1080,7 +1080,7 @@ exec_frame_execute_result_t exec_frame_execute_brace_group(exec_frame_t *parent,
     return exec_in_frame(parent, EXEC_FRAME_BRACE_GROUP, &params);
 }
 
-exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *parent,
+exec_frame_execute_result_t exec_frame_execute_pipeline_group(miga_frame_t *parent,
                                                               ast_node_list_t *pipeline_commands,
                                                               bool is_negated)
 {
@@ -1091,7 +1091,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_group(exec_frame_t *pare
      return exec_in_frame(parent, EXEC_FRAME_PIPELINE, &params);
 }
 
-exec_frame_execute_result_t exec_frame_execute_for_loop(exec_frame_t *frame, string_t *var_name,
+exec_frame_execute_result_t exec_frame_execute_for_loop(miga_frame_t *frame, string_t *var_name,
                                                         strlist_t *words, ast_node_t *body)
 {
     exec_params_t params = {
@@ -1201,11 +1201,11 @@ fail:
 /**
  * Main entry point for frame execution.
  */
-exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_t type,
+exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_t type,
                                           exec_params_t *params)
 {
     Expects_not_null(parent);
-    exec_t *exec = parent->executor;
+    miga_exec_t *exec = parent->executor;
     const exec_frame_policy_t *policy = &EXEC_FRAME_POLICIES[type];
     exec_frame_execute_result_t result = {0};
 
@@ -1219,7 +1219,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
             /* Fork failed */
             return (exec_frame_execute_result_t){.exit_status = 1,
                                                  .has_exit_status = true,
-                                                 .flow = FRAME_FLOW_NORMAL,
+                                                 .flow = MIGA_FRAME_FLOW_NORMAL,
                                                  .flow_depth = 0};
         }
         else if (pid > 0)
@@ -1236,7 +1236,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
                 string_destroy(&cmdline);
                 return (exec_frame_execute_result_t){.exit_status = 0,
                                                      .has_exit_status = true,
-                                                     .flow = FRAME_FLOW_NORMAL,
+                                                     .flow = MIGA_FRAME_FLOW_NORMAL,
                                                      .flow_depth = 0};
             }
             else
@@ -1247,7 +1247,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
                 int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
                 return (exec_frame_execute_result_t){.exit_status = exit_status,
                                                      .has_exit_status = true,
-                                                     .flow = FRAME_FLOW_NORMAL,
+                                                     .flow = MIGA_FRAME_FLOW_NORMAL,
                                                      .flow_depth = 0};
             }
         }
@@ -1275,7 +1275,7 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
     }
 
     /* Create and initialize the frame */
-    exec_frame_t *frame = exec_frame_push(parent, type, exec, params);
+    miga_frame_t *frame = exec_frame_push(parent, type, exec, params);
 
     /* Setup process group */
     setup_process_group(frame, params);
@@ -1306,11 +1306,11 @@ exec_frame_execute_result_t exec_in_frame(exec_frame_t *parent, exec_frame_type_
  * Variable and File Descriptor Access
  * ============================================================================ */
 
-exec_frame_t *exec_frame_find_return_target(exec_frame_t *frame)
+miga_frame_t *exec_frame_find_return_target(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
-    exec_frame_t *current = frame;
+    miga_frame_t *current = frame;
     while (current)
     {
         if (current->policy->flow.return_behavior == EXEC_RETURN_TARGET)
@@ -1322,10 +1322,10 @@ exec_frame_t *exec_frame_find_return_target(exec_frame_t *frame)
     return NULL;
 }
 
-exec_frame_t *exec_frame_find_loop(exec_frame_t *frame)
+miga_frame_t *exec_frame_find_loop(miga_frame_t *frame)
 {
     Expects_not_null(frame);
-    exec_frame_t *current = frame;
+    miga_frame_t *current = frame;
     while (current)
     {
         if (current->policy->flow.is_loop)
@@ -1337,7 +1337,7 @@ exec_frame_t *exec_frame_find_loop(exec_frame_t *frame)
     return NULL;
 }
 
-variable_store_t *exec_frame_get_variables(exec_frame_t *frame)
+variable_store_t *exec_frame_get_variables(miga_frame_t *frame)
 {
     if (!frame)
         return NULL;
@@ -1345,7 +1345,7 @@ variable_store_t *exec_frame_get_variables(exec_frame_t *frame)
     return frame->variables;
 }
 
-fd_table_t *exec_frame_get_fds(exec_frame_t *frame)
+fd_table_t *exec_frame_get_fds(miga_frame_t *frame)
 {
     if (!frame)
         return NULL;
@@ -1353,13 +1353,13 @@ fd_table_t *exec_frame_get_fds(exec_frame_t *frame)
     return frame->open_fds;
 }
 
-trap_store_t *exec_frame_get_traps(exec_frame_t *frame)
+trap_store_t *exec_frame_get_traps(miga_frame_t *frame)
 {
     Expects_not_null(frame);
     return frame->traps;
 }
 
-const string_t *exec_frame_get_variable(const exec_frame_t *frame, const string_t *name)
+const string_t *exec_frame_get_variable(const miga_frame_t *frame, const string_t *name)
 {
     Expects_not_null(frame);
     Expects_not_null(name);
@@ -1383,7 +1383,7 @@ const string_t *exec_frame_get_variable(const exec_frame_t *frame, const string_
     return NULL;
 }
 
-void exec_frame_set_variable(exec_frame_t *frame, const string_t *name, const string_t *value)
+void exec_frame_set_variable(miga_frame_t *frame, const string_t *name, const string_t *value)
 {
     if (!frame || !name || !value)
         return;
@@ -1399,7 +1399,7 @@ void exec_frame_set_variable(exec_frame_t *frame, const string_t *name, const st
     }
 }
 
-int exec_frame_declare_local(exec_frame_t *frame, const string_t *name, const string_t *value)
+int exec_frame_declare_local(miga_frame_t *frame, const string_t *name, const string_t *value)
 {
     if (!frame || !name || !value)
         return -1;
@@ -1429,7 +1429,7 @@ int exec_frame_declare_local(exec_frame_t *frame, const string_t *name, const st
  * We only update when we have a valid source line (> 0) from the AST, and
  * only when executing within a script or function context.
  */
-static void exec_frame_update_lineno(exec_frame_t *frame, const ast_node_t *node)
+static void exec_frame_update_lineno(miga_frame_t *frame, const ast_node_t *node)
 {
     if (!frame || !node)
         return;
@@ -1456,12 +1456,12 @@ static void exec_frame_update_lineno(exec_frame_t *frame, const ast_node_t *node
     variable_store_add_cstr(vars, "LINENO", buf, false, false);
 }
 
-exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame, const ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_dispatch(miga_frame_t *frame, const ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
     exec_frame_execute_result_t result = {
-        .status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
+        .status = MIGA_EXEC_STATUS_OK, .has_exit_status = false, .exit_status = 0};
 
     /* Update LINENO before executing this command */
     exec_frame_update_lineno(frame, node);
@@ -1520,7 +1520,7 @@ exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame, con
     default:
         exec_set_error_printf(frame->executor, "Unsupported AST node type: %d %s", node->type,
                               ast_node_type_to_string(node->type));
-        result.status = EXEC_NOT_IMPL;
+        result.status = MIGA_EXEC_STATUS_NOT_IMPL;
         return result;
     }
 
@@ -1535,7 +1535,7 @@ exec_frame_execute_result_t exec_frame_execute_dispatch(exec_frame_t *frame, con
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame,
                                                              const ast_node_t *list)
 {
     Expects_not_null(frame);
@@ -1543,7 +1543,7 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame
     Expects(list->type == AST_COMMAND_LIST);
 
     exec_frame_execute_result_t result = {
-        .status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
+        .status = MIGA_EXEC_STATUS_OK, .has_exit_status = false, .exit_status = 0};
 
     // Access the command list data
     ast_node_list_t *items = list->data.command_list.items;
@@ -1633,12 +1633,12 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame
                 exec_set_error_printf(frame->executor,
                                       "Unsupported command type in compound list: %d (%s)",
                                       cmd->type, ast_node_type_to_string(cmd->type));
-                result.status = EXEC_NOT_IMPL;
+                result.status = MIGA_EXEC_STATUS_NOT_IMPL;
                 return result;
             }
         }
         // Propagate errors from command execution
-        if (cmd_result.status != EXEC_OK)
+        if (cmd_result.status != MIGA_EXEC_STATUS_OK)
         {
             result.status = cmd_result.status;
             if (cmd_result.has_exit_status)
@@ -1684,14 +1684,14 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(exec_frame_t *frame
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, ast_node_t *list)
+exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, ast_node_t *list)
 {
     Expects_not_null(frame);
     Expects_not_null(list);
     Expects(list->type == AST_AND_OR_LIST);
 
     exec_frame_execute_result_t result = {
-        .status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
+        .status = MIGA_EXEC_STATUS_OK, .has_exit_status = false, .exit_status = 0};
 
     ast_node_t *left = list->data.andor_list.left;
     ast_node_t *right = list->data.andor_list.right;
@@ -1719,11 +1719,11 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, 
     default:
         exec_set_error_printf(frame->executor, "Unsupported AST node type in and_or_list: %d (%s)",
                               left->type, ast_node_type_to_string(left->type));
-        result.status = EXEC_NOT_IMPL;
+        result.status = MIGA_EXEC_STATUS_NOT_IMPL;
         return result;
     }
 
-    if (left_result.status != EXEC_OK)
+    if (left_result.status != MIGA_EXEC_STATUS_OK)
     {
         result = left_result;
         return result;
@@ -1771,11 +1771,11 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, 
             exec_set_error_printf(frame->executor,
                                   "Unsupported AST node type in and_or_list: %d (%s)", right->type,
                                   ast_node_type_to_string(right->type));
-            result.status = EXEC_NOT_IMPL;
+            result.status = MIGA_EXEC_STATUS_NOT_IMPL;
             return result;
         }
 
-        if (right_result.status != EXEC_OK)
+        if (right_result.status != MIGA_EXEC_STATUS_OK)
         {
             result = right_result;
             return result;
@@ -1794,7 +1794,7 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(exec_frame_t *frame, 
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_pipeline(exec_frame_t *frame, ast_node_t *list)
+exec_frame_execute_result_t exec_frame_execute_pipeline(miga_frame_t *frame, ast_node_t *list)
 {
     Expects_not_null(frame);
     Expects_not_null(list);
@@ -1810,7 +1810,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline(exec_frame_t *frame, ast
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *frame, ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_simple_command(miga_frame_t *frame, ast_node_t *node)
 {
     /* Executing a simple command is so complicated, it gets
      * its own module, lol. Simple, my butt. */
@@ -1823,25 +1823,25 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(exec_frame_t *fram
     result.flow_depth = frame->pending_flow_depth;
 
     /* Reset pending flow for next command */
-    frame->pending_control_flow = FRAME_FLOW_NORMAL;
+    frame->pending_control_flow = MIGA_FRAME_FLOW_NORMAL;
     frame->pending_flow_depth = 0;
 
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_if_clause(miga_frame_t *frame, ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
     Expects(node->type == AST_IF_CLAUSE);
 
     exec_frame_execute_result_t result = {
-        .status = EXEC_OK, .has_exit_status = false, .exit_status = 0};
+        .status = MIGA_EXEC_STATUS_OK, .has_exit_status = false, .exit_status = 0};
 
     // Execute the main condition
     exec_frame_execute_result_t cond_result =
         exec_frame_execute_dispatch(frame, node->data.if_clause.condition);
-    if (cond_result.status != EXEC_OK)
+    if (cond_result.status != MIGA_EXEC_STATUS_OK)
     {
         result = cond_result;
         return result;
@@ -1852,7 +1852,7 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, as
     {
         exec_frame_execute_result_t then_result =
             exec_frame_execute_dispatch(frame, node->data.if_clause.then_body);
-        if (then_result.status != EXEC_OK)
+        if (then_result.status != MIGA_EXEC_STATUS_OK)
         {
             result = then_result;
             return result;
@@ -1874,7 +1874,7 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, as
             }
             exec_frame_execute_result_t elif_cond_result =
                 exec_frame_execute_dispatch(frame, elif_node->data.if_clause.condition);
-            if (elif_cond_result.status != EXEC_OK)
+            if (elif_cond_result.status != MIGA_EXEC_STATUS_OK)
             {
                 result = elif_cond_result;
                 return result;
@@ -1883,7 +1883,7 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, as
             {
                 exec_frame_execute_result_t elif_then_result =
                     exec_frame_execute_dispatch(frame, elif_node->data.if_clause.then_body);
-                if (elif_then_result.status != EXEC_OK)
+                if (elif_then_result.status != MIGA_EXEC_STATUS_OK)
                 {
                     result = elif_then_result;
                     return result;
@@ -1899,7 +1899,7 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, as
     {
         exec_frame_execute_result_t else_result =
             exec_frame_execute_dispatch(frame, node->data.if_clause.else_body);
-        if (else_result.status != EXEC_OK)
+        if (else_result.status != MIGA_EXEC_STATUS_OK)
         {
             result = else_result;
             return result;
@@ -1916,7 +1916,7 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(exec_frame_t *frame, as
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame, ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_while_clause(miga_frame_t *frame, ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
@@ -1938,7 +1938,7 @@ exec_frame_execute_result_t exec_frame_execute_while_clause(exec_frame_t *frame,
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_for_clause(miga_frame_t *frame, ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
@@ -1977,7 +1977,7 @@ exec_frame_execute_result_t exec_frame_execute_for_clause(exec_frame_t *frame, a
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_function_def_clause(miga_frame_t *frame,
                                                                    ast_node_t *node)
 {
     Expects_not_null(frame);
@@ -1987,10 +1987,10 @@ exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t 
     ast_node_t *body = node->data.function_def.body;
     ast_node_list_t *ast_redirections = node->data.function_def.redirections;
     string_t *name = node->data.function_def.name;
-    exec_frame_execute_result_t result = {.status = EXEC_OK,
+    exec_frame_execute_result_t result = {.status = MIGA_EXEC_STATUS_OK,
                                           .has_exit_status = true,
                                           .exit_status = 0,
-                                          .flow = FRAME_FLOW_NORMAL,
+                                          .flow = MIGA_FRAME_FLOW_NORMAL,
                                           .flow_depth = 0};
 
     // Convert AST redirections to exec_redirections_t format
@@ -2003,7 +2003,7 @@ exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t 
             exec_set_error_printf(frame->executor,
                                   "Failed to convert redirections for function '%s'",
                                   string_cstr(name));
-            result.status = EXEC_ERROR;
+            result.status = MIGA_EXEC_STATUS_ERROR;
             result.exit_status = 1;
             return result;
         }
@@ -2018,7 +2018,7 @@ exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t 
         // Clean up redirections on failure
         if (redirections)
             exec_redirections_destroy(&redirections);
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_status = 1;
         return result;
     }
@@ -2026,7 +2026,7 @@ exec_frame_execute_result_t exec_frame_execute_function_def_clause(exec_frame_t 
     return result;
 }
 
-exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_redirected_command(miga_frame_t *frame,
                                                                   ast_node_t *node)
 {
     Expects_not_null(frame);
@@ -2041,10 +2041,10 @@ exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *
     if (!redirections && ast_redirections && ast_node_list_size(ast_redirections) > 0)
     {
         // Conversion failed
-        exec_frame_execute_result_t error_result = {.status = EXEC_ERROR,
+        exec_frame_execute_result_t error_result = {.status = MIGA_EXEC_STATUS_ERROR,
                                                     .has_exit_status = true,
                                                     .exit_status = 1,
-                                                    .flow = FRAME_FLOW_NORMAL,
+                                                    .flow = MIGA_FRAME_FLOW_NORMAL,
                                                     .flow_depth = 0};
         return error_result;
     }
@@ -2084,7 +2084,7 @@ exec_frame_execute_result_t exec_frame_execute_redirected_command(exec_frame_t *
  * @param params Parameters including condition, body, and until_mode flag
  * @return exec_frame_execute_result_t with final loop status and any pending control flow
  */
-exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_t *frame,
                                                               exec_params_t *params)
 {
     Expects_not_null(frame);
@@ -2092,10 +2092,10 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
     Expects_not_null(params->condition);
     Expects_not_null(params->body);
 
-    exec_frame_execute_result_t result = {.status = EXEC_OK,
+    exec_frame_execute_result_t result = {.status = MIGA_EXEC_STATUS_OK,
                                           .has_exit_status = true,
                                           .exit_status = 0,
-                                          .flow = FRAME_FLOW_NORMAL,
+                                          .flow = MIGA_FRAME_FLOW_NORMAL,
                                           .flow_depth = 0};
 
     bool is_until = params->until_mode;
@@ -2105,7 +2105,7 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
         // Execute condition
         exec_frame_execute_result_t cond_result =
             exec_frame_execute_dispatch(frame, params->condition);
-        if (cond_result.status != EXEC_OK)
+        if (cond_result.status != MIGA_EXEC_STATUS_OK)
         {
             return cond_result;
         }
@@ -2126,7 +2126,7 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
             body_result = exec_frame_execute_dispatch(frame, params->body);
 
         // Handle control flow
-        if (body_result.flow == FRAME_FLOW_BREAK)
+        if (body_result.flow == MIGA_FRAME_FLOW_BREAK)
         {
             if (body_result.flow_depth > 1)
             {
@@ -2142,7 +2142,7 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
                 break;
             }
         }
-        else if (body_result.flow == FRAME_FLOW_CONTINUE)
+        else if (body_result.flow == MIGA_FRAME_FLOW_CONTINUE)
         {
             if (body_result.flow_depth > 1)
             {
@@ -2155,12 +2155,12 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
             result.has_exit_status = body_result.has_exit_status;
             continue;
         }
-        else if (body_result.flow == FRAME_FLOW_RETURN || body_result.flow == FRAME_FLOW_TOP)
+        else if (body_result.flow == MIGA_FRAME_FLOW_RETURN || body_result.flow == MIGA_FRAME_FLOW_TOP)
         {
             // Return/exit propagates up
             return body_result;
         }
-        else if (body_result.status != EXEC_OK)
+        else if (body_result.status != MIGA_EXEC_STATUS_OK)
         {
             return body_result;
         }
@@ -2196,7 +2196,7 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(exec_frame_t *fram
  * @param params Parameters including loop_var_name, iteration_words, and body
  * @return exec_frame_execute_result_t with final loop status and any pending control flow
  */
-exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_iteration_loop(miga_frame_t *frame,
                                                               exec_params_t *params)
 {
     Expects_not_null(frame);
@@ -2205,10 +2205,10 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
     Expects_not_null(params->iteration_words);
     Expects_not_null(params->body);
 
-    exec_frame_execute_result_t result = {.status = EXEC_OK,
+    exec_frame_execute_result_t result = {.status = MIGA_EXEC_STATUS_OK,
                                           .has_exit_status = true,
                                           .exit_status = 0,
-                                          .flow = FRAME_FLOW_NORMAL,
+                                          .flow = MIGA_FRAME_FLOW_NORMAL,
                                           .flow_depth = 0};
 
     // Iterate over each word
@@ -2227,7 +2227,7 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
             body_result = exec_frame_execute_dispatch(frame, params->body);
 
         // Handle control flow
-        if (body_result.flow == FRAME_FLOW_BREAK)
+        if (body_result.flow == MIGA_FRAME_FLOW_BREAK)
         {
             if (body_result.flow_depth > 1)
             {
@@ -2243,7 +2243,7 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
                 break;
             }
         }
-        else if (body_result.flow == FRAME_FLOW_CONTINUE)
+        else if (body_result.flow == MIGA_FRAME_FLOW_CONTINUE)
         {
             if (body_result.flow_depth > 1)
             {
@@ -2256,12 +2256,12 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(exec_frame_t *fram
             result.has_exit_status = body_result.has_exit_status;
             continue;
         }
-        else if (body_result.flow == FRAME_FLOW_RETURN || body_result.flow == FRAME_FLOW_TOP)
+        else if (body_result.flow == MIGA_FRAME_FLOW_RETURN || body_result.flow == MIGA_FRAME_FLOW_TOP)
         {
             // Return/exit propagates up
             return body_result;
         }
-        else if (body_result.status != EXEC_OK)
+        else if (body_result.status != MIGA_EXEC_STATUS_OK)
         {
             return body_result;
         }
@@ -2318,7 +2318,7 @@ static pid_t waitpid_eintr(pid_t pid, int *status, int options)
  * @param params Parameters including pipeline_commands and pipeline_negated
  * @return exec_frame_execute_result_t with final pipeline status
  */
-exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t *frame,
                                                                     exec_params_t *params)
 {
     Expects_not_null(frame);
@@ -2329,10 +2329,10 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t
     bool is_negated = params->pipeline_negated;
     int ncmds = commands->size;
 
-    exec_frame_execute_result_t result = {.status = EXEC_OK,
+    exec_frame_execute_result_t result = {.status = MIGA_EXEC_STATUS_OK,
                                           .has_exit_status = true,
                                           .exit_status = 0,
-                                          .flow = FRAME_FLOW_NORMAL,
+                                          .flow = MIGA_FRAME_FLOW_NORMAL,
                                           .flow_depth = 0};
 
     if (ncmds == 0)
@@ -2374,7 +2374,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t
         if (pipe(pipes + 2 * i) == -1)
         {
             exec_set_error_printf(frame->executor, "pipe() failed: %s", strerror(errno));
-            result.status = EXEC_ERROR;
+            result.status = MIGA_EXEC_STATUS_ERROR;
             result.exit_status = 1;
             goto cleanup;
         }
@@ -2409,7 +2409,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(exec_frame_t
                 waitpid_eintr(pids[j], &discard, 0);
             }
 
-            result.status = EXEC_ERROR;
+            result.status = MIGA_EXEC_STATUS_ERROR;
             result.exit_status = 1;
             goto cleanup;
         }
@@ -2581,22 +2581,22 @@ cleanup:
 #else
     /* For non-POSIX systems, multi-command pipelines are not supported */
     exec_set_error_cstr(frame->executor, "Pipelines not supported on this platform");
-    result.status = EXEC_NOT_IMPL;
+    result.status = MIGA_EXEC_STATUS_NOT_IMPL;
     result.exit_status = 1;
     return result;
 #endif
 }
 
-exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, ast_node_t *node)
+exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, ast_node_t *node)
 {
     Expects_not_null(frame);
     Expects_not_null(node);
     Expects(node->type == AST_CASE_CLAUSE);
 
-    exec_frame_execute_result_t result = {.status = EXEC_OK,
+    exec_frame_execute_result_t result = {.status = MIGA_EXEC_STATUS_OK,
                                           .has_exit_status = true,
                                           .exit_status = 0,
-                                          .flow = FRAME_FLOW_NORMAL,
+                                          .flow = MIGA_FRAME_FLOW_NORMAL,
                                           .flow_depth = 0};
 
     /* Get the word to match against */
@@ -2615,7 +2615,7 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, 
     if (!word)
     {
         exec_set_error_cstr(frame->executor, "Failed to expand case word");
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_status = 1;
         return result;
     }
@@ -2709,7 +2709,7 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(exec_frame_t *frame, 
  * @param session The parse session (maintains lexer, tokenizer, and accumulated tokens)
  * @return Status indicating success, need for more input, or error
  */
-exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
+miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input,
                                      parse_session_t *session)
 {
     Expects_not_null(frame);
@@ -2719,7 +2719,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
     Expects_not_null(session->tokenizer);
     Expects_not_null(frame->executor);
 
-    exec_t *executor = frame->executor;
+    miga_exec_t *executor = frame->executor;
     lexer_t *lx = session->lexer;
     tokenizer_t *tokenizer = session->tokenizer;
 
@@ -2738,7 +2738,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
         const char *err = lexer_get_error(lx);
         frame_set_error_printf(frame, "Lexer error: %s", err ? err : "unknown");
         token_list_destroy(&raw_tokens);
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     if (lex_status == LEX_INCOMPLETE || lex_status == LEX_NEED_HEREDOC)
@@ -2764,7 +2764,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
                 const char *err = tokenizer_get_error(tokenizer);
                 frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
                 token_list_destroy(&processed_tokens);
-                return EXEC_ERROR;
+                return MIGA_EXEC_STATUS_ERROR;
             }
 
             if (tok_status == TOK_INCOMPLETE)
@@ -2774,7 +2774,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
                           session->line_num);
                 /* Tokens are buffered in tokenizer, continue to next line */
                 token_list_destroy(&processed_tokens);
-                return EXEC_INCOMPLETE;
+                return MIGA_EXEC_STATUS_INCOMPLETE;
             }
 
             /* Accumulate these tokens for when the lexer completes */
@@ -2788,7 +2788,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
                     0)
                 {
                     log_debug("exec_frame_string_core: Failed to append incomplete tokens");
-                    return EXEC_ERROR;
+                    return MIGA_EXEC_STATUS_ERROR;
                 }
             }
         }
@@ -2796,7 +2796,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
         {
             token_list_destroy(&raw_tokens);
         }
-        return EXEC_INCOMPLETE;
+        return MIGA_EXEC_STATUS_INCOMPLETE;
     }
 
     log_debug("exec_frame_string_core: Lexer produced %d raw tokens at line %d",
@@ -2812,7 +2812,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
         const char *err = tokenizer_get_error(tokenizer);
         frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
         token_list_destroy(&processed_tokens);
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     if (tok_status == TOK_INCOMPLETE)
@@ -2824,14 +2824,14 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
          * The processed_tokens list will be empty - tokens are held in the tokenizer's buffer.
          * Continue reading more input. */
         token_list_destroy(&processed_tokens);
-        return EXEC_INCOMPLETE;
+        return MIGA_EXEC_STATUS_INCOMPLETE;
     }
 
     if (token_list_size(processed_tokens) == 0)
     {
         log_debug("exec_frame_string_core: No tokens after processing at line %d", session->line_num);
         token_list_destroy(&processed_tokens);
-        return EXEC_EMPTY;
+        return MIGA_EXEC_STATUS_EMPTY;
     }
 
     /* Accumulate tokens if we had an incomplete parse previously */
@@ -2844,7 +2844,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
         if (token_list_append_list_move(session->accumulated_tokens, &processed_tokens) != 0)
         {
             log_debug("exec_frame_string_core: Failed to append tokens");
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
         }
 
         /* Use the accumulated list for parsing */
@@ -2901,7 +2901,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
             }
         }
         parser_destroy(&parser);
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     if (parse_status == PARSE_INCOMPLETE)
@@ -2913,14 +2913,14 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
         /* Clone token list from parser - respect silo boundary */
         session->accumulated_tokens = token_list_clone(parser->tokens);
         parser_destroy(&parser);
-        return EXEC_INCOMPLETE;
+        return MIGA_EXEC_STATUS_INCOMPLETE;
     }
 
     if (parse_status == PARSE_EMPTY || !gnode)
     {
         log_debug("exec_frame_string_core: Parse empty at line %d", session->line_num);
         parser_destroy(&parser);
-        return EXEC_EMPTY;
+        return MIGA_EXEC_STATUS_EMPTY;
     }
 
     ast_node_t *ast = ast_lower(gnode);
@@ -2929,7 +2929,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
 
     if (!ast)
     {
-        return EXEC_EMPTY;
+        return MIGA_EXEC_STATUS_EMPTY;
     }
 
     /* Execute via the dispatch function */
@@ -2945,15 +2945,15 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
 
     ast_node_destroy(&ast);
 
-    if (result.status == EXEC_ERROR)
+    if (result.status == MIGA_EXEC_STATUS_ERROR)
     {
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     /* Reset context after successful execution */
     parse_session_reset(session);
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 }
 
 /**
@@ -2962,7 +2962,7 @@ exec_status_t exec_frame_string_core(exec_frame_t *frame, const char *input,
  * Reads lines from fp and feeds them to exec_frame_string_core one at a time,
  * handling lines longer than the read buffer by accumulating chunks.
  */
-exec_status_t exec_frame_stream_core(exec_frame_t *frame, FILE *fp, parse_session_t *session)
+miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_session_t *session)
 {
     Expects_not_null(frame);
     Expects_not_null(fp);
@@ -2971,7 +2971,7 @@ exec_status_t exec_frame_stream_core(exec_frame_t *frame, FILE *fp, parse_sessio
     Expects_not_null(session->tokenizer);
     Expects_not_null(frame->executor);
 
-    exec_status_t final_status = EXEC_OK;
+    miga_exec_status_t final_status = MIGA_EXEC_STATUS_OK;
 
     /* Read a single logical line of any size, efficiently */
 #define LINE_CHUNK_SIZE 4096
@@ -2989,21 +2989,21 @@ exec_status_t exec_frame_stream_core(exec_frame_t *frame, FILE *fp, parse_sessio
             if (line_len == 0)
             {
                 /* Fast path: entire line fits in chunk */
-                exec_status_t status = exec_frame_string_core(frame, chunk, session);
+                miga_exec_status_t status = exec_frame_string_core(frame, chunk, session);
                 if (session->line_num > 0)
                     frame->source_line = session->line_num;
 
                 switch (status)
                 {
-                case EXEC_OK:
-                case EXEC_EMPTY:
-                    final_status = EXEC_OK;
+                case MIGA_EXEC_STATUS_OK:
+                case MIGA_EXEC_STATUS_EMPTY:
+                    final_status = MIGA_EXEC_STATUS_OK;
                     break;
-                case EXEC_INCOMPLETE:
-                    final_status = EXEC_INCOMPLETE;
+                case MIGA_EXEC_STATUS_INCOMPLETE:
+                    final_status = MIGA_EXEC_STATUS_INCOMPLETE;
                     break;
-                case EXEC_ERROR:
-                    final_status = EXEC_ERROR;
+                case MIGA_EXEC_STATUS_ERROR:
+                    final_status = MIGA_EXEC_STATUS_ERROR;
                     break;
                 }
                 return final_status;
@@ -3050,21 +3050,21 @@ exec_status_t exec_frame_stream_core(exec_frame_t *frame, FILE *fp, parse_sessio
     /* Process whatever we accumulated (may be empty on pure EOF) */
     if (line_len > 0)
     {
-        exec_status_t status = exec_frame_string_core(frame, line_buf, session);
+        miga_exec_status_t status = exec_frame_string_core(frame, line_buf, session);
         if (session->line_num > 0)
             frame->source_line = session->line_num;
 
         switch (status)
         {
-        case EXEC_OK:
-        case EXEC_EMPTY:
-            final_status = EXEC_OK;
+        case MIGA_EXEC_STATUS_OK:
+        case MIGA_EXEC_STATUS_EMPTY:
+            final_status = MIGA_EXEC_STATUS_OK;
             break;
-        case EXEC_INCOMPLETE:
-            final_status = EXEC_INCOMPLETE;
+        case MIGA_EXEC_STATUS_INCOMPLETE:
+            final_status = MIGA_EXEC_STATUS_INCOMPLETE;
             break;
-        case EXEC_ERROR:
-            final_status = EXEC_ERROR;
+        case MIGA_EXEC_STATUS_ERROR:
+            final_status = MIGA_EXEC_STATUS_ERROR;
             break;
         }
     }

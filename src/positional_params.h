@@ -2,9 +2,9 @@
  * @file positional_params.h
  * @brief Positional parameters ($1, $2, ..., $#) for a single executor context
  *
- * This module manages the positional parameters for a single exec_t instance.
+ * This module manages the positional parameters for a single miga_exec_t instance.
  * Each executor has its own independent set of positional parameters.
- * When creating subshells or calling functions, a new exec_t is created with
+ * When creating subshells or calling functions, a new miga_exec_t is created with
  * its own positional_params_t copied or created from scratch.
  */
 

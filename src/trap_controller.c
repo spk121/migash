@@ -218,7 +218,7 @@ void trap_controller_for_each(trap_controller_t *controller,
 
 int trap_controller_execute_trap(trap_controller_t *controller,
                                  int signal_number,
-                                 exec_frame_t *frame)
+                                 miga_frame_t *frame)
 {
     Expects_not_null(controller);
     Expects_not_null(frame);
@@ -237,7 +237,7 @@ int trap_controller_execute_trap(trap_controller_t *controller,
 }
 
 int trap_controller_execute_exit_trap(trap_controller_t *controller,
-                                      exec_frame_t *frame)
+                                      miga_frame_t *frame)
 {
     Expects_not_null(controller);
     Expects_not_null(frame);

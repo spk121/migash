@@ -1,4 +1,4 @@
-#ifdef HAVE_CONFIG_H
+﻿#ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 #ifdef MIGA_UCRT_API
@@ -86,7 +86,7 @@
  * ============================================================================
  */
 
-int builtin_colon(exec_frame_t *frame, const strlist_t *args)
+int builtin_colon(miga_frame_t *frame, const strlist_t *args)
 {
     /* Suppress unused parameter warnings */
     (void)frame;
@@ -102,7 +102,7 @@ int builtin_colon(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_break(exec_frame_t *frame, const strlist_t *args)
+int builtin_break(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -134,7 +134,7 @@ int builtin_break(exec_frame_t *frame, const strlist_t *args)
         return 1;
     }
 
-    frame_set_pending_control_flow(frame, FRAME_FLOW_BREAK, loop_count - 1);
+    frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_BREAK, loop_count - 1);
 
     return 0;
 }
@@ -144,7 +144,7 @@ int builtin_break(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_continue(exec_frame_t *frame, const strlist_t *args)
+int builtin_continue(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -175,7 +175,7 @@ int builtin_continue(exec_frame_t *frame, const strlist_t *args)
         return 1;
     }
 
-    frame_set_pending_control_flow(frame, FRAME_FLOW_CONTINUE, loop_count - 1);
+    frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_CONTINUE, loop_count - 1);
 
     return 0;
 }
@@ -185,7 +185,7 @@ int builtin_continue(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_shift(exec_frame_t *frame, const strlist_t *args)
+int builtin_shift(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -262,7 +262,7 @@ typedef struct search_path_result_t
  * Helper: Search PATH for a file and return the full path if found.
  * Returns {NULL, false} if not found. Caller must destroy full_path if found.
  */
-static search_path_result_t dot_search_path(exec_frame_t *frame, const string_t *filename)
+static search_path_result_t dot_search_path(miga_frame_t *frame, const string_t *filename)
 {
     if (!frame_has_variable_cstr(frame, "PATH"))
         return (search_path_result_t){.full_path = NULL, .found = false};
@@ -322,7 +322,7 @@ static search_path_result_t dot_search_path(exec_frame_t *frame, const string_t 
     return result;
 }
 
-int builtin_dot(exec_frame_t *frame, const strlist_t *args)
+int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -389,7 +389,7 @@ int builtin_dot(exec_frame_t *frame, const strlist_t *args)
         strlist_destroy(&new_params);
     }
 
-    exec_status_t status = exec_execute_stream_once(frame->executor, fp);
+    miga_exec_status_t status = exec_execute_stream_once(frame->executor, fp);
     fclose(fp);
     int exit_status = frame_get_last_exit_status(frame);
 
@@ -401,7 +401,7 @@ int builtin_dot(exec_frame_t *frame, const strlist_t *args)
 
     string_destroy(&resolved_path);
 
-    if (status == EXEC_ERROR && exit_status == 0)
+    if (status == MIGA_EXEC_STATUS_ERROR && exit_status == 0)
         return 1;
     return exit_status;
 }
@@ -429,7 +429,7 @@ int builtin_dot(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_eval(exec_frame_t *frame, const strlist_t *args)
+int builtin_eval(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -469,14 +469,14 @@ int builtin_eval(exec_frame_t *frame, const strlist_t *args)
     /* Execute the constructed command in an EXEC_FRAME_EVAL frame
      * This ensures proper control flow handling (return, break, continue
      * pass through to enclosing contexts) */
-    exec_status_t status = frame_execute_string_as_eval(frame, command);
+    miga_exec_status_t status = frame_execute_string_as_eval(frame, command);
     string_destroy(&command);
 
     /* Get the exit status from the executed command */
     int exit_status = frame_get_last_exit_status(frame);
 
     /* If execution failed but exit status is 0, return 1 */
-    if (status == EXEC_ERROR && exit_status == 0)
+    if (status == MIGA_EXEC_STATUS_ERROR && exit_status == 0)
         return 1;
 
     return exit_status;
@@ -494,7 +494,7 @@ int builtin_eval(exec_frame_t *frame, const strlist_t *args)
  * On success, does not return.
  * ============================================================================
  */
-int builtin_exec(exec_frame_t *frame, const strlist_t *args)
+int builtin_exec(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -549,7 +549,7 @@ int builtin_exec(exec_frame_t *frame, const strlist_t *args)
  * exit - Exit the shell or current function/subshell
  * ============================================================================
  */
-int builtin_exit(exec_frame_t *frame, const strlist_t *args)
+int builtin_exit(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -599,7 +599,7 @@ int builtin_exit(exec_frame_t *frame, const strlist_t *args)
     else
     {
         // If not top-level, set pending control flow to return and propagate status
-        frame_set_pending_control_flow(frame, FRAME_FLOW_RETURN, 0);
+        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_RETURN, 0);
         frame->last_exit_status = exit_status;
     }
 
@@ -612,7 +612,7 @@ int builtin_exit(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_export(exec_frame_t *frame, const strlist_t *args)
+int builtin_export(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -658,7 +658,7 @@ int builtin_export(exec_frame_t *frame, const strlist_t *args)
         }
 
         {
-            frame_export_status_t res = frame_export_variable(frame, name, value);
+            miga_export_status_t res = frame_export_variable(frame, name, value);
 
             /* Note: name and value are freed inside frame_export_variable if needed,
              * but we still own our copies */
@@ -668,25 +668,25 @@ int builtin_export(exec_frame_t *frame, const strlist_t *args)
 
             switch (res)
             {
-            case FRAME_EXPORT_SUCCESS:
+            case MIGA_EXPORT_STATUS_SUCCESS:
                 break;
-            case FRAME_EXPORT_INVALID_NAME:
+            case MIGA_EXPORT_STATUS_INVALID_NAME:
                 frame_set_error_printf(frame, "export: variable name is invalid");
                 exit_status = 1;
                 break;
-            case FRAME_EXPORT_INVALID_VALUE:
+            case MIGA_EXPORT_STATUS_INVALID_VALUE:
                 frame_set_error_printf(frame, "export: variable value is invalid");
                 exit_status = 1;
                 break;
-            case FRAME_EXPORT_READONLY:
+            case MIGA_EXPORT_STATUS_READONLY:
                 frame_set_error_printf(frame, "export: variable is readonly, cannot change value");
                 exit_status = 1;
                 break;
-            case FRAME_EXPORT_NOT_SUPPORTED:
+            case MIGA_EXPORT_STATUS_NOT_SUPPORTED:
                 frame_set_error_printf(frame, "export: failed to export to system, not supported");
                 exit_status = 1;
                 break;
-            case FRAME_EXPORT_SYSTEM_ERROR:
+            case MIGA_EXPORT_STATUS_SYSTEM_ERROR:
             default:
                 frame_set_error_printf(frame, "export: failed to export to system");
                 exit_status = 1;
@@ -719,7 +719,7 @@ int builtin_export(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_readonly(exec_frame_t *frame, const strlist_t *args)
+int builtin_readonly(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -865,8 +865,8 @@ int builtin_readonly(exec_frame_t *frame, const strlist_t *args)
         /* Set value if provided */
         if (value)
         {
-            frame_var_error_t set_result = frame_set_variable(frame, name, value);
-            if (set_result != FRAME_VAR_ERROR_NONE)
+            miga_var_status_t set_result = frame_set_variable(frame, name, value);
+            if (set_result != MIGA_VAR_STATUS_OK)
             {
                 fprintf(stderr, "readonly: failed to set variable '%s'\n", name_cstr);
                 string_destroy(&name);
@@ -893,8 +893,8 @@ int builtin_readonly(exec_frame_t *frame, const strlist_t *args)
         else
         {
             /* Mark variable as readonly */
-            frame_var_error_t ro_result = frame_set_variable_readonly(frame, name, true);
-            if (ro_result != FRAME_VAR_ERROR_NONE)
+            miga_var_status_t ro_result = frame_set_variable_readonly(frame, name, true);
+            if (ro_result != MIGA_VAR_STATUS_OK)
             {
                 fprintf(stderr, "readonly: failed to mark '%s' as readonly\n", name_cstr);
                 exit_status = 1;
@@ -998,7 +998,7 @@ static int trap_parse_signal_spec(const char *spec)
     return frame_trap_name_to_number(spec);
 }
 
-int builtin_trap(exec_frame_t *frame, const strlist_t *args)
+int builtin_trap(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -1339,7 +1339,7 @@ static void times_format_time(double seconds, char *buf, size_t buf_size)
 #ifdef MIGA_POSIX_API
 #include <sys/times.h>
 
-int builtin_times(exec_frame_t *frame, const strlist_t *args)
+int builtin_times(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1385,7 +1385,7 @@ int builtin_times(exec_frame_t *frame, const strlist_t *args)
 
 #elifdef MIGA_UCRT_API
 
-int builtin_times(exec_frame_t *frame, const strlist_t *args)
+int builtin_times(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1422,7 +1422,7 @@ int builtin_times(exec_frame_t *frame, const strlist_t *args)
 #else
 /* ISO C fallback - minimal implementation using clock() */
 
-int builtin_times(exec_frame_t *frame, const strlist_t *args)
+int builtin_times(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -1459,7 +1459,7 @@ int builtin_times(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-static void builtin_set_print_options(exec_frame_t *frame, bool reusable_format);
+static void builtin_set_print_options(miga_frame_t *frame, bool reusable_format);
 
 /* Valid -o/+o option arguments for the set builtin */
 static const char *builtin_set_valid_o_args[] = {
@@ -1481,7 +1481,7 @@ static bool builtin_set_is_valid_o_arg(const char *arg)
 }
 
 /* Print all shell options (set -o) */
-static void builtin_set_print_options(exec_frame_t *frame, bool reusable_format)
+static void builtin_set_print_options(miga_frame_t *frame, bool reusable_format)
 {
     Expects_not_null(frame);
 
@@ -1502,7 +1502,7 @@ static void builtin_set_print_options(exec_frame_t *frame, bool reusable_format)
     }
 }
 
-int builtin_set(exec_frame_t *frame, const strlist_t *args)
+int builtin_set(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -1721,7 +1721,7 @@ int builtin_set(exec_frame_t *frame, const strlist_t *args)
  * unset - unset values and attributes of variables and functions
  * ============================================================================
  */
-int builtin_unset(exec_frame_t *frame, const strlist_t *args)
+int builtin_unset(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -1768,16 +1768,15 @@ int builtin_unset(exec_frame_t *frame, const strlist_t *args)
         if (flag_f)
         {
             /* Unset function using frame API */
-            frame_func_error_t err = frame_unset_function(frame, strlist_at(args, i));
-            if (err == FRAME_FUNC_ERROR_NOT_FOUND)
+            miga_func_status_t err = frame_unset_function(frame, strlist_at(args, i));
+            if (err == MIGA_FUNC_STATUS_NOT_FOUND)
             {
                 fprintf(stderr, "unset: function '%s' not found\n",
                         string_cstr(strlist_at(args, i)));
                 err_count++;
             }
-            else if (err == FRAME_FUNC_ERROR_EMPTY_NAME || err == FRAME_FUNC_ERROR_NAME_TOO_LONG ||
-                     err == FRAME_FUNC_ERROR_NAME_INVALID_CHARACTER ||
-                     err == FRAME_FUNC_ERROR_NAME_STARTS_WITH_DIGIT)
+            else if (err == MIGA_FUNC_STATUS_EMPTY_NAME || err == MIGA_FUNC_STATUS_NAME_TOO_LONG ||
+                     err == MIGA_FUNC_STATUS_INVALID_NAMEs
             {
                 fprintf(stderr, "unset: invalid function name '%s'\n",
                         string_cstr(strlist_at(args, i)));
@@ -1865,7 +1864,7 @@ static void alias_print_callback(const string_t *name, const string_t *value, vo
     printf("'\n");
 }
 
-int builtin_alias(exec_frame_t *frame, const strlist_t *args)
+int builtin_alias(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2007,7 +2006,7 @@ int builtin_alias(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_unalias(exec_frame_t *frame, const strlist_t *args)
+int builtin_unalias(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2094,7 +2093,7 @@ int builtin_unalias(exec_frame_t *frame, const strlist_t *args)
  * Returns 0 if an option was found, 1 if no more options, 2 on error.
  * ============================================================================
  */
-int builtin_getopts(exec_frame_t *frame, const strlist_t *args)
+int builtin_getopts(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2190,7 +2189,7 @@ int builtin_getopts(exec_frame_t *frame, const strlist_t *args)
 #define SECOND_HOME_VAR NULL
 #endif
 
-static string_t *resolve_home(exec_frame_t *frame)
+static string_t *resolve_home(miga_frame_t *frame)
 {
     const char *vars[] = {"HOME", SECOND_HOME_VAR};
     for (int i = 0; i < 2; i++)
@@ -2271,7 +2270,7 @@ string_t *cd_canonicalize_string(const string_t *path)
  * flag_P    - if true, set PWD via getcwd (physical), else use logical curpath
  * flag_e    - if true and -P and getcwd fails, return 1 instead of 0
  */
-static int cd_do_chdir(exec_frame_t *frame,
+static int cd_do_chdir(miga_frame_t *frame,
                        const string_t *logical_path, // for -L PWD
                        const string_t *chdir_target, // what we actually chdir()
                        bool print_dir, bool flag_P, bool flag_e)
@@ -2342,7 +2341,7 @@ static int cd_do_chdir(exec_frame_t *frame,
 
 #endif // MIGA_POSIX_API || MIGA_UCRT_API
 
-int builtin_cd(exec_frame_t *frame, const strlist_t *args)
+int builtin_cd(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2564,7 +2563,7 @@ int builtin_cd(exec_frame_t *frame, const strlist_t *args)
 /* ============================================================================
  * pwd - Print working directory
  * ============================================================================ */
-int builtin_pwd(exec_frame_t *frame, const strlist_t *args)
+int builtin_pwd(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -2656,7 +2655,7 @@ int builtin_pwd(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_jobs(exec_frame_t *frame, const strlist_t *args)
+int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
 {
 
     if (!frame)
@@ -2981,7 +2980,7 @@ static void kill_list_signal_for_status(int status)
  * Send a signal to a process.
  * Returns 0 on success, non-zero on failure.
  */
-static int kill_send_signal(exec_frame_t *frame, int signum, intptr_t pid, const char *target_str)
+static int kill_send_signal(miga_frame_t *frame, int signum, intptr_t pid, const char *target_str)
 {
 #ifdef MIGA_POSIX_API
     (void)frame;
@@ -3064,7 +3063,7 @@ static int kill_send_signal(exec_frame_t *frame, int signum, intptr_t pid, const
  * Send a signal to all processes in a job.
  * Returns 0 on success, non-zero on failure.
  */
-static int kill_send_to_job(exec_frame_t *frame, int signum, int job_id, const char *target_str)
+static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const char *target_str)
 {
     if (!frame || !frame->executor || !frame->executor->jobs)
     {
@@ -3160,7 +3159,7 @@ static int kill_send_to_job(exec_frame_t *frame, int signum, int job_id, const c
 #endif
 }
 
-int builtin_kill(exec_frame_t *frame, const strlist_t *args)
+int builtin_kill(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -3350,7 +3349,7 @@ int builtin_kill(exec_frame_t *frame, const strlist_t *args)
  * Wait for a specific job to complete.
  * Returns the exit status of the job, or -1 on error.
  */
-static int wait_for_job(exec_frame_t *frame, int job_id, const char *target_str)
+static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
 {
     if (!frame || !frame->executor || !frame->executor->jobs)
     {
@@ -3467,7 +3466,7 @@ static int wait_for_job(exec_frame_t *frame, int job_id, const char *target_str)
  * Wait for a specific PID.
  * Returns the exit status, or 127 if PID not found.
  */
-static int wait_for_pid(exec_frame_t *frame, intptr_t pid, const char *target_str)
+static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_str)
 {
 #ifdef MIGA_POSIX_API
     int status;
@@ -3553,7 +3552,7 @@ static int wait_for_pid(exec_frame_t *frame, intptr_t pid, const char *target_st
  * Wait for all background jobs.
  * Returns the exit status of the last job waited for, or 0 if none.
  */
-static int wait_for_all(exec_frame_t *frame)
+static int wait_for_all(miga_frame_t *frame)
 {
     if (!frame || !frame->executor || !frame->executor->jobs)
     {
@@ -3630,7 +3629,7 @@ static int wait_for_all(exec_frame_t *frame)
     return last_exit_status;
 }
 
-int builtin_wait(exec_frame_t *frame, const strlist_t *args)
+int builtin_wait(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -3728,7 +3727,7 @@ int builtin_wait(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_fg(exec_frame_t *frame, const strlist_t *args)
+int builtin_fg(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -3919,7 +3918,7 @@ int builtin_fg(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_bg(exec_frame_t *frame, const strlist_t *args)
+int builtin_bg(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -4379,7 +4378,7 @@ static int ls_list_directory(const string_t *dir_path, int flag_a, int flag_A, i
     return 0;
 }
 
-int builtin_ls(exec_frame_t *frame, const strlist_t *args)
+int builtin_ls(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -4494,7 +4493,7 @@ int builtin_ls(exec_frame_t *frame, const strlist_t *args)
     return err_count > 0 ? 1 : 0;
 }
 #else
-int builtin_ls(exec_frame_t *frame, const strlist_t *args)
+int builtin_ls(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
@@ -4508,7 +4507,7 @@ int builtin_ls(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_echo(exec_frame_t *frame, const strlist_t *args)
+int builtin_echo(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5041,7 +5040,7 @@ static int printf_process_format(const char **fmt, const char *arg, int *stop_ou
     return 0;
 }
 
-int builtin_printf(exec_frame_t *frame, const strlist_t *args)
+int builtin_printf(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5186,7 +5185,7 @@ int builtin_printf(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_bracket(exec_frame_t *frame, const strlist_t *args)
+int builtin_bracket(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5340,14 +5339,14 @@ int builtin_bracket(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_return(exec_frame_t *frame, const strlist_t *args)
+int builtin_return(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
 
     /* Check if return is valid (must be in a function or dot script) */
-    exec_frame_t *return_target = frame_find_return_target(frame);
+    miga_frame_t *return_target = frame_find_return_target(frame);
     if (!return_target)
     {
         frame_set_error_printf(frame, "return: can only be used in a function or sourced script");
@@ -5378,7 +5377,7 @@ int builtin_return(exec_frame_t *frame, const strlist_t *args)
         return 1;
     }
 
-    frame_set_pending_control_flow(frame, FRAME_FLOW_RETURN, 0);
+    frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_RETURN, 0);
 
     return exit_status;
 }
@@ -5399,7 +5398,7 @@ int builtin_return(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_basename(exec_frame_t *frame, const strlist_t *args)
+int builtin_basename(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5526,7 +5525,7 @@ int builtin_basename(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_dirname(exec_frame_t *frame, const strlist_t *args)
+int builtin_dirname(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -5659,7 +5658,7 @@ int builtin_dirname(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_miga_dirnamevar(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_dirnamevar(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -6107,7 +6106,7 @@ static int printfvar_process_format(string_t *output, const char **fmt, const ch
     return 0;
 }
 
-int builtin_miga_printfvar(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_printfvar(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -6263,7 +6262,7 @@ int builtin_miga_printfvar(exec_frame_t *frame, const strlist_t *args)
  * Usage: miga_cat filename
  * ==========================================================================
  */
-int builtin_miga_cat(exec_frame_t *frame, const strlist_t *args)
+int builtin_miga_cat(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
@@ -6300,14 +6299,14 @@ int builtin_miga_cat(exec_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
-int builtin_true(exec_frame_t *frame, const strlist_t *args)
+int builtin_true(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;
     return 0;
 }
 
-int builtin_false(exec_frame_t *frame, const strlist_t *args)
+int builtin_false(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
     (void)args;

@@ -46,7 +46,7 @@
 /**
  * Get the IFS value from the frame, falling back to default.
  */
-static string_t *get_ifs(exec_frame_t *frame)
+static string_t *get_ifs(miga_frame_t *frame)
 {
     Expects_not_null(frame);
 
@@ -78,7 +78,7 @@ static string_t *get_ifs(exec_frame_t *frame)
 /**
  * Record the exit status from a command substitution.
  */
-static void record_subst_status(exec_frame_t *frame, int raw_status)
+static void record_subst_status(miga_frame_t *frame, int raw_status)
 {
     if (!frame)
         return;
@@ -127,7 +127,7 @@ static void strip_trailing_newlines(string_t *str)
  * Tilde Expansion
  * ============================================================================ */
 
-string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
+string_t *expand_tilde(miga_frame_t *frame, const string_t *username)
 {
 #ifdef MIGA_POSIX_API
     struct passwd *pw;
@@ -257,7 +257,7 @@ string_t *expand_tilde(exec_frame_t *frame, const string_t *username)
  * Get the value of a parameter (variable or special param).
  * Returns NULL if not set.
  */
-static string_t *get_parameter_value(const exec_frame_t *frame, const string_t *name)
+static string_t *get_parameter_value(const miga_frame_t *frame, const string_t *name)
 {
     if (!name || string_length(name) == 0)
     {
@@ -297,7 +297,7 @@ static string_t *get_parameter_value(const exec_frame_t *frame, const string_t *
 /**
  * Set a variable in the frame.
  */
-static void set_parameter_value(exec_frame_t *frame, const string_t *name, const string_t *value)
+static void set_parameter_value(miga_frame_t *frame, const string_t *name, const string_t *value)
 {
     if (!frame || !name || !value)
         return;
@@ -312,7 +312,7 @@ static void set_parameter_value(exec_frame_t *frame, const string_t *name, const
 /**
  * Check if a parameter is set (even if empty).
  */
-static bool is_parameter_set(exec_frame_t *frame, const string_t *name)
+static bool is_parameter_set(miga_frame_t *frame, const string_t *name)
 {
     string_t *value = get_parameter_value(frame, name);
     if (value)
@@ -328,7 +328,7 @@ static bool is_parameter_set(exec_frame_t *frame, const string_t *name)
  * Despite looking like an accessor, this function may have side effects
  * (e.g., modifying the frame's last_exit_status or assigning variables for := modifier).
  */
-static string_t *expand_parameter_with_modifier(exec_frame_t *frame, const part_t *part)
+static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_t *part)
 {
     string_t *v = get_parameter_value(frame, part->param_name);
     bool is_set = (v != NULL);
@@ -492,7 +492,7 @@ static string_t *expand_parameter_with_modifier(exec_frame_t *frame, const part_
     }
 }
 
-string_t *expand_parameter(exec_frame_t *frame, const string_t *name)
+string_t *expand_parameter(miga_frame_t *frame, const string_t *name)
 {
     if (!name || string_length(name) == 0)
     {
@@ -508,7 +508,7 @@ string_t *expand_parameter(exec_frame_t *frame, const string_t *name)
     return string_create(); /* Empty string if not set */
 }
 
-string_t *expand_special_param(const exec_frame_t *frame, const string_t *name)
+string_t *expand_special_param(const miga_frame_t *frame, const string_t *name)
 {
     if (!name || string_length(name) == 0)
     {
@@ -643,7 +643,7 @@ bool is_special_param(const string_t *name)
  * Command Substitution
  * ============================================================================ */
 
-string_t *expand_command_subst(exec_frame_t *frame, const string_t *command)
+string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
 {
 #ifdef MIGA_POSIX_API
     const char *cmd = string_cstr(command);
@@ -720,7 +720,7 @@ string_t *expand_command_subst(exec_frame_t *frame, const string_t *command)
  * Arithmetic Expansion
  * ============================================================================ */
 
-string_t *expand_arithmetic(exec_frame_t *frame, const string_t *expression)
+string_t *expand_arithmetic(miga_frame_t *frame, const string_t *expression)
 {
     if (!expression)
     {
@@ -786,7 +786,7 @@ static bool is_ifs_char(char c, const char *ifs)
  * 5. IFS whitespace adjacent to non-whitespace IFS is ignored
  * 6. If the result contains only IFS whitespace, produce zero words (empty list)
  */
-strlist_t *expand_field_split(exec_frame_t *frame, const string_t *text)
+strlist_t *expand_field_split(miga_frame_t *frame, const string_t *text)
 {
     Expects_not_null(frame);
     Expects_not_null(text);
@@ -905,7 +905,7 @@ cleanup:
  * Pathname Expansion
  * ============================================================================ */
 
-strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern)
+strlist_t *expand_pathname(miga_frame_t *frame, const string_t *pattern)
 {
     (void)frame; /* May use frame for noglob check in future */
 
@@ -936,7 +936,7 @@ strlist_t *expand_pathname(exec_frame_t *frame, const string_t *pattern)
  * This function may have side effects
  * (e.g., modifying the frame's last_exit_status or assigning variables for := modifier).
  */
-static string_t *expand_part(exec_frame_t *frame, const part_t *part)
+static string_t *expand_part(miga_frame_t *frame, const part_t *part)
 {
     switch (part->type)
     {
@@ -983,7 +983,7 @@ static string_t *expand_part(exec_frame_t *frame, const part_t *part)
  * Respects quoting: single-quoted parts are literal, double-quoted allow expansion.
  * May have side effects from parameter expansions with modifiers.
  */
-static string_t *expand_parts_to_string(exec_frame_t *frame, const part_list_t *parts)
+static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *parts)
 {
     Expects_not_null(frame);
     Expects_not_null(parts);
@@ -1035,7 +1035,7 @@ static string_t *remove_quotes(const string_t *text)
  * Expands a single WORD token into a list of strings, applying all relevant expansions.
  * This may have side effects from parameter expansions with modifiers and command substitutions.
  */
-strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *tok)
+strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *tok)
 {
     if (!tok || tok->type != TOKEN_WORD)
     {
@@ -1095,7 +1095,7 @@ strlist_t *exec_frame_expander_expand_word(exec_frame_t *frame, const token_t *t
     return fields;
 }
 
-string_t *expand_word_nosplit(exec_frame_t *frame, const token_t *tok)
+string_t *expand_word_nosplit(miga_frame_t *frame, const token_t *tok)
 {
     if (!tok || tok->type != TOKEN_WORD)
     {
@@ -1117,7 +1117,7 @@ string_t *expand_word_nosplit(exec_frame_t *frame, const token_t *tok)
  * Expand a list of WORD tokens into a list of strings, applying all relevant expansions.
  * This may have side effects from parameter expansions with modifiers and command substitutions.
  */
-strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens)
+strlist_t *expand_words(miga_frame_t *frame, const token_list_t *tokens)
 {
     if (!tokens)
     {
@@ -1144,7 +1144,7 @@ strlist_t *expand_words(exec_frame_t *frame, const token_list_t *tokens)
     return result;
 }
 
-string_t *expand_string(exec_frame_t *frame, const string_t *text, expand_flags_t flags)
+string_t *expand_string(miga_frame_t *frame, const string_t *text, expand_flags_t flags)
 {
     /* TODO: Implement proper string expansion with flags */
     /* For now, just return a copy if no expansion requested */
@@ -1153,7 +1153,7 @@ string_t *expand_string(exec_frame_t *frame, const string_t *text, expand_flags_
     return string_create_from(text);
 }
 
-string_t *expand_redirection_target(exec_frame_t *frame, const token_t *tok)
+string_t *expand_redirection_target(miga_frame_t *frame, const token_t *tok)
 {
     if (!tok || tok->type != TOKEN_WORD)
     {
@@ -1165,7 +1165,7 @@ string_t *expand_redirection_target(exec_frame_t *frame, const token_t *tok)
     return expand_parts_to_string(frame, token_get_parts_const(tok));
 }
 
-string_t *expand_assignment_value(exec_frame_t *frame, const token_t *tok)
+string_t *expand_assignment_value(miga_frame_t *frame, const token_t *tok)
 {
     Expects_not_null(frame);
     Expects_not_null(tok);
@@ -1176,7 +1176,7 @@ string_t *expand_assignment_value(exec_frame_t *frame, const token_t *tok)
     return expand_parts_to_string(frame, tok->assignment_value);
 }
 
-string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quoted)
+string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quoted)
 {
     if (is_quoted)
     {
@@ -1330,44 +1330,44 @@ string_t *expand_heredoc(exec_frame_t *frame, const string_t *body, bool is_quot
  * Legacy/Compatibility Functions
  * ============================================================================ */
 
-strlist_t *exec_expand_word(exec_t *executor, const token_t *tok)
+strlist_t *exec_expand_word(miga_exec_t *executor, const token_t *tok)
 {
     if (!executor)
         return NULL;
     return exec_frame_expander_expand_word(executor->current_frame, tok);
 }
 
-strlist_t *exec_expand_words(exec_t *executor, const token_list_t *tokens)
+strlist_t *exec_expand_words(miga_exec_t *executor, const token_list_t *tokens)
 {
     if (!executor)
         return NULL;
     return expand_words(executor->current_frame, tokens);
 }
 
-string_t *exec_expand_redirection_target(exec_t *executor, const token_t *tok)
+string_t *exec_expand_redirection_target(miga_exec_t *executor, const token_t *tok)
 {
     if (!executor)
         return NULL;
     return expand_redirection_target(executor->current_frame, tok);
 }
 
-string_t *exec_expand_assignment_value(exec_t *executor, const token_t *tok)
+string_t *exec_expand_assignment_value(miga_exec_t *executor, const token_t *tok)
 {
     if (!executor)
         return NULL;
     return expand_assignment_value(executor->current_frame, tok);
 }
 
-string_t *exec_expand_heredoc(exec_t *executor, const string_t *body, bool is_quoted)
+string_t *exec_expand_heredoc(miga_exec_t *executor, const string_t *body, bool is_quoted)
 {
     if (!executor)
         return NULL;
     return expand_heredoc(executor->current_frame, body, is_quoted);
 }
 
-string_t *exec_expand_tilde(exec_t *executor, const string_t *text)
+string_t *exec_expand_tilde(miga_exec_t *executor, const string_t *text)
 {
-    exec_frame_t *frame = executor ? executor->current_frame : NULL;
+    miga_frame_t *frame = executor ? executor->current_frame : NULL;
     return expand_tilde(frame, text);
 }
 
@@ -1377,7 +1377,7 @@ string_t *exec_expand_tilde(exec_t *executor, const string_t *text)
 
 string_t *exec_command_subst_callback(void *userdata, const string_t *command)
 {
-    exec_t *executor = (exec_t *)userdata;
-    exec_frame_t *frame = executor ? executor->current_frame : NULL;
+    miga_exec_t *executor = (miga_exec_t *)userdata;
+    miga_frame_t *frame = executor ? executor->current_frame : NULL;
     return expand_command_subst(frame, command);
 }

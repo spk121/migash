@@ -46,28 +46,28 @@ MIGA_EXTERN_C_START
  * Checks if the frame currently has an error message set.
  * Returns true if there is an error message, false otherwise.
  */
-MIGA_API bool frame_has_error(const exec_frame_t *frame);
+MIGA_API bool frame_has_error(const miga_frame_t *frame);
 
 /**
  * Gets the current error message for the frame.
  * Caller should not modify or free the returned string.
  * If there is no error message, this will return an empty string (not NULL).
  */
-MIGA_API const string_t *frame_get_error_message(const exec_frame_t *frame);
+MIGA_API const string_t *frame_get_error_message(const miga_frame_t *frame);
 
 /**
  * Clears the current error message for the frame, if any.
  * After this call, there will be no error message associated with the frame.
  */
-MIGA_API void frame_clear_error(exec_frame_t *frame);
+MIGA_API void frame_clear_error(miga_frame_t *frame);
 
 /**
  * Sets the error message for the frame to the given string.
  * The provided string will be copied, so the caller retains ownership of the
  * original string.
  */
-MIGA_API void frame_set_error(exec_frame_t *frame, const string_t *error);
-MIGA_API void frame_set_error_printf(exec_frame_t *frame, const char *format, ...);
+MIGA_API void frame_set_error(miga_frame_t *frame, const string_t *error);
+MIGA_API void frame_set_error_printf(miga_frame_t *frame, const char *format, ...);
 
 /* ============================================================================
  * Variables
@@ -77,8 +77,8 @@ MIGA_API void frame_set_error_printf(exec_frame_t *frame, const char *format, ..
  * Returns true if a variable with the given name exists in the variable store
  * associated with the current frame, false otherwise.
  */
-MIGA_API bool frame_has_variable(const exec_frame_t *frame, const string_t *name);
-MIGA_API bool frame_has_variable_cstr(const exec_frame_t *frame, const char *name);
+MIGA_API bool frame_has_variable(const miga_frame_t *frame, const string_t *name);
+MIGA_API bool frame_has_variable_cstr(const miga_frame_t *frame, const char *name);
 
 /**
  * Returns the value of a variable with the given name from the variable store
@@ -87,8 +87,8 @@ MIGA_API bool frame_has_variable_cstr(const exec_frame_t *frame, const char *nam
  * NULL).  If the variable does not exist, this will return an empty string
  * (not NULL).  Caller frees the returned string.
  */
-MIGA_API string_t *frame_get_variable_value(exec_frame_t *frame, const string_t *name);
-MIGA_API string_t *frame_get_variable_cstr(exec_frame_t *frame, const char *name);
+MIGA_API string_t *frame_get_variable_value(miga_frame_t *frame, const string_t *name);
+MIGA_API string_t *frame_get_variable_cstr(miga_frame_t *frame, const char *name);
 
 /**
  * Checks if a variable with the given name is marked as exported or read-only
@@ -96,10 +96,10 @@ MIGA_API string_t *frame_get_variable_cstr(exec_frame_t *frame, const char *name
  * the variable is exported/read-only, false if it is not exported/read-only
  * or does not exist.
  */
-MIGA_API bool frame_variable_is_exported(exec_frame_t *frame, const string_t *name);
-MIGA_API bool frame_variable_is_exported_cstr(exec_frame_t *frame, const char *name);
-MIGA_API bool frame_variable_is_readonly(exec_frame_t *frame, const string_t *name);
-MIGA_API bool frame_variable_is_readonly_cstr(exec_frame_t *frame, const char *name);
+MIGA_API bool frame_variable_is_exported(miga_frame_t *frame, const string_t *name);
+MIGA_API bool frame_variable_is_exported_cstr(miga_frame_t *frame, const char *name);
+MIGA_API bool frame_variable_is_readonly(miga_frame_t *frame, const string_t *name);
+MIGA_API bool frame_variable_is_readonly_cstr(miga_frame_t *frame, const char *name);
 
 /**
  * Returns the value of PS1 or PS2 for the current frame.
@@ -107,8 +107,8 @@ MIGA_API bool frame_variable_is_readonly_cstr(exec_frame_t *frame, const char *n
  * and "> " for PS2).
  * Caller frees the returned string.
  */
-MIGA_API string_t *frame_get_ps1(exec_frame_t *frame);
-MIGA_API string_t *frame_get_ps2(exec_frame_t *frame);
+MIGA_API string_t *frame_get_ps1(miga_frame_t *frame);
+MIGA_API string_t *frame_get_ps2(miga_frame_t *frame);
 
 /**
  * Sets a variable in the variable store associated with current frame.
@@ -118,11 +118,11 @@ MIGA_API string_t *frame_get_ps2(exec_frame_t *frame);
  * exported status will not be changed.  If the variable already exists and
  * is read-only and the new value differs from the previous value, this will
  * return an error code and not update the variable.  Returns
- * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
+ * MIGA_VAR_STATUS_OK on success, or an error code on failure.
  */
-MIGA_API frame_var_error_t frame_set_variable(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_var_status_t frame_set_variable(miga_frame_t *frame, const string_t *name,
                                      const string_t *value);
-MIGA_API frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame,
+MIGA_API miga_var_status_t frame_set_variable_cstr(miga_frame_t *frame,
                                                    const char *name, const char *value);
 
 /**
@@ -131,9 +131,9 @@ MIGA_API frame_var_error_t frame_set_variable_cstr(exec_frame_t *frame,
  * store to execute a simple command, this will add the variable as
  * non-temporary.
  */
-MIGA_API frame_var_error_t frame_set_persistent_variable(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_var_status_t frame_set_persistent_variable(miga_frame_t *frame, const string_t *name,
                                                 const string_t *value);
-MIGA_API frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *frame, const char *name,
+MIGA_API miga_var_status_t frame_set_persistent_variable_cstr(miga_frame_t *frame, const char *name,
                                                      const char *value);
 
 /**
@@ -145,9 +145,9 @@ MIGA_API frame_var_error_t frame_set_persistent_variable_cstr(exec_frame_t *fram
  * and was previously exported, but is now being marked as not exported, this
  * will also unset the variable in the environment if supported by the OS.
  * Read-only variables can still have their export status changed.  Returns
- * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
+ * MIGA_VAR_STATUS_OK on success, or an error code on failure.
  */
-MIGA_API frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_var_status_t frame_set_variable_exported(miga_frame_t *frame, const string_t *name,
                                               bool exported);
 
 /**
@@ -161,18 +161,18 @@ MIGA_API frame_var_error_t frame_set_variable_exported(exec_frame_t *frame, cons
  * changing its value.  If the variable doesn't exist and value is NULL,
  * marks the variable as exported with empty value.
  *
- * Returns FRAME_EXPORT_SUCCESS on success, or an error code on failure.
+ * Returns MIGA_EXPORT_STATUS_SUCCESS on success, or an error code on failure.
  */
-MIGA_API frame_export_status_t frame_export_variable(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_export_status_t frame_export_variable(miga_frame_t *frame, const string_t *name,
                                             const string_t *value);
 
 /**
  * Updates the read-only status of an existing variable in the variable store
  * associated with the current frame.  If the variable does not exist, this
- * will return an error code.  Returns FRAME_VAR_ERROR_NONE on success, or
+ * will return an error code.  Returns MIGA_VAR_STATUS_OK on success, or
  * an error code on failure.
  */
-MIGA_API frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_var_status_t frame_set_variable_readonly(miga_frame_t *frame, const string_t *name,
                                               bool readonly);
 
 /**
@@ -181,10 +181,10 @@ MIGA_API frame_var_error_t frame_set_variable_readonly(exec_frame_t *frame, cons
  * the environment if it was exported.  If the variable does not exist, this
  * will return an error code.  If the variable exists but is read-only, this
  * will return an error code and not unset the variable.  Returns
- * FRAME_VAR_ERROR_NONE on success, or an error code on failure.
+ * MIGA_VAR_STATUS_OK on success, or an error code on failure.
  */
-MIGA_API frame_var_error_t frame_unset_variable(exec_frame_t *frame, const string_t *name);
-MIGA_API frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const char *name);
+MIGA_API miga_var_status_t frame_unset_variable(miga_frame_t *frame, const string_t *name);
+MIGA_API miga_var_status_t frame_unset_variable_cstr(miga_frame_t *frame, const char *name);
 
 /**
  * Prints all variables in the variable store associated with the current
@@ -194,7 +194,7 @@ MIGA_API frame_var_error_t frame_unset_variable_cstr(exec_frame_t *frame, const 
  * @param frame   The execution frame.
  * @param output  Output stream to write to (e.g. ctx->stdout_fp).
  */
-MIGA_API void frame_print_exported_variables_in_export_format(exec_frame_t *frame, FILE *output);
+MIGA_API void frame_print_exported_variables_in_export_format(miga_frame_t *frame, FILE *output);
 
 /**
  * Prints all variables in the variable store associated with the current
@@ -204,7 +204,7 @@ MIGA_API void frame_print_exported_variables_in_export_format(exec_frame_t *fram
  * @param frame   The execution frame.
  * @param output  Output stream to write to (e.g. ctx->stdout_fp).
  */
-MIGA_API void frame_print_readonly_variables(exec_frame_t *frame, FILE *output);
+MIGA_API void frame_print_readonly_variables(miga_frame_t *frame, FILE *output);
 
 /**
  * Prints all variables in the variable store associated with the current
@@ -218,7 +218,7 @@ MIGA_API void frame_print_readonly_variables(exec_frame_t *frame, FILE *output);
  * @param reusable_format  Whether to use shell-reusable format.
  * @param output           Output stream to write to (e.g. ctx->stdout_fp).
  */
-MIGA_API void frame_print_variables(exec_frame_t *frame, bool reusable_format, FILE *output);
+MIGA_API void frame_print_variables(miga_frame_t *frame, bool reusable_format, FILE *output);
 
 /* ── IFS convenience ─────────────────────────────────────────────────────── */
 
@@ -231,8 +231,8 @@ MIGA_API void frame_print_variables(exec_frame_t *frame, bool reusable_format, F
  * @param frame  The execution frame.
  * @return A newly allocated string containing the IFS value.
  */
-MIGA_API string_t *frame_get_ifs(exec_frame_t *frame);
-MIGA_API char *frame_get_ifs_cstr(exec_frame_t *frame);
+MIGA_API string_t *frame_get_ifs(miga_frame_t *frame);
+MIGA_API char *frame_get_ifs_cstr(miga_frame_t *frame);
 
 /* ── Working directory ───────────────────────────────────────────────────── */
 
@@ -258,8 +258,8 @@ MIGA_API char *frame_get_ifs_cstr(exec_frame_t *frame);
  * @return true on success, false on failure (e.g. directory does not exist,
  *         permission denied).
  */
-MIGA_API bool frame_change_directory(exec_frame_t *frame, const string_t *path);
-MIGA_API bool frame_change_directory_cstr(exec_frame_t *frame, const char *path);
+MIGA_API bool frame_change_directory(miga_frame_t *frame, const string_t *path);
+MIGA_API bool frame_change_directory_cstr(miga_frame_t *frame, const char *path);
 
 /* ============================================================================
  * Word and String Expansion
@@ -272,8 +272,8 @@ MIGA_API bool frame_change_directory_cstr(exec_frame_t *frame, const char *path)
  * the flags provided.  Returns a newly allocated string with the expanded
  * result.  Caller is responsible for freeing the returned string.
  */
-MIGA_API string_t *frame_expand_string(exec_frame_t *frame, const string_t *text,
-                              frame_expand_flags_t flags);
+MIGA_API string_t *frame_expand_string(miga_frame_t *frame, const string_t *text,
+                              miga_expand_flags_t flags);
 
 /* ============================================================================
  * Positional Parameters
@@ -283,13 +283,13 @@ MIGA_API string_t *frame_expand_string(exec_frame_t *frame, const string_t *text
  * Returns true if the given frame has positional parameters defined
  * (e.g. $0, $1).
  */
-MIGA_API bool frame_has_positional_params(const exec_frame_t *frame);
+MIGA_API bool frame_has_positional_params(const miga_frame_t *frame);
 
 /**
  * Returns the number of positional parameters (e.g. $1, $2, ...)
  * associated with the given frame.  Does not count $0.
  */
-MIGA_API int frame_count_positional_params(const exec_frame_t *frame);
+MIGA_API int frame_count_positional_params(const miga_frame_t *frame);
 
 /**
  * Shifts the positional parameters in the given frame by the specified number
@@ -297,21 +297,21 @@ MIGA_API int frame_count_positional_params(const exec_frame_t *frame);
  * $3 becomes $2, etc.  If shift_count is greater than or equal to the number
  * of positional parameters, all positional parameters will be removed.
  */
-MIGA_API void frame_shift_positional_params(exec_frame_t *frame, int shift_count);
+MIGA_API void frame_shift_positional_params(miga_frame_t *frame, int shift_count);
 
 /**
  * Replaces the current positional parameters in the given frame with the new
  * list of positional parameters.  The new_params list will be copied, so the
  * caller retains ownership of the original list and its strings.
  */
-MIGA_API void frame_replace_positional_params(exec_frame_t *frame, const strlist_t *new_params);
+MIGA_API void frame_replace_positional_params(miga_frame_t *frame, const strlist_t *new_params);
 
 /**
  * Sets the value of $0 for the given frame.  The new_arg0 string will be
  * copied, so the caller retains ownership of the original string.
  */
-MIGA_API void frame_set_arg0(exec_frame_t *frame, const string_t *new_arg0);
-MIGA_API void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0);
+MIGA_API void frame_set_arg0(miga_frame_t *frame, const string_t *new_arg0);
+MIGA_API void frame_set_arg0_cstr(miga_frame_t *frame, const char *new_arg0);
 
 /**
  * Returns the value of the positional parameter at the given index for the
@@ -320,14 +320,14 @@ MIGA_API void frame_set_arg0_cstr(exec_frame_t *frame, const char *new_arg0);
  * number of positional parameters, this will return an empty string (not
  * NULL).  Caller frees the returned string.
  */
-MIGA_API string_t *frame_get_positional_param(const exec_frame_t *frame, int index);
+MIGA_API string_t *frame_get_positional_param(const miga_frame_t *frame, int index);
 
 /**
  * Returns a list of all positional parameters for the given frame.
  * The returned list and its strings will be newly allocated, so the caller is responsible for
  * freeing them.
  */
-MIGA_API strlist_t *frame_get_all_positional_params(const exec_frame_t *frame);
+MIGA_API strlist_t *frame_get_all_positional_params(const miga_frame_t *frame);
 
 /* ============================================================================
  * Named Options
@@ -340,8 +340,8 @@ MIGA_API strlist_t *frame_get_all_positional_params(const exec_frame_t *frame);
  * function will still return true.  This function only checks for the
  * existence of the option, not its value.
  */
-MIGA_API bool frame_has_named_option(const exec_frame_t *frame, const string_t *option_name);
-MIGA_API bool frame_has_named_option_cstr(const exec_frame_t *frame, const char *option_name);
+MIGA_API bool frame_has_named_option(const miga_frame_t *frame, const string_t *option_name);
+MIGA_API bool frame_has_named_option_cstr(const miga_frame_t *frame, const char *option_name);
 
 /**
  * Returns the value of the named option with the specified name for the given
@@ -349,8 +349,8 @@ MIGA_API bool frame_has_named_option_cstr(const exec_frame_t *frame, const char 
  * the current value of the option.  If the option does not exist, this will
  * return false.
  */
-MIGA_API bool frame_get_named_option(const exec_frame_t *frame, const string_t *option_name);
-MIGA_API bool frame_get_named_option_cstr(const exec_frame_t *frame, const char *option_name);
+MIGA_API bool frame_get_named_option(const miga_frame_t *frame, const string_t *option_name);
+MIGA_API bool frame_get_named_option_cstr(const miga_frame_t *frame, const char *option_name);
 
 /**
  * Sets the value of the named option with the specified name for the given
@@ -361,28 +361,28 @@ MIGA_API bool frame_get_named_option_cstr(const exec_frame_t *frame, const char 
  * printing options, to indicate that this option is set using a plus sign
  * (e.g. "set +o option_name").
  */
-MIGA_API bool frame_set_named_option(exec_frame_t *frame, const string_t *option_name, bool value,
+MIGA_API bool frame_set_named_option(miga_frame_t *frame, const string_t *option_name, bool value,
                             bool plus_prefix);
-MIGA_API bool frame_set_named_option_cstr(exec_frame_t *frame, const char *option_name, bool value,
+MIGA_API bool frame_set_named_option_cstr(miga_frame_t *frame, const char *option_name, bool value,
                                  bool plus_prefix);
 
 /* ============================================================================
  * Shell Functions
  * ============================================================================ */
 
-MIGA_API bool frame_has_function(const exec_frame_t *frame, const string_t *name);
+MIGA_API bool frame_has_function(const miga_frame_t *frame, const string_t *name);
 
-MIGA_API frame_func_error_t frame_get_function(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_func_status_t frame_get_function(miga_frame_t *frame, const string_t *name,
                                       string_t **out_body);
-MIGA_API frame_func_error_t frame_get_function_cstr(exec_frame_t *frame, const char *name, char **out_body);
+MIGA_API miga_func_status_t frame_get_function_cstr(miga_frame_t *frame, const char *name, char **out_body);
 
-MIGA_API frame_func_error_t frame_set_function(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_func_status_t frame_set_function(miga_frame_t *frame, const string_t *name,
                                       const string_t *value);
-MIGA_API frame_func_error_t frame_set_function_cstr(exec_frame_t *frame, const char *name,
+MIGA_API miga_func_status_t frame_set_function_cstr(miga_frame_t *frame, const char *name,
                                            const char *value);
 
-MIGA_API frame_func_error_t frame_unset_function(exec_frame_t *frame, const string_t *name);
-MIGA_API frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const char *name);
+MIGA_API miga_func_status_t frame_unset_function(miga_frame_t *frame, const string_t *name);
+MIGA_API miga_func_status_t frame_unset_function_cstr(miga_frame_t *frame, const char *name);
 
 /**
  * Call a shell function by name with the given arguments.
@@ -394,17 +394,17 @@ MIGA_API frame_func_error_t frame_unset_function_cstr(exec_frame_t *frame, const
  * @param frame  The current execution frame.
  * @param name   The function name.
  * @param args   The argument list (args[0] is conventionally the function name).
- * @return EXEC_OK on success, EXEC_ERROR on error.
+ * @return MIGA_EXEC_STATUS_OK on success, MIGA_EXEC_STATUS_ERROR on error.
  */
-MIGA_API exec_status_t frame_call_function(exec_frame_t *frame, const string_t *name,
+MIGA_API miga_exec_status_t frame_call_function(miga_frame_t *frame, const string_t *name,
                                   const strlist_t *args);
 
 /* ============================================================================
  * Exit Status
  * ============================================================================ */
 
-MIGA_API int frame_get_last_exit_status(const exec_frame_t *frame);
-MIGA_API void frame_set_last_exit_status(exec_frame_t *frame, int status);
+MIGA_API int frame_get_last_exit_status(const miga_frame_t *frame);
+MIGA_API void frame_set_last_exit_status(miga_frame_t *frame, int status);
 
 /* ============================================================================
  * Control Flow
@@ -417,19 +417,19 @@ MIGA_API void frame_set_last_exit_status(exec_frame_t *frame, int status);
  * @param frame The current frame
  * @return The target frame for return, or NULL if return is not valid
  */
-MIGA_API exec_frame_t *frame_find_return_target(exec_frame_t *frame);
+MIGA_API miga_frame_t *frame_find_return_target(miga_frame_t *frame);
 
 /**
  * Sets whether this frame is supposed to return, break, or continue.
- * If flow is FRAME_FLOW_RETURN, then this frame is supposed to return from
- * a function.  If flow is FRAME_FLOW_BREAK, then this frame is supposed to
- * break out of a loop.  If flow is FRAME_FLOW_CONTINUE, then this frame is
+ * If flow is MIGA_FRAME_FLOW_RETURN, then this frame is supposed to return from
+ * a function.  If flow is MIGA_FRAME_FLOW_BREAK, then this frame is supposed to
+ * break out of a loop.  If flow is MIGA_FRAME_FLOW_CONTINUE, then this frame is
  * supposed to continue to the next iteration of a loop.  The depth parameter
  * specifies how many nested loops this control flow applies to.  For example,
- * if flow is FRAME_FLOW_BREAK and depth is 2, then this frame is supposed to
+ * if flow is MIGA_FRAME_FLOW_BREAK and depth is 2, then this frame is supposed to
  * break out of 2 nested loops.
  */
-MIGA_API void frame_set_pending_control_flow(exec_frame_t *frame, frame_control_flow_t flow, int depth);
+MIGA_API void frame_set_pending_control_flow(miga_frame_t *frame, miga_frame_flow_t flow, int depth);
 
 /* ============================================================================
  * Traps
@@ -452,7 +452,7 @@ typedef void (*frame_trap_callback_t)(int signal_number, const string_t *action,
  * @param callback The callback function to call for each trap
  * @param context User-provided context pointer passed to callback
  */
-MIGA_API void frame_for_each_set_trap(exec_frame_t *frame, frame_trap_callback_t callback, void *context);
+MIGA_API void frame_for_each_set_trap(miga_frame_t *frame, frame_trap_callback_t callback, void *context);
 
 /**
  * Get the trap action for a signal.
@@ -461,14 +461,14 @@ MIGA_API void frame_for_each_set_trap(exec_frame_t *frame, frame_trap_callback_t
  * @param out_is_ignored If non-NULL, set to true if signal is set to ignore
  * @return The trap action string, or NULL if no trap is set
  */
-MIGA_API const string_t *frame_get_trap(exec_frame_t *frame, int signal_number, bool *out_is_ignored);
+MIGA_API const string_t *frame_get_trap(miga_frame_t *frame, int signal_number, bool *out_is_ignored);
 
 /**
  * Get the EXIT trap action.
  * @param frame The execution frame
  * @return The EXIT trap action string, or NULL if no EXIT trap is set
  */
-MIGA_API const string_t *frame_get_exit_trap(exec_frame_t *frame);
+MIGA_API const string_t *frame_get_exit_trap(miga_frame_t *frame);
 
 /**
  * Set a trap for a signal.
@@ -479,7 +479,7 @@ MIGA_API const string_t *frame_get_exit_trap(exec_frame_t *frame);
  * @param is_reset True to reset to default (action should be NULL)
  * @return True on success, false on failure
  */
-MIGA_API bool frame_set_trap(exec_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
+MIGA_API bool frame_set_trap(miga_frame_t *frame, int signal_number, const string_t *action, bool is_ignored,
                     bool is_reset);
 
 /**
@@ -490,7 +490,7 @@ MIGA_API bool frame_set_trap(exec_frame_t *frame, int signal_number, const strin
  * @param is_reset True to reset to default (action should be NULL)
  * @return True on success, false on failure
  */
-MIGA_API bool frame_set_exit_trap(exec_frame_t *frame, const string_t *action, bool is_ignored,
+MIGA_API bool frame_set_exit_trap(miga_frame_t *frame, const string_t *action, bool is_ignored,
                          bool is_reset);
 
 /**
@@ -521,7 +521,7 @@ MIGA_API bool frame_trap_name_is_unsupported(const char *name);
  * to ensure that any traps that were set to run on exit are executed.  The
  * traps will be executed in the order they were added to the trap store.
  */
-MIGA_API void frame_run_exit_traps(exec_frame_t *frame);
+MIGA_API void frame_run_exit_traps(miga_frame_t *frame);
 
 /* ============================================================================
  * Aliases
@@ -541,8 +541,8 @@ typedef void (*frame_alias_callback_t)(const string_t *name, const string_t *val
  * @param name The alias name to check
  * @return True if the alias exists
  */
-MIGA_API bool frame_has_alias(const exec_frame_t *frame, const string_t *name);
-MIGA_API bool frame_has_alias_cstr(const exec_frame_t *frame, const char *name);
+MIGA_API bool frame_has_alias(const miga_frame_t *frame, const string_t *name);
+MIGA_API bool frame_has_alias_cstr(const miga_frame_t *frame, const char *name);
 
 /**
  * Get the value of an alias.
@@ -551,8 +551,8 @@ MIGA_API bool frame_has_alias_cstr(const exec_frame_t *frame, const char *name);
  * @return The alias value, or NULL if not found. The returned pointer is valid
  *         only until the next mutating operation on the alias store.
  */
-MIGA_API const string_t *frame_get_alias(const exec_frame_t *frame, const string_t *name);
-MIGA_API const char *frame_get_alias_cstr(const exec_frame_t *frame, const char *name);
+MIGA_API const string_t *frame_get_alias(const miga_frame_t *frame, const string_t *name);
+MIGA_API const char *frame_get_alias_cstr(const miga_frame_t *frame, const char *name);
 
 /**
  * Set or update an alias.
@@ -561,8 +561,8 @@ MIGA_API const char *frame_get_alias_cstr(const exec_frame_t *frame, const char 
  * @param value The alias value (will be deep-copied)
  * @return True on success, false if no alias store available
  */
-MIGA_API bool frame_set_alias(exec_frame_t *frame, const string_t *name, const string_t *value);
-MIGA_API bool frame_set_alias_cstr(exec_frame_t *frame, const char *name, const char *value);
+MIGA_API bool frame_set_alias(miga_frame_t *frame, const string_t *name, const string_t *value);
+MIGA_API bool frame_set_alias_cstr(miga_frame_t *frame, const char *name, const char *value);
 
 /**
  * Remove an alias.
@@ -570,15 +570,15 @@ MIGA_API bool frame_set_alias_cstr(exec_frame_t *frame, const char *name, const 
  * @param name The alias name to remove
  * @return True if the alias was found and removed, false otherwise
  */
-MIGA_API bool frame_remove_alias(exec_frame_t *frame, const string_t *name);
-MIGA_API bool frame_remove_alias_cstr(exec_frame_t *frame, const char *name);
+MIGA_API bool frame_remove_alias(miga_frame_t *frame, const string_t *name);
+MIGA_API bool frame_remove_alias_cstr(miga_frame_t *frame, const char *name);
 
 /**
  * Get the number of aliases in the frame's alias store.
  * @param frame The execution frame
  * @return The number of aliases, or 0 if no alias store available
  */
-MIGA_API int frame_alias_count(const exec_frame_t *frame);
+MIGA_API int frame_alias_count(const miga_frame_t *frame);
 
 /**
  * Iterate over all aliases and call the callback for each.
@@ -586,14 +586,14 @@ MIGA_API int frame_alias_count(const exec_frame_t *frame);
  * @param callback The callback function to call for each alias
  * @param context User-provided context pointer passed to callback
  */
-MIGA_API void frame_for_each_alias(const exec_frame_t *frame, frame_alias_callback_t callback,
+MIGA_API void frame_for_each_alias(const miga_frame_t *frame, frame_alias_callback_t callback,
                           void *context);
 
 /**
  * Remove all aliases from the frame's alias store.
  * @param frame The execution frame
  */
-MIGA_API void frame_clear_all_aliases(exec_frame_t *frame);
+MIGA_API void frame_clear_all_aliases(miga_frame_t *frame);
 
 /**
  * Check if a string is a valid alias name.
@@ -609,16 +609,16 @@ MIGA_API bool frame_alias_name_is_valid(const char *name);
  /**
  * Execute commands from a string in the context of the given frame.
  * Parses and executes the string as shell commands. When executing, a terminal newline is
- * presumed if not already present.  Returns EXEC_OK if successful execution,
+ * presumed if not already present.  Returns MIGA_EXEC_STATUS_OK if successful execution,
  * if the string calls 'exit', or if the command is empty.
- * Returns EXEC_ERROR in other conditions.
+ * Returns MIGA_EXEC_STATUS_ERROR in other conditions.
  *
  * @param frame The execution frame context
  * @param command The command string to execute
- * @return EXEC_OK on success, EXEC_ERROR on error
+ * @return MIGA_EXEC_STATUS_OK on success, MIGA_EXEC_STATUS_ERROR on error
  */
-MIGA_API exec_status_t frame_execute_string(exec_frame_t *frame, const string_t *command);
-MIGA_API exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char *command);
+MIGA_API miga_exec_status_t frame_execute_string(miga_frame_t *frame, const string_t *command);
+MIGA_API miga_exec_status_t frame_execute_string_cstr(miga_frame_t *frame, const char *command);
 
 /**
  * Execute an eval command string in the context of the given frame.
@@ -627,10 +627,10 @@ MIGA_API exec_status_t frame_execute_string_cstr(exec_frame_t *frame, const char
  *
  * @param frame The execution frame context
  * @param command The command string to execute
- * @return EXEC_OK on success, EXEC_ERROR on error
+ * @return MIGA_EXEC_STATUS_OK on success, MIGA_EXEC_STATUS_ERROR on error
  */
-MIGA_API exec_status_t frame_execute_string_as_eval(exec_frame_t *frame, const string_t *command);
-MIGA_API exec_status_t frame_execute_string_as_eval_cstr(exec_frame_t *frame, const char *command);
+MIGA_API miga_exec_status_t frame_execute_string_as_eval(miga_frame_t *frame, const string_t *command);
+MIGA_API miga_exec_status_t frame_execute_string_as_eval_cstr(miga_frame_t *frame, const char *command);
 
 MIGA_EXTERN_C_END
 

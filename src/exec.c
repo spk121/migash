@@ -94,11 +94,11 @@
  * Helper Functions
  * ============================================================================ */
 
-static exec_status_t source_rc_files(struct exec_t *e)
+static miga_exec_status_t source_rc_files(struct miga_exec_t *e)
 {
     // FIXME
     (void)e;
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 #if 0
 #ifdef EXEC_SYSTEM_RC_PATH
     exec_load_config_file(e, EXEC_SYSTEM_RC_PATH, func_store, alias_store);
@@ -134,17 +134,17 @@ static exec_status_t source_rc_files(struct exec_t *e)
  * Executor Lifecycle
  * ============================================================================ */
 
-struct exec_t *exec_create(void)
+struct miga_exec_t *exec_create(void)
 {
-    return xcalloc(1, sizeof(struct exec_t));
+    return xcalloc(1, sizeof(struct miga_exec_t));
 }
 
-void exec_destroy(exec_t **executor_ptr)
+void exec_destroy(miga_exec_t **executor_ptr)
 {
     if (!executor_ptr || !*executor_ptr)
         return;
 
-    exec_t *e = *executor_ptr;
+    miga_exec_t *e = *executor_ptr;
 
     /* Pop all frames */
     while (e->current_frame)
@@ -207,12 +207,12 @@ void exec_destroy(exec_t **executor_ptr)
 
 /* ── Startup environment ─────────────────────────────────────────────────── */
 
-bool exec_is_args_set(const exec_t *executor)
+bool exec_is_args_set(const miga_exec_t *executor)
 {
     return executor->argc > 0 && executor->argv != NULL;
 }
 
-char *const *exec_get_args_cstr(const exec_t *executor, int *argc_out)
+char *const *exec_get_args_cstr(const miga_exec_t *executor, int *argc_out)
 {
     Expects_not_null(executor);
 
@@ -223,7 +223,7 @@ char *const *exec_get_args_cstr(const exec_t *executor, int *argc_out)
     return executor->argv;
 }
 
-bool exec_set_args(exec_t *executor, const strlist_t *args)
+bool exec_set_args(miga_exec_t *executor, const strlist_t *args)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -240,7 +240,7 @@ bool exec_set_args(exec_t *executor, const strlist_t *args)
     return true;
 }
 
-bool exec_set_args_cstr(exec_t *executor, int argc, char *const *argv)
+bool exec_set_args_cstr(miga_exec_t *executor, int argc, char *const *argv)
 {
     Expects_not_null(executor);
 
@@ -254,21 +254,21 @@ bool exec_set_args_cstr(exec_t *executor, int argc, char *const *argv)
     return true;
 }
 
-bool exec_is_envp_set(const exec_t *executor)
+bool exec_is_envp_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
 
     return executor->envp != NULL;
 }
 
-char *const *exec_get_envp_cstr(const exec_t *executor)
+char *const *exec_get_envp_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
 
     return executor->envp;
 }
 
-bool exec_set_envp_cstr(exec_t *executor, char *const *envp)
+bool exec_set_envp_cstr(miga_exec_t *executor, char *const *envp)
 {
     Expects_not_null(executor);
 
@@ -280,14 +280,14 @@ bool exec_set_envp_cstr(exec_t *executor, char *const *envp)
 
 /* ── Shell identity ──────────────────────────────────────────────────────── */
 
-bool exec_is_shell_name_set(const exec_t *executor)
+bool exec_is_shell_name_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
 
     return executor->shell_name != NULL;
 }
 
-const char *exec_get_shell_name_cstr(const exec_t *executor)
+const char *exec_get_shell_name_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
 
@@ -296,7 +296,7 @@ const char *exec_get_shell_name_cstr(const exec_t *executor)
     return string_cstr(executor->shell_name);
 }
 
-bool exec_set_shell_name_cstr(exec_t *executor, const char *shell_name)
+bool exec_set_shell_name_cstr(miga_exec_t *executor, const char *shell_name)
 {
     Expects_not_null(executor);
 
@@ -315,13 +315,13 @@ bool exec_set_shell_name_cstr(exec_t *executor, const char *shell_name)
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
 
-bool exec_get_flag_allexport(const exec_t *executor)
+bool exec_get_flag_allexport(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.allexport;
 }
 
-bool exec_set_flag_allexport(exec_t *executor, bool value)
+bool exec_set_flag_allexport(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -330,13 +330,13 @@ bool exec_set_flag_allexport(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_errexit(const exec_t *executor)
+bool exec_get_flag_errexit(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.errexit;
 }
 
-bool exec_set_flag_errexit(exec_t *executor, bool value)
+bool exec_set_flag_errexit(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -345,13 +345,13 @@ bool exec_set_flag_errexit(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_ignoreeof(const exec_t *executor)
+bool exec_get_flag_ignoreeof(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.ignoreeof;
 }
 
-bool exec_set_flag_ignoreeof(exec_t *executor, bool value)
+bool exec_set_flag_ignoreeof(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -360,13 +360,13 @@ bool exec_set_flag_ignoreeof(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_noclobber(const exec_t *executor)
+bool exec_get_flag_noclobber(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.noclobber;
 }
 
-bool exec_set_flag_noclobber(exec_t *executor, bool value)
+bool exec_set_flag_noclobber(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -375,13 +375,13 @@ bool exec_set_flag_noclobber(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_noglob(const exec_t *executor)
+bool exec_get_flag_noglob(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.noglob;
 }
 
-bool exec_set_flag_noglob(exec_t *executor, bool value)
+bool exec_set_flag_noglob(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -390,13 +390,13 @@ bool exec_set_flag_noglob(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_noexec(const exec_t *executor)
+bool exec_get_flag_noexec(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.noexec;
 }
 
-bool exec_set_flag_noexec(exec_t *executor, bool value)
+bool exec_set_flag_noexec(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -405,13 +405,13 @@ bool exec_set_flag_noexec(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_nounset(const exec_t *executor)
+bool exec_get_flag_nounset(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.nounset;
 }
 
-bool exec_set_flag_nounset(exec_t *executor, bool value)
+bool exec_set_flag_nounset(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -420,13 +420,13 @@ bool exec_set_flag_nounset(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_pipefail(const exec_t *executor)
+bool exec_get_flag_pipefail(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.pipefail;
 }
 
-bool exec_set_flag_pipefail(exec_t *executor, bool value)
+bool exec_set_flag_pipefail(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -435,13 +435,13 @@ bool exec_set_flag_pipefail(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_verbose(const exec_t *executor)
+bool exec_get_flag_verbose(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.verbose;
 }
 
-bool exec_set_flag_verbose(exec_t *executor, bool value)
+bool exec_set_flag_verbose(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -450,13 +450,13 @@ bool exec_set_flag_verbose(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_vi(const exec_t *executor)
+bool exec_get_flag_vi(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.vi;
 }
 
-bool exec_set_flag_vi(exec_t *executor, bool value)
+bool exec_set_flag_vi(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -465,13 +465,13 @@ bool exec_set_flag_vi(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_get_flag_xtrace(const exec_t *executor)
+bool exec_get_flag_xtrace(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->opt.xtrace;
 }
 
-bool exec_set_flag_xtrace(exec_t *executor, bool value)
+bool exec_set_flag_xtrace(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -482,13 +482,13 @@ bool exec_set_flag_xtrace(exec_t *executor, bool value)
 
 /* ── Interactive / login mode ────────────────────────────────────────────── */
 
-bool exec_get_is_interactive(const exec_t *executor)
+bool exec_get_is_interactive(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_interactive;
 }
 
-bool exec_set_is_interactive(exec_t *executor, bool is_interactive)
+bool exec_set_is_interactive(miga_exec_t *executor, bool is_interactive)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -497,13 +497,13 @@ bool exec_set_is_interactive(exec_t *executor, bool is_interactive)
     return true;
 }
 
-bool exec_get_is_login_shell(const exec_t *executor)
+bool exec_get_is_login_shell(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_login_shell;
 }
 
-bool exec_set_is_login_shell(exec_t *executor, bool is_login_shell)
+bool exec_set_is_login_shell(miga_exec_t *executor, bool is_login_shell)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -514,13 +514,13 @@ bool exec_set_is_login_shell(exec_t *executor, bool is_login_shell)
 
 /* ── Job control ─────────────────────────────────────────────────────────── */
 
-bool exec_get_job_control_disabled(const exec_t *executor)
+bool exec_get_job_control_disabled(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->job_control_disabled;
 }
 
-bool exec_set_job_control_disabled(exec_t *executor, bool disabled)
+bool exec_set_job_control_disabled(miga_exec_t *executor, bool disabled)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -531,13 +531,13 @@ bool exec_set_job_control_disabled(exec_t *executor, bool disabled)
 
 /* ── Working directory ───────────────────────────────────────────────────── */
 
-bool exec_is_working_directory_set(const exec_t *executor)
+bool exec_is_working_directory_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->working_directory != NULL;
 }
 
-const char *exec_get_working_directory_cstr(const exec_t *executor)
+const char *exec_get_working_directory_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->working_directory)
@@ -545,7 +545,7 @@ const char *exec_get_working_directory_cstr(const exec_t *executor)
     return string_cstr(executor->working_directory);
 }
 
-bool exec_set_working_directory_cstr(exec_t *executor, const char *path)
+bool exec_set_working_directory_cstr(miga_exec_t *executor, const char *path)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -561,19 +561,19 @@ bool exec_set_working_directory_cstr(exec_t *executor, const char *path)
 
 /* ── File permissions ────────────────────────────────────────────────────── */
 
-bool exec_is_umask_set(const exec_t *executor)
+bool exec_is_umask_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask != 0;
 }
 
-int exec_get_umask(const exec_t *executor)
+int exec_get_umask(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask;
 }
 
-bool exec_set_umask(exec_t *executor, int mask)
+bool exec_set_umask(miga_exec_t *executor, int mask)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -583,13 +583,13 @@ bool exec_set_umask(exec_t *executor, int mask)
 }
 
 #ifdef MIGA_POSIX_API
-mode_t exec_get_umask_posix(const exec_t *executor)
+mode_t exec_get_umask_posix(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->umask;
 }
 
-bool exec_set_umask_posix(exec_t *executor, mode_t mask)
+bool exec_set_umask_posix(miga_exec_t *executor, mode_t mask)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -598,19 +598,19 @@ bool exec_set_umask_posix(exec_t *executor, mode_t mask)
     return true;
 }
 
-bool exec_is_file_size_limit_set(const exec_t *executor)
+bool exec_is_file_size_limit_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->file_size_limit != 0;
 }
 
-rlim_t exec_get_file_size_limit(const exec_t *executor)
+rlim_t exec_get_file_size_limit(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->file_size_limit;
 }
 
-bool exec_set_file_size_limit(exec_t *executor, rlim_t limit)
+bool exec_set_file_size_limit(miga_exec_t *executor, rlim_t limit)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -622,13 +622,13 @@ bool exec_set_file_size_limit(exec_t *executor, rlim_t limit)
 
 /* ── Process identity ────────────────────────────────────────────────────── */
 
-bool exec_is_process_group_set(const exec_t *executor)
+bool exec_is_process_group_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->pgid_valid;
 }
 
-int exec_get_process_group(const exec_t *executor)
+int exec_get_process_group(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->pgid_valid)
@@ -636,7 +636,7 @@ int exec_get_process_group(const exec_t *executor)
     return executor->pgid;
 }
 
-bool exec_set_process_group(exec_t *executor, int pgid)
+bool exec_set_process_group(miga_exec_t *executor, int pgid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -646,13 +646,13 @@ bool exec_set_process_group(exec_t *executor, int pgid)
     return true;
 }
 
-bool exec_is_shell_pid_set(const exec_t *executor)
+bool exec_is_shell_pid_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->shell_pid_valid;
 }
 
-int exec_get_shell_pid(const exec_t *executor)
+int exec_get_shell_pid(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->shell_pid_valid)
@@ -660,7 +660,7 @@ int exec_get_shell_pid(const exec_t *executor)
     return executor->shell_pid;
 }
 
-bool exec_set_shell_pid(exec_t *executor, int pid)
+bool exec_set_shell_pid(miga_exec_t *executor, int pid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -670,13 +670,13 @@ bool exec_set_shell_pid(exec_t *executor, int pid)
     return true;
 }
 
-bool exec_is_shell_ppid_set(const exec_t *executor)
+bool exec_is_shell_ppid_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->shell_ppid_valid;
 }
 
-int exec_get_shell_ppid(const exec_t *executor)
+int exec_get_shell_ppid(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->shell_ppid_valid)
@@ -684,7 +684,7 @@ int exec_get_shell_ppid(const exec_t *executor)
     return executor->shell_ppid;
 }
 
-bool exec_set_shell_ppid(exec_t *executor, int ppid)
+bool exec_set_shell_ppid(miga_exec_t *executor, int ppid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -696,13 +696,13 @@ bool exec_set_shell_ppid(exec_t *executor, int ppid)
 
 /* ── RC file control ─────────────────────────────────────────────────────── */
 
-bool exec_get_inhibit_rc_files(const exec_t *executor)
+bool exec_get_inhibit_rc_files(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->inhibit_rc_files;
 }
 
-bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit)
+bool exec_set_inhibit_rc_files(miga_exec_t *executor, bool inhibit)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -711,13 +711,13 @@ bool exec_set_inhibit_rc_files(exec_t *executor, bool inhibit)
     return true;
 }
 
-bool exec_get_flag_nobuiltins(const exec_t *executor)
+bool exec_get_flag_nobuiltins(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->nobuiltins;
 }
 
-bool exec_set_flag_nobuiltins(exec_t *executor, bool value)
+bool exec_set_flag_nobuiltins(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -726,13 +726,13 @@ bool exec_set_flag_nobuiltins(exec_t *executor, bool value)
     return true;
 }
 
-bool exec_is_system_rc_filename_set(const exec_t *executor)
+bool exec_is_system_rc_filename_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->system_rc_filename != NULL;
 }
 
-const char *exec_get_system_rc_filename_cstr(const exec_t *executor)
+const char *exec_get_system_rc_filename_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->system_rc_filename)
@@ -740,7 +740,7 @@ const char *exec_get_system_rc_filename_cstr(const exec_t *executor)
     return string_cstr(executor->system_rc_filename);
 }
 
-bool exec_set_system_rc_filename_cstr(exec_t *executor, const char *filename)
+bool exec_set_system_rc_filename_cstr(miga_exec_t *executor, const char *filename)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -754,13 +754,13 @@ bool exec_set_system_rc_filename_cstr(exec_t *executor, const char *filename)
     return true;
 }
 
-bool exec_is_user_rc_filename_set(const exec_t *executor)
+bool exec_is_user_rc_filename_set(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->user_rc_filename != NULL;
 }
 
-const char *exec_get_user_rc_filename_cstr(const exec_t *executor)
+const char *exec_get_user_rc_filename_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->user_rc_filename)
@@ -768,7 +768,7 @@ const char *exec_get_user_rc_filename_cstr(const exec_t *executor)
     return string_cstr(executor->user_rc_filename);
 }
 
-bool exec_set_user_rc_filename_cstr(exec_t *executor, const char *filename)
+bool exec_set_user_rc_filename_cstr(miga_exec_t *executor, const char *filename)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -784,7 +784,7 @@ bool exec_set_user_rc_filename_cstr(exec_t *executor, const char *filename)
 
 /* ── Special parameters ──────────────────────────────────────────────────── */
 
-int exec_get_last_exit_status(const exec_t *executor)
+int exec_get_last_exit_status(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->last_exit_status_set)
@@ -792,7 +792,7 @@ int exec_get_last_exit_status(const exec_t *executor)
     return executor->last_exit_status;
 }
 
-bool exec_set_last_exit_status(exec_t *executor, int status)
+bool exec_set_last_exit_status(miga_exec_t *executor, int status)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -802,7 +802,7 @@ bool exec_set_last_exit_status(exec_t *executor, int status)
     return true;
 }
 
-int exec_get_last_background_pid(const exec_t *executor)
+int exec_get_last_background_pid(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->last_background_pid_set)
@@ -810,7 +810,7 @@ int exec_get_last_background_pid(const exec_t *executor)
     return executor->last_background_pid;
 }
 
-bool exec_set_last_background_pid(exec_t *executor, int pid)
+bool exec_set_last_background_pid(miga_exec_t *executor, int pid)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -820,7 +820,7 @@ bool exec_set_last_background_pid(exec_t *executor, int pid)
     return true;
 }
 
-const char *exec_get_last_argument_cstr(const exec_t *executor)
+const char *exec_get_last_argument_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (!executor->last_argument_set)
@@ -828,7 +828,7 @@ const char *exec_get_last_argument_cstr(const exec_t *executor)
     return string_cstr(executor->last_argument);
 }
 
-bool exec_set_last_argument_cstr(exec_t *executor, const char *arg)
+bool exec_set_last_argument_cstr(miga_exec_t *executor, const char *arg)
 {
     Expects_not_null(executor);
     if (exec_is_top_frame_initialized(executor))
@@ -847,13 +847,13 @@ bool exec_set_last_argument_cstr(exec_t *executor, const char *arg)
  * Frame Access
  * ============================================================================ */
 
-bool exec_is_top_frame_initialized(const exec_t *executor)
+bool exec_is_top_frame_initialized(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->top_frame_initialized;
 }
 
-exec_frame_t *exec_get_current_frame(const exec_t *executor)
+miga_frame_t *exec_get_current_frame(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->current_frame;
@@ -863,8 +863,8 @@ exec_frame_t *exec_get_current_frame(const exec_t *executor)
  * Builtin Registration (delegates to builtin_store)
  * ============================================================================ */
 
-bool exec_register_builtin_cstr(exec_t *executor, const char *name, builtin_fn_t fn,
-                                builtin_category_t category)
+bool exec_register_builtin_cstr(miga_exec_t *executor, const char *name, miga_builtin_fn_t fn,
+                                miga_builtin_category_t category)
 {
     Expects_not_null(executor);
 
@@ -883,13 +883,13 @@ bool exec_register_builtin_cstr(exec_t *executor, const char *name, builtin_fn_t
     /* Map the public enum to the internal enum.  The values are
        deliberately kept in sync (both start at 0 for SPECIAL), but
        we do an explicit conversion for type safety. */
-    builtin_category_t internal_cat =
-        (category == BUILTIN_SPECIAL) ? BUILTIN_SPECIAL : BUILTIN_REGULAR;
+    miga_builtin_category_t internal_cat =
+        (category == MIGA_BUILTIN_CATEGORY_SPECIAL) ? MIGA_BUILTIN_CATEGORY_SPECIAL : MIGA_BUILTIN_CATEGORY_REGULAR;
 
-    return builtin_store_set(executor->builtins, name, (builtin_fn_t)fn, internal_cat);
+    return builtin_store_set(executor->builtins, name, (miga_builtin_fn_t)fn, internal_cat);
 }
 
-bool exec_unregister_builtin_cstr(exec_t *executor, const char *name)
+bool exec_unregister_builtin_cstr(miga_exec_t *executor, const char *name)
 {
     Expects_not_null(executor);
 
@@ -899,7 +899,7 @@ bool exec_unregister_builtin_cstr(exec_t *executor, const char *name)
     return builtin_store_remove(executor->builtins, name);
 }
 
-bool exec_has_builtin_cstr(const exec_t *executor, const char *name)
+bool exec_has_builtin_cstr(const miga_exec_t *executor, const char *name)
 {
     Expects_not_null(executor);
 
@@ -909,29 +909,29 @@ bool exec_has_builtin_cstr(const exec_t *executor, const char *name)
     return builtin_store_has(executor->builtins, name);
 }
 
-builtin_fn_t exec_get_builtin_cstr(const exec_t *executor, const char *name)
+miga_builtin_fn_t exec_get_builtin_cstr(const miga_exec_t *executor, const char *name)
 {
     Expects_not_null(executor);
 
     if (!name || !executor->builtins)
         return NULL;
 
-    return (builtin_fn_t)builtin_store_get(executor->builtins, name);
+    return (miga_builtin_fn_t)builtin_store_get(executor->builtins, name);
 }
 
-bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
-                                    builtin_category_t *category_out)
+bool exec_get_builtin_category_cstr(const miga_exec_t *executor, const char *name,
+                                    miga_builtin_category_t *category_out)
 {
     Expects_not_null(executor);
 
     if (!name || !executor->builtins)
         return false;
 
-    builtin_category_t internal_cat;
+    miga_builtin_category_t internal_cat;
     bool found = builtin_store_lookup(executor->builtins, name, NULL, &internal_cat);
     if (found && category_out)
     {
-        *category_out = (internal_cat == BUILTIN_SPECIAL) ? BUILTIN_SPECIAL : BUILTIN_REGULAR;
+        *category_out = (internal_cat == MIGA_BUILTIN_CATEGORY_SPECIAL) ? MIGA_BUILTIN_CATEGORY_SPECIAL : MIGA_BUILTIN_CATEGORY_REGULAR;
     }
 
     return found;
@@ -941,12 +941,12 @@ bool exec_get_builtin_category_cstr(const exec_t *executor, const char *name,
  * Execution Setup
  * ============================================================================ */
 
-static exec_status_t exec_setup_core(exec_t *e, bool interactive)
+static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
 {
     Expects_not_null(e);
 
     if (e->top_frame_initialized)
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
 
     // Finish initializing the top-level parameters that weren't explicitly set by the caller.
     // Override all the frame parameters with the executor's pre-configured values.
@@ -1123,8 +1123,8 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     /* Source RC files */
     if (!e->inhibit_rc_files && (interactive || e->is_login_shell))
     {
-        exec_status_t ret = source_rc_files(e);
-        e->rc_loaded = ret == EXEC_OK;
+        miga_exec_status_t ret = source_rc_files(e);
+        e->rc_loaded = ret == MIGA_EXEC_STATUS_OK;
         if (e->rc_loaded)
             log_debug("RC files loaded successfully.");
         else
@@ -1134,15 +1134,15 @@ static exec_status_t exec_setup_core(exec_t *e, bool interactive)
     else
         log_debug("Skipped loading RC files");
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 }
 
-exec_status_t exec_setup_interactive(exec_t *executor)
+miga_exec_status_t exec_setup_interactive(miga_exec_t *executor)
 {
     return exec_setup_core(executor, true);
 }
 
-exec_status_t exec_setup_noninteractive(exec_t *executor)
+miga_exec_status_t exec_setup_noninteractive(miga_exec_t *executor)
 {
     return exec_setup_core(executor, false);
 }
@@ -1153,13 +1153,13 @@ exec_status_t exec_setup_noninteractive(exec_t *executor)
  * This function attempts to guess the mode based on the provided file pointer.
  * @param executor The executor instance to set up.
  * @param fp The file pointer to use for guessing interactivity.
- * @return EXEC_OK if setup was successful, otherwise EXEC_ERROR.
+ * @return MIGA_EXEC_STATUS_OK if setup was successful, otherwise MIGA_EXEC_STATUS_ERROR.
  */
-static exec_status_t exec_setup_lazy(exec_t *executor, FILE *fp)
+static miga_exec_status_t exec_setup_lazy(miga_exec_t *executor, FILE *fp)
 {
     Expects_not_null(executor);
     if (executor->top_frame_initialized)
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     // Don't know if this is interactive or not.
     // Let's try to guess.
 
@@ -1184,13 +1184,13 @@ static exec_status_t exec_setup_lazy(exec_t *executor, FILE *fp)
         return exec_setup_core(executor, false);
     }
     // Unreachable
-    return EXEC_ERROR;
+    return MIGA_EXEC_STATUS_ERROR;
 }
 
 #if 0
-struct exec_t *exec_create(const struct exec_cfg_t *cfg)
+struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
 {
-    struct exec_t *e = xcalloc(1, sizeof(struct exec_t));
+    struct miga_exec_t *e = xcalloc(1, sizeof(struct miga_exec_t));
 
     /* The singleton exec stores
      * 1. Singleton values
@@ -1369,7 +1369,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
     /* -------------------------------------------------------------------------
      * Top-Frame Initialization Data (lazy frame creation)
      * -------------------------------------------------------------------------
-     * These stores are owned by exec_t until the top frame is created,
+     * These stores are owned by miga_exec_t until the top frame is created,
      * at which point ownership transfers to the frame.
      */
     e->variables = NULL;
@@ -1481,7 +1481,7 @@ struct exec_t *exec_create(const struct exec_cfg_t *cfg)
  * exec_set_error, and exec_clear_error are defined in the
  * "Global State Queries" section below. */
 
-string_t *exec_get_ps1(const exec_t *executor)
+string_t *exec_get_ps1(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     /* We expect to use the current frame's variable store, but
@@ -1503,7 +1503,7 @@ string_t *exec_get_ps1(const exec_t *executor)
     return string_create_from_cstr("$ ");
 }
 
-char *exec_get_ps1_cstr(const exec_t *executor)
+char *exec_get_ps1_cstr(const miga_exec_t *executor)
 {
     string_t *s = exec_get_ps1(executor);
     return string_release(&s);
@@ -1547,7 +1547,7 @@ static bool is_xdigit(char c)
  * Returns a newly heap-allocated C string. The caller is responsible for
  * freeing it.
  */
-static string_t *render_ps1(const exec_t *exec)
+static string_t *render_ps1(const miga_exec_t *exec)
 {
     Expects_not_null(exec);
 
@@ -1557,7 +1557,7 @@ static string_t *render_ps1(const exec_t *exec)
         return string_create_from_cstr("$ ");
     }
 
-    const exec_frame_t *frame = exec->current_frame;
+    const miga_frame_t *frame = exec->current_frame;
     Expects_not_null(frame);
 
     /* -------------------------------------------------------------------------
@@ -1794,19 +1794,19 @@ static string_t *render_ps1(const exec_t *exec)
     return out;
 }
 
-string_t *exec_get_rendered_ps1(const exec_t *executor)
+string_t *exec_get_rendered_ps1(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return render_ps1(executor);
 }
 
-char *exec_get_rendered_ps1_cstr(const exec_t *executor)
+char *exec_get_rendered_ps1_cstr(const miga_exec_t *executor)
 {
     string_t *s = exec_get_rendered_ps1(executor);
     return string_release(&s);
 }
 
-string_t *exec_get_ps2(const exec_t *executor)
+string_t *exec_get_ps2(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     const char *ps2 = NULL;
@@ -1823,37 +1823,37 @@ string_t *exec_get_ps2(const exec_t *executor)
     return string_create_from_cstr((ps2 && *ps2) ? ps2 : "> ");
 }
 
-char *exec_get_ps2_cstr(const exec_t *executor)
+char *exec_get_ps2_cstr(const miga_exec_t *executor)
 {
     string_t *s = exec_get_ps2(executor);
     return string_release(&s);
 }
 
-positional_params_t *exec_get_positional_params(const exec_t *executor)
+positional_params_t *exec_get_positional_params(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->positional_params;
 }
 
-variable_store_t *exec_get_variables(const exec_t *executor)
+variable_store_t *exec_get_variables(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->variables;
 }
 
-alias_store_t *exec_get_aliases(const exec_t *executor)
+alias_store_t *exec_get_aliases(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->aliases;
 }
 
-bool exec_is_interactive(const exec_t *executor)
+bool exec_is_interactive(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_interactive;
 }
 
-bool exec_is_login_shell(const exec_t *executor)
+bool exec_is_login_shell(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->is_login_shell;
@@ -1863,7 +1863,7 @@ bool exec_is_login_shell(const exec_t *executor)
  * Execution Functions
  * ============================================================================ */
 
-void exec_setup_interactive_execute(exec_t *executor)
+void exec_setup_interactive_execute(miga_exec_t *executor)
 {
     Expects_not_null(executor);
 
@@ -1885,7 +1885,7 @@ void exec_setup_interactive_execute(exec_t *executor)
  * Stream Execution Core
  * ============================================================================ */
 
-exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interactive)
+miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, bool interactive)
 {
     Expects_not_null(executor);
     Expects_not_null(fp);
@@ -1895,8 +1895,8 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
      * ------------------------------------------------------------------ */
     if (!executor->top_frame_initialized)
     {
-        exec_status_t status = exec_setup_lazy(executor, fp);
-        if (status != EXEC_OK)
+        miga_exec_status_t status = exec_setup_lazy(executor, fp);
+        if (status != MIGA_EXEC_STATUS_OK)
             log_warn("lazy setup failed with status %d", status);
         // Not a fatal error
     }
@@ -1909,7 +1909,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         if (!executor->session)
         {
             exec_set_error_cstr(executor, "Failed to create parse session");
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
         }
     }
     parse_session_t *session = executor->session;
@@ -1920,7 +1920,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 #define IGNOREEOF_MAX 10
     int consecutive_eof = 0;
     bool need_continuation = false;
-    exec_status_t final_result = EXEC_OK;
+    miga_exec_status_t final_result = MIGA_EXEC_STATUS_OK;
 
     /* ------------------------------------------------------------------
      * Main loop — one physical line per iteration
@@ -1945,7 +1945,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         }
 
         /* ---- 2. Read & execute one line ---- */
-        exec_status_t line_status = exec_frame_stream_core(executor->current_frame, fp, session);
+        miga_exec_status_t line_status = exec_frame_stream_core(executor->current_frame, fp, session);
 
         /* ---- 3. EOF handling ---- */
         if (feof(fp))
@@ -1961,7 +1961,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
                 if (interactive)
                     fprintf(stderr, "\n%s: syntax error: unexpected end of file\n",
                             string_cstr(executor->shell_name));
-                final_result = EXEC_ERROR;
+                final_result = MIGA_EXEC_STATUS_ERROR;
                 break;
             }
 
@@ -1982,7 +1982,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
             }
 
             /* Clean EOF */
-            final_result = EXEC_OK;
+            final_result = MIGA_EXEC_STATUS_OK;
             break;
         }
 
@@ -1990,7 +1990,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
         consecutive_eof = 0;
 
         /* ---- 4. Dispatch on line status ---- */
-        if (line_status == EXEC_INCOMPLETE)
+        if (line_status == MIGA_EXEC_STATUS_INCOMPLETE)
         {
             /*
              * The lexer or parser needs more input.  The session holds the
@@ -2011,7 +2011,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
          * tokens).  On error the session may have stale state, so reset
          * it explicitly to be safe.
          */
-        if (line_status == EXEC_ERROR)
+        if (line_status == MIGA_EXEC_STATUS_ERROR)
         {
             parse_session_reset(session);
 
@@ -2030,7 +2030,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
                 /* Non-interactive + errexit: abort on non-zero status */
                 if (executor->opt.errexit && executor->last_exit_status != 0)
                 {
-                    final_result = EXEC_ERROR;
+                    final_result = MIGA_EXEC_STATUS_ERROR;
                     break;
                 }
             }
@@ -2038,12 +2038,12 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
 
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
-            (executor->current_frame->pending_control_flow == FRAME_FLOW_RETURN ||
-             executor->current_frame->pending_control_flow == FRAME_FLOW_TOP) &&
+            (executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN ||
+             executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP) &&
             executor->current_frame == executor->top_frame)
         {
             /* A top-level 'return' or 'exit' unwind */
-            final_result = EXEC_EXIT;
+            final_result = MIGA_EXEC_STATUS_EXIT;
             break;
         }
 
@@ -2065,23 +2065,23 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
             /* POSIX: $? is preserved across trap execution */
             int saved_exit_status = executor->last_exit_status;
 
-            exec_frame_t *trap_frame =
+            miga_frame_t *trap_frame =
                 exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
-            exec_status_t trap_result =
+            miga_exec_status_t trap_result =
                 frame_execute_string(trap_frame, trap_action->action);
 
             exec_frame_pop(&executor->current_frame);
 
             executor->last_exit_status = saved_exit_status;
 
-            if (trap_result == EXEC_EXIT)
+            if (trap_result == MIGA_EXEC_STATUS_EXIT)
             {
-                final_result = EXEC_EXIT;
+                final_result = MIGA_EXEC_STATUS_EXIT;
                 goto done;
             }
 
-            if (trap_result == EXEC_ERROR && interactive)
+            if (trap_result == MIGA_EXEC_STATUS_ERROR && interactive)
             {
                 const char *err = exec_get_error_cstr(executor);
                 if (err)
@@ -2113,7 +2113,7 @@ exec_status_t exec_execute_stream_repl(exec_t *executor, FILE *fp, bool interact
             else
             {
                 executor->last_exit_status = 128 + SIGINT;
-                final_result = EXEC_ERROR;
+                final_result = MIGA_EXEC_STATUS_ERROR;
                 break;
             }
         }
@@ -2124,13 +2124,13 @@ done:
     return final_result;
 }
 
-exec_status_t exec_execute_stream(exec_t *executor, FILE *fp)
+miga_exec_status_t exec_execute_stream(miga_exec_t *executor, FILE *fp)
 {
     return exec_execute_stream_repl(executor, fp, executor->is_interactive);
 }
 
 /* For non-interactive execution of a named script */
-exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp, const char *filename)
+miga_exec_status_t exec_execute_stream_named(miga_exec_t *executor, FILE *fp, const char *filename)
 {
     Expects_not_null(executor);
     Expects_not_null(fp);
@@ -2138,8 +2138,8 @@ exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp, const char *
     /* Need to make sure a frame exists so set can set the filename */
     if (!executor->top_frame_initialized)
     {
-        exec_status_t status = exec_setup_lazy(executor, fp);
-        if (status != EXEC_OK)
+        miga_exec_status_t status = exec_setup_lazy(executor, fp);
+        if (status != MIGA_EXEC_STATUS_OK)
             log_warn("lazy setup failed with status %d", status);
         // Not a fatal error
     }
@@ -2150,11 +2150,11 @@ exec_status_t exec_execute_stream_named(exec_t *executor, FILE *fp, const char *
     else
         executor->current_frame->source_name = string_create_from_cstr(filename);
     executor->current_frame->source_line = 0;
-    exec_status_t status = exec_execute_stream_repl(executor, fp, false);
+    miga_exec_status_t status = exec_execute_stream_repl(executor, fp, false);
     return status;
 }
 
-exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
+miga_exec_status_t exec_execute_stream_once(miga_exec_t *executor, FILE *fp)
 {
     Expects_not_null(executor);
     Expects_not_null(fp);
@@ -2176,10 +2176,10 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
     if (!session)
     {
         exec_set_error_cstr(executor, "Failed to create parse session");
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
-    exec_status_t raw_status = exec_frame_stream_core(executor->current_frame, fp, session);
+    miga_exec_status_t raw_status = exec_frame_stream_core(executor->current_frame, fp, session);
 
     /* Tear down the transient session. */
     parse_session_destroy(&session);
@@ -2187,22 +2187,22 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
     /* Map INCOMPLETE to OK — a non-interactive stream that ends mid-construct
      * is not an error for existing callers (exec_execute_stream,
      * frame_execute_stream). */
-    exec_status_t status;
+    miga_exec_status_t status;
     switch (raw_status)
     {
-    case EXEC_OK:
-    case EXEC_INCOMPLETE:
-        status = EXEC_OK;
+    case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
+        status = MIGA_EXEC_STATUS_OK;
         break;
-    case EXEC_ERROR:
-        status = EXEC_ERROR;
+    case MIGA_EXEC_STATUS_ERROR:
+        status = MIGA_EXEC_STATUS_ERROR;
         break;
     default:
         status = raw_status;
         break;
     }
 
-    if (status == EXEC_OK)
+    if (status == MIGA_EXEC_STATUS_OK)
     {
         /* Process any pending trap handlers */
         for (int signo = 1; signo < NSIG; signo++)
@@ -2220,10 +2220,10 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
                 int saved_exit_status = executor->last_exit_status;
 
                 /* Push EXEC_FRAME_TRAP and execute the trap action string */
-                exec_frame_t *trap_frame =
+                miga_frame_t *trap_frame =
                     exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
-                exec_status_t trap_result =
+                miga_exec_status_t trap_result =
                     frame_execute_string(trap_frame, trap_action->action);
 
                 exec_frame_pop(&executor->current_frame);
@@ -2231,9 +2231,9 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
                 /* Restore exit status */
                 executor->last_exit_status = saved_exit_status;
 
-                if (trap_result == EXEC_ERROR)
+                if (trap_result == MIGA_EXEC_STATUS_ERROR)
                 {
-                    status = EXEC_ERROR;
+                    status = MIGA_EXEC_STATUS_ERROR;
                     break;
                 }
             }
@@ -2244,12 +2244,12 @@ exec_status_t exec_execute_stream_once(exec_t *executor, FILE *fp)
 }
 
 /* this version is for executing -c complete strings. Incomplete inputs are errors */
-exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
+miga_exec_result_t exec_execute_command_string(miga_exec_t *executor, const char *command)
 {
     Expects_not_null(executor);
     Expects_not_null(command);
 
-    exec_result_t result = {.status = EXEC_OK, .exit_code = 0};
+    miga_exec_result_t result = {.status = MIGA_EXEC_STATUS_OK, .exit_code = 0};
 
     /* ------------------------------------------------------------------
      * Ensure the frame stack is initialized.
@@ -2258,17 +2258,17 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
      * ------------------------------------------------------------------ */
     if (!executor->top_frame_initialized)
     {
-        exec_status_t setup = exec_setup_core(executor, false);
-        if (setup != EXEC_OK)
+        miga_exec_status_t setup = exec_setup_core(executor, false);
+        if (setup != MIGA_EXEC_STATUS_OK)
             log_warn("lazy setup for command string failed with status %d", setup);
         /* Not fatal — proceed with whatever state we have. */
     }
 
-    exec_frame_t *frame = executor->current_frame;
+    miga_frame_t *frame = executor->current_frame;
     if (!frame)
     {
         exec_set_error_cstr(executor, "No execution frame available");
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_code = EXEC_EXIT_FAILURE;
         return result;
     }
@@ -2282,7 +2282,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     if (!session)
     {
         exec_set_error_cstr(executor, "Failed to create parse session");
-        result.status = EXEC_ERROR;
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_code = EXEC_EXIT_FAILURE;
         return result;
     }
@@ -2290,23 +2290,23 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
     /* ------------------------------------------------------------------
      * Feed the entire command string to the core execution engine.
      * ------------------------------------------------------------------ */
-    exec_status_t str_status = exec_frame_string_core(frame, command, session);
+    miga_exec_status_t str_status = exec_frame_string_core(frame, command, session);
 
     switch (str_status)
     {
-    case EXEC_OK:
-        result.status = EXEC_OK;
+    case MIGA_EXEC_STATUS_OK:
+        result.status = MIGA_EXEC_STATUS_OK;
         result.exit_code = executor->last_exit_status;
         break;
 
-    case EXEC_EMPTY:
+    case MIGA_EXEC_STATUS_EMPTY:
         /* Empty command string (e.g. whitespace only, comments only).
          * POSIX: exit status is zero for an empty command. */
-        result.status = EXEC_OK;
+        result.status = MIGA_EXEC_STATUS_OK;
         result.exit_code = 0;
         break;
 
-    case EXEC_INCOMPLETE:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         /* For -c style execution, incomplete input is an error — the
          * caller promised a complete command string. */
         if (!exec_get_error_cstr(executor))
@@ -2314,12 +2314,12 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
             exec_set_error_cstr(executor, "Unexpected end of input (unclosed quote, "
                                           "here-document, or compound command)");
         }
-        result.status = EXEC_INCOMPLETE;
+        result.status = MIGA_EXEC_STATUS_INCOMPLETE;
         result.exit_code = EXEC_EXIT_MISUSE;
         break;
 
-    case EXEC_ERROR:
-        result.status = EXEC_ERROR;
+    case MIGA_EXEC_STATUS_ERROR:
+        result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_code =
             executor->last_exit_status ? executor->last_exit_status : EXEC_EXIT_FAILURE;
         break;
@@ -2329,15 +2329,15 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
      * Translate control-flow signals that may have been set during
      * execution into the appropriate top-level result status.
      * ------------------------------------------------------------------ */
-    if (frame->pending_control_flow == FRAME_FLOW_TOP || executor->exit_requested)
+    if (frame->pending_control_flow == MIGA_FRAME_FLOW_TOP || executor->exit_requested)
     {
-        result.status = EXEC_EXIT;
+        result.status = MIGA_EXEC_STATUS_EXIT;
         result.exit_code = executor->last_exit_status;
     }
-    else if (frame == executor->top_frame && frame->pending_control_flow == FRAME_FLOW_RETURN)
+    else if (frame == executor->top_frame && frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
     {
         /* A top-level 'return' is equivalent to 'exit'. */
-        result.status = EXEC_EXIT;
+        result.status = MIGA_EXEC_STATUS_EXIT;
         result.exit_code = executor->last_exit_status;
     }
 
@@ -2353,7 +2353,7 @@ exec_result_t exec_execute_command_string(exec_t *executor, const char *command)
  * Partial State Lifecycle
  * ============================================================================ */
 
-parse_session_t *exec_create_parse_session(exec_t *executor)
+parse_session_t *exec_create_parse_session(miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return parse_session_create(executor->aliases);
@@ -2370,7 +2370,7 @@ void exec_reset_parse_session(parse_session_t *session)
     parse_session_reset(session);
 }
 
-void exec_hard_reset_parse_session(parse_session_t *session, exec_t *executor)
+void exec_hard_reset_parse_session(parse_session_t *session, miga_exec_t *executor)
 {
     Expects_not_null(session);
     if (executor)
@@ -2427,7 +2427,7 @@ void exec_destroy_parse_session(parse_session_t **session)
  * Incremental Command String Execution
  * ============================================================================ */
 
-exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const char *command,
+miga_exec_status_t exec_execute_command_string_partial_cstr(miga_exec_t *executor, const char *command,
                                                        const char *filename, size_t line_number,
                                                        parse_session_t *session)
 {
@@ -2440,16 +2440,16 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
      * ------------------------------------------------------------------ */
     if (!executor->top_frame_initialized)
     {
-        exec_status_t setup = exec_setup_core(executor, false);
-        if (setup != EXEC_OK)
+        miga_exec_status_t setup = exec_setup_core(executor, false);
+        if (setup != MIGA_EXEC_STATUS_OK)
             log_warn("lazy setup for partial execution failed with status %d", setup);
     }
 
-    exec_frame_t *frame = executor->current_frame;
+    miga_frame_t *frame = executor->current_frame;
     if (!frame)
     {
         exec_set_error_cstr(executor, "No execution frame available");
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     /* ------------------------------------------------------------------
@@ -2457,7 +2457,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
      * exit builtin), honour it immediately without consuming input.
      * ------------------------------------------------------------------ */
     if (executor->exit_requested)
-        return EXEC_EXIT;
+        return MIGA_EXEC_STATUS_EXIT;
 
     /* ------------------------------------------------------------------
      * Source location tracking.
@@ -2518,7 +2518,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
         if (!session->tokenizer)
         {
             exec_set_error_cstr(executor, "Failed to create tokenizer");
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
         }
     }
     if (!session->lexer)
@@ -2527,7 +2527,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
         if (!session->lexer)
         {
             exec_set_error_cstr(executor, "Failed to create lexer");
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
         }
     }
 
@@ -2542,50 +2542,50 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
     /* ------------------------------------------------------------------
      * Feed this chunk to the core execution engine.
      * ------------------------------------------------------------------ */
-    exec_status_t str_status = exec_frame_string_core(frame, command, session);
+    miga_exec_status_t str_status = exec_frame_string_core(frame, command, session);
 
     /* Update the caller line number from the session (exec_frame_string_core may
        have incremented it). */
     session->caller_line_number = (size_t)session->line_num;
 
     /* ------------------------------------------------------------------
-     * Translate the internal status to the public exec_status_t.
+     * Translate the internal status to the public miga_exec_status_t.
      * ------------------------------------------------------------------ */
-    exec_status_t result;
+    miga_exec_status_t result;
 
     switch (str_status)
     {
-    case EXEC_OK:
+    case MIGA_EXEC_STATUS_OK:
         session->incomplete = false;
-        result = EXEC_OK;
+        result = MIGA_EXEC_STATUS_OK;
         break;
 
-    case EXEC_EMPTY:
+    case MIGA_EXEC_STATUS_EMPTY:
         /* An empty chunk (whitespace, comments) is OK.
          * If we were already mid-continuation, stay incomplete — the
          * empty line is just a blank line inside a multi-line construct.
          * Otherwise report OK. */
         if (session->incomplete)
-            result = EXEC_INCOMPLETE;
+            result = MIGA_EXEC_STATUS_INCOMPLETE;
         else
-            result = EXEC_OK;
+            result = MIGA_EXEC_STATUS_OK;
         break;
 
-    case EXEC_INCOMPLETE:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         session->incomplete = true;
-        result = EXEC_INCOMPLETE;
+        result = MIGA_EXEC_STATUS_INCOMPLETE;
         break;
 
-    case EXEC_ERROR:
+    case MIGA_EXEC_STATUS_ERROR:
         /* On error, clean up the session so the next call starts fresh.
          * The caller can inspect exec_get_error() for details. */
         parse_session_reset(session);
         session->incomplete = false;
-        result = EXEC_ERROR;
+        result = MIGA_EXEC_STATUS_ERROR;
         break;
 
     default:
-        result = EXEC_ERROR;
+        result = MIGA_EXEC_STATUS_ERROR;
         break;
     }
 
@@ -2593,16 +2593,16 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
      * If the command completed (OK or ERROR), check for control flow
      * signals that should be propagated to the caller.
      * ------------------------------------------------------------------ */
-    if (result == EXEC_OK || result == EXEC_ERROR)
+    if (result == MIGA_EXEC_STATUS_OK || result == MIGA_EXEC_STATUS_ERROR)
     {
-        if (frame->pending_control_flow == FRAME_FLOW_TOP || executor->exit_requested)
+        if (frame->pending_control_flow == MIGA_FRAME_FLOW_TOP || executor->exit_requested)
         {
-            result = EXEC_EXIT;
+            result = MIGA_EXEC_STATUS_EXIT;
         }
-        else if (frame == executor->top_frame && frame->pending_control_flow == FRAME_FLOW_RETURN)
+        else if (frame == executor->top_frame && frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
         {
             /* Top-level 'return' is equivalent to 'exit'. */
-            result = EXEC_EXIT;
+            result = MIGA_EXEC_STATUS_EXIT;
         }
     }
 
@@ -2611,7 +2611,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
      * resources but keep the session struct valid for reuse.
      * The caller can start a new sequence without calling cleanup.
      * ------------------------------------------------------------------ */
-    if (result != EXEC_INCOMPLETE)
+    if (result != MIGA_EXEC_STATUS_INCOMPLETE)
     {
         parse_session_reset(session);
         session->incomplete = false;
@@ -2625,7 +2625,7 @@ exec_status_t exec_execute_command_string_partial_cstr(exec_t *executor, const c
  * Line-Editor Integration
  * ============================================================================ */
 
-exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
+miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, FILE *fp,
                                                    line_editor_fn_t line_editor_fn,
                                                    void *line_editor_user_data)
 {
@@ -2640,7 +2640,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
     {
         exec_set_error_cstr(executor, "exec_execute_stream_with_line_editor: "
                                       "only valid after exec_setup_interactive()");
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     /* ------------------------------------------------------------------
@@ -2648,8 +2648,8 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
      * ------------------------------------------------------------------ */
     if (!executor->top_frame_initialized)
     {
-        exec_status_t status = exec_setup_core(executor, true);
-        if (status != EXEC_OK)
+        miga_exec_status_t status = exec_setup_core(executor, true);
+        if (status != MIGA_EXEC_STATUS_OK)
             log_warn("lazy interactive setup failed with status %d", status);
     }
 
@@ -2662,7 +2662,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         if (!executor->session)
         {
             exec_set_error_cstr(executor, "Failed to create parse session");
-            return EXEC_ERROR;
+            return MIGA_EXEC_STATUS_ERROR;
         }
     }
     parse_session_t *session = executor->session;
@@ -2673,7 +2673,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 #define IGNOREEOF_MAX 10
     int consecutive_eof = 0;
     bool need_continuation = false;
-    exec_status_t final_result = EXEC_OK;
+    miga_exec_status_t final_result = MIGA_EXEC_STATUS_OK;
     string_t *line = NULL;
 
     /* ------------------------------------------------------------------
@@ -2684,7 +2684,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         /* ---- 0. Check for pending exit request ---- */
         if (executor->exit_requested)
         {
-            final_result = EXEC_EXIT;
+            final_result = MIGA_EXEC_STATUS_EXIT;
             break;
         }
 
@@ -2715,7 +2715,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
             {
                 fprintf(stderr, "\n%s: syntax error: unexpected end of file\n",
                         string_cstr(executor->shell_name));
-                final_result = EXEC_ERROR;
+                final_result = MIGA_EXEC_STATUS_ERROR;
                 break;
             }
 
@@ -2735,14 +2735,14 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
             }
 
             /* Clean EOF. */
-            final_result = EXEC_OK;
+            final_result = MIGA_EXEC_STATUS_OK;
             break;
         }
 
         if (le_status == LINE_EDIT_ERROR)
         {
             exec_set_error_cstr(executor, "Line editor returned fatal error");
-            final_result = EXEC_ERROR;
+            final_result = MIGA_EXEC_STATUS_ERROR;
             break;
         }
 
@@ -2786,7 +2786,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         string_t *input = string_create_from(line);
         string_append_char(input, '\n');
 
-        exec_status_t str_status =
+        miga_exec_status_t str_status =
             exec_frame_string_core(executor->current_frame, string_cstr(input), session);
 
         string_destroy(&input);
@@ -2796,7 +2796,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
 
         /* ---- 6. Dispatch on execution status ---- */
 
-        if (str_status == EXEC_INCOMPLETE)
+        if (str_status == MIGA_EXEC_STATUS_INCOMPLETE)
         {
             need_continuation = true;
             continue;
@@ -2805,7 +2805,7 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         /* Command complete (OK, EMPTY, or ERROR) — reset continuation. */
         need_continuation = false;
 
-        if (str_status == EXEC_ERROR)
+        if (str_status == MIGA_EXEC_STATUS_ERROR)
         {
             parse_session_reset(session);
 
@@ -2821,22 +2821,22 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
         /* ---- 7. Check for exit / top-level return ---- */
         if (executor->exit_requested)
         {
-            final_result = EXEC_EXIT;
+            final_result = MIGA_EXEC_STATUS_EXIT;
             break;
         }
 
         if (executor->current_frame &&
-            executor->current_frame->pending_control_flow == FRAME_FLOW_TOP)
+            executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP)
         {
-            final_result = EXEC_EXIT;
+            final_result = MIGA_EXEC_STATUS_EXIT;
             break;
         }
 
         if (executor->current_frame && executor->current_frame == executor->top_frame &&
-            executor->current_frame->pending_control_flow == FRAME_FLOW_RETURN)
+            executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
         {
             /* Top-level 'return' is equivalent to 'exit'. */
-            final_result = EXEC_EXIT;
+            final_result = MIGA_EXEC_STATUS_EXIT;
             break;
         }
 
@@ -2858,23 +2858,23 @@ exec_status_t exec_execute_stream_with_line_editor(exec_t *executor, FILE *fp,
             /* POSIX: $? is preserved across trap execution. */
             int saved_exit_status = executor->last_exit_status;
 
-            exec_frame_t *trap_frame =
+            miga_frame_t *trap_frame =
                 exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
 
-            exec_result_t trap_result =
+            miga_exec_result_t trap_result =
                 exec_execute_command_string(executor, string_cstr(trap_action->action));
 
             exec_frame_pop(&executor->current_frame);
 
             executor->last_exit_status = saved_exit_status;
 
-            if (trap_result.status == EXEC_EXIT)
+            if (trap_result.status == MIGA_EXEC_STATUS_EXIT)
             {
-                final_result = EXEC_EXIT;
+                final_result = MIGA_EXEC_STATUS_EXIT;
                 goto done;
             }
 
-            if (trap_result.status == EXEC_ERROR)
+            if (trap_result.status == MIGA_EXEC_STATUS_ERROR)
             {
                 const char *err = exec_get_error_cstr(executor);
                 if (err)
@@ -2918,26 +2918,26 @@ done:
 
 /* ── Exit status ─────────────────────────────────────────────────────────── */
 
-int exec_get_exit_status(const exec_t *executor)
+int exec_get_exit_status(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->last_exit_status;
 }
 
-void exec_set_exit_status(exec_t *executor, int status)
+void exec_set_exit_status(miga_exec_t *executor, int status)
 {
     Expects_not_null(executor);
     executor->last_exit_status = status;
 }
 
-void exec_request_exit(exec_t *executor, int status)
+void exec_request_exit(miga_exec_t *executor, int status)
 {
     Expects_not_null(executor);
     executor->exit_requested = true;
     executor->last_exit_status = status;
 }
 
-bool exec_is_exit_requested(const exec_t *executor)
+bool exec_is_exit_requested(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->exit_requested;
@@ -2945,19 +2945,19 @@ bool exec_is_exit_requested(const exec_t *executor)
 
 /* ── Error message ───────────────────────────────────────────────────────── */
 
-const string_t *exec_get_error(const exec_t *executor)
+const string_t *exec_get_error(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->error_msg;
 }
 
-const char *exec_get_error_cstr(const exec_t *executor)
+const char *exec_get_error_cstr(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->error_msg ? string_cstr(executor->error_msg) : NULL;
 }
 
-void exec_set_error_cstr(exec_t *executor, const char *error)
+void exec_set_error_cstr(miga_exec_t *executor, const char *error)
 {
     Expects_not_null(executor);
     Expects_not_null(error);
@@ -2970,7 +2970,7 @@ void exec_set_error_cstr(exec_t *executor, const char *error)
     }
 }
 
-void exec_set_error_printf(exec_t *executor, const char *format, ...)
+void exec_set_error_printf(miga_exec_t *executor, const char *format, ...)
 {
     Expects_not_null(executor);
     Expects_not_null(format);
@@ -2992,7 +2992,7 @@ void exec_set_error_printf(exec_t *executor, const char *format, ...)
     }
 }
 
-void exec_clear_error(exec_t *executor)
+void exec_clear_error(miga_exec_t *executor)
 {
     Expects_not_null(executor);
     if (executor->error_msg)
@@ -3001,19 +3001,19 @@ void exec_clear_error(exec_t *executor)
 
 /* ── Pipe statuses (PIPESTATUS / pipefail) ───────────────────────────────── */
 
-int exec_get_pipe_status_count(const exec_t *executor)
+int exec_get_pipe_status_count(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return (int)(executor->pipe_status_count);
 }
 
-const int *exec_get_pipe_statuses(const exec_t *executor)
+const int *exec_get_pipe_statuses(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return executor->pipe_statuses;
 }
 
-void exec_reset_pipe_statuses(exec_t *executor)
+void exec_reset_pipe_statuses(miga_exec_t *executor)
 {
     Expects_not_null(executor);
     executor->pipe_status_count = 0;
@@ -3029,20 +3029,20 @@ void exec_reset_pipe_statuses(exec_t *executor)
 
 /* ── Enumeration ─────────────────────────────────────────────────────────── */
 
-size_t exec_get_job_count(const exec_t *executor)
+size_t exec_get_job_count(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return job_store_count(executor->jobs);
 }
 
-size_t exec_get_job_ids(const exec_t *executor, int *job_ids, size_t max_jobs)
+size_t exec_get_job_ids(const miga_exec_t *executor, int *job_ids, size_t max_jobs)
 {
     Expects_not_null(executor);
     Expects_not_null(job_ids);
     return job_store_get_job_ids(executor->jobs, job_ids, max_jobs);
 }
 
-int exec_get_current_job_id(const exec_t *executor)
+int exec_get_current_job_id(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     // job_t *job_store_get_current(const job_store_t *store);
@@ -3050,7 +3050,7 @@ int exec_get_current_job_id(const exec_t *executor)
     return current_job ? current_job->job_id : -1;
 }
 
-int exec_get_previous_job_id(const exec_t *executor)
+int exec_get_previous_job_id(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     job_t *previous_job = job_store_get_previous(executor->jobs);
@@ -3059,7 +3059,7 @@ int exec_get_previous_job_id(const exec_t *executor)
 
 /* ── Per-job queries ─────────────────────────────────────────────────────── */
 
-exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id)
+exec_job_state_t exec_job_get_state(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3080,14 +3080,14 @@ exec_job_state_t exec_job_get_state(const exec_t *executor, int job_id)
     }
 }
 
-const char *exec_job_get_command_cstr(const exec_t *executor, int job_id)
+const char *exec_job_get_command_cstr(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     return job ? string_cstr(job->command_line) : NULL;
 }
 
-bool exec_job_is_background(const exec_t *executor, int job_id)
+bool exec_job_is_background(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3095,14 +3095,14 @@ bool exec_job_is_background(const exec_t *executor, int job_id)
 }
 
 #ifdef MIGA_POSIX_API
-pid_t exec_job_get_pgid(const exec_t *executor, int job_id)
+pid_t exec_job_get_pgid(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     return job ? job->pgid : -1;
 }
 #else
-int exec_job_get_pgid(const exec_t *executor, int job_id)
+int exec_job_get_pgid(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3112,7 +3112,7 @@ int exec_job_get_pgid(const exec_t *executor, int job_id)
 
 /* ── Per-process queries within a job ────────────────────────────────────── */
 
-size_t exec_job_get_process_count(const exec_t *executor, int job_id)
+size_t exec_job_get_process_count(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3121,7 +3121,7 @@ size_t exec_job_get_process_count(const exec_t *executor, int job_id)
     return 0;
 }
 
-exec_job_state_t exec_job_get_process_state(const exec_t *executor, int job_id, size_t index)
+exec_job_state_t exec_job_get_process_state(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3147,7 +3147,7 @@ exec_job_state_t exec_job_get_process_state(const exec_t *executor, int job_id, 
     }
 }
 
-int exec_job_get_process_exit_status(const exec_t *executor, int job_id, size_t index)
+int exec_job_get_process_exit_status(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3159,7 +3159,7 @@ int exec_job_get_process_exit_status(const exec_t *executor, int job_id, size_t 
 }
 
 #ifdef MIGA_POSIX_API
-pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
+pid_t exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3170,7 +3170,7 @@ pid_t exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
     return job_get_process_pid(job, index);
 }
 #elif defined(MIGA_UCRT_API)
-int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
+int exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3181,7 +3181,7 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
     return (int)job_get_process_pid(job, index);
 }
 
-uintptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t index)
+uintptr_t exec_job_get_process_handle(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3196,7 +3196,7 @@ uintptr_t exec_job_get_process_handle(const exec_t *executor, int job_id, size_t
 #endif
 }
 #else
-int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
+int exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
@@ -3210,7 +3210,7 @@ int exec_job_get_process_pid(const exec_t *executor, int job_id, size_t index)
 
 /* ── Job actions ─────────────────────────────────────────────────────────── */
 
-bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **out_cmd)
+bool exec_job_foreground_cstr(miga_exec_t *executor, int job_id, char **out_cmd)
 {
     Expects_not_null(executor);
 
@@ -3256,7 +3256,7 @@ bool exec_job_foreground_cstr(exec_t *executor, int job_id, char **out_cmd)
 #endif
 }
 
-bool exec_job_background(exec_t *executor, int job_id)
+bool exec_job_background(miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
 
@@ -3286,7 +3286,7 @@ bool exec_job_background(exec_t *executor, int job_id)
     return true;
 }
 
-bool exec_job_kill(exec_t *executor, int job_id, int sig)
+bool exec_job_kill(miga_exec_t *executor, int job_id, int sig)
 {
     Expects_not_null(executor);
 
@@ -3387,7 +3387,7 @@ bool exec_job_kill(exec_t *executor, int job_id, int sig)
  *
  * @return Job ID on success, -1 on error.
  */
-int exec_parse_job_id_cstr(const exec_t *executor, const char *spec)
+int exec_parse_job_id_cstr(const miga_exec_t *executor, const char *spec)
 {
     Expects_not_null(executor);
     Expects_not_null(spec);
@@ -3408,7 +3408,7 @@ int exec_parse_job_id_cstr(const exec_t *executor, const char *spec)
             long id = strtol(spec + 1, &endptr, 10);
             if (*endptr != '\0' || id <= 0)
             {
-                exec_set_error_printf((exec_t *)executor, "Invalid job specifier: %s", spec);
+                exec_set_error_printf((miga_exec_t *)executor, "Invalid job specifier: %s", spec);
                 return -1;
             }
             return (int)id;
@@ -3421,14 +3421,14 @@ int exec_parse_job_id_cstr(const exec_t *executor, const char *spec)
         long id = strtol(spec, &endptr, 10);
         if (*endptr != '\0' || id <= 0)
         {
-            exec_set_error_printf((exec_t *)executor, "Invalid job ID: %s", spec);
+            exec_set_error_printf((miga_exec_t *)executor, "Invalid job ID: %s", spec);
             return -1;
         }
         return (int)id;
     }
 }
 
-int exec_parse_job_id(const exec_t* executor, const string_t* spec)
+int exec_parse_job_id(const miga_exec_t* executor, const string_t* spec)
 {
     Expects_not_null(executor);
     Expects_not_null(spec);
@@ -3440,7 +3440,7 @@ int exec_parse_job_id(const exec_t* executor, const string_t* spec)
  *
  * @return true if the job was found and printed.
  */
-bool exec_print_job_by_id(const exec_t *executor, int job_id, exec_jobs_format_t format,
+bool exec_print_job_by_id(const miga_exec_t *executor, int job_id, exec_jobs_format_t format,
                           FILE *output)
 {
     Expects_not_null(executor);
@@ -3450,7 +3450,7 @@ bool exec_print_job_by_id(const exec_t *executor, int job_id, exec_jobs_format_t
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
     {
-        exec_set_error_printf((exec_t *)executor, "No such job: %d", job_id);
+        exec_set_error_printf((miga_exec_t *)executor, "No such job: %d", job_id);
         return false;
     }
     fprintf(output, "[%d] ", job->job_id);
@@ -3478,7 +3478,7 @@ bool exec_print_job_by_id(const exec_t *executor, int job_id, exec_jobs_format_t
 /**
  * Print all jobs.
  */
-void exec_print_all_jobs(const exec_t *executor, exec_jobs_format_t format, FILE *output)
+void exec_print_all_jobs(const miga_exec_t *executor, exec_jobs_format_t format, FILE *output)
 {
     Expects_not_null(executor);
     Expects_not_null(output);
@@ -3511,7 +3511,7 @@ void exec_print_all_jobs(const exec_t *executor, exec_jobs_format_t format, FILE
 /**
  * Prints all jobs and processes in the verbose debug format.
  */
-void exec_print_jobs_verbose(const exec_t *executor, FILE *output)
+void exec_print_jobs_verbose(const miga_exec_t *executor, FILE *output)
 {
     Expects_not_null(executor);
     Expects_not_null(output);
@@ -3521,7 +3521,7 @@ void exec_print_jobs_verbose(const exec_t *executor, FILE *output)
 /**
  * Check whether any jobs exist.
  */
-bool exec_has_jobs(const exec_t *executor)
+bool exec_has_jobs(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
     return job_store_count(executor->jobs) > 0;
@@ -3531,7 +3531,7 @@ bool exec_has_jobs(const exec_t *executor)
  * Job Control
  * ============================================================================ */
 
-void exec_reap_background_jobs(exec_t *executor, bool notify)
+void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
 

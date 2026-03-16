@@ -194,8 +194,8 @@ void builtin_store_destroy(builtin_store_t **store_ptr)
  * Mutation
  * ============================================================================ */
 
-bool builtin_store_set(builtin_store_t *store, const char *name, builtin_fn_t fn,
-                       builtin_category_t category)
+bool builtin_store_set(builtin_store_t *store, const char *name, miga_builtin_fn_t fn,
+                       miga_builtin_category_t category)
 {
     if (!store || !name || !fn)
         return false;
@@ -294,7 +294,7 @@ bool builtin_store_has(const builtin_store_t *store, const char *name)
     return store->entries[slot].state == BUILTIN_SLOT_OCCUPIED;
 }
 
-builtin_fn_t builtin_store_get(const builtin_store_t *store, const char *name)
+miga_builtin_fn_t builtin_store_get(const builtin_store_t *store, const char *name)
 {
     if (!store || !name)
         return NULL;
@@ -309,8 +309,8 @@ builtin_fn_t builtin_store_get(const builtin_store_t *store, const char *name)
     return NULL;
 }
 
-bool builtin_store_lookup(const builtin_store_t *store, const char *name, builtin_fn_t *fn_out,
-                          builtin_category_t *category_out)
+bool builtin_store_lookup(const builtin_store_t *store, const char *name, miga_builtin_fn_t *fn_out,
+                          miga_builtin_category_t *category_out)
 {
     if (!store || !name)
         return false;
@@ -365,7 +365,7 @@ void builtin_store_for_each(const builtin_store_t *store, builtin_store_iter_fn_
 
 #include <stdio.h>
 
-FILE *builtin_stdin(exec_frame_t *frame)
+FILE *builtin_stdin(miga_frame_t *frame)
 {
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stdin_fp && *frame->stdin_fp)
@@ -375,7 +375,7 @@ FILE *builtin_stdin(exec_frame_t *frame)
     return stdin;
 }
 
-FILE *builtin_stdout(exec_frame_t *frame)
+FILE *builtin_stdout(miga_frame_t *frame)
 {
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stdout_fp && *frame->stdout_fp)
@@ -385,7 +385,7 @@ FILE *builtin_stdout(exec_frame_t *frame)
     return stdout;
 }
 
-FILE *builtin_stderr(exec_frame_t *frame)
+FILE *builtin_stderr(miga_frame_t *frame)
 {
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->stderr_fp && *frame->stderr_fp)
@@ -409,54 +409,54 @@ bool builtins_init_default(builtin_store_t *store)
     bool ok = true;
 
     /* -- POSIX special builtins ------------------------------------------- */
-    ok = ok && builtin_store_set(store, "break", (builtin_fn_t)builtin_break, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, ":", (builtin_fn_t)builtin_colon, BUILTIN_SPECIAL);
+    ok = ok && builtin_store_set(store, "break", (miga_builtin_fn_t)builtin_break, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, ":", (miga_builtin_fn_t)builtin_colon, MIGA_BUILTIN_CATEGORY_SPECIAL);
     ok =
-        ok && builtin_store_set(store, "continue", (builtin_fn_t)builtin_continue, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, ".", (builtin_fn_t)builtin_dot, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "eval", (builtin_fn_t)builtin_eval, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "exec", (builtin_fn_t)builtin_exec, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "exit", (builtin_fn_t)builtin_exit, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "export", (builtin_fn_t)builtin_export, BUILTIN_SPECIAL);
+        ok && builtin_store_set(store, "continue", (miga_builtin_fn_t)builtin_continue, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, ".", (miga_builtin_fn_t)builtin_dot, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "eval", (miga_builtin_fn_t)builtin_eval, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "exec", (miga_builtin_fn_t)builtin_exec, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "exit", (miga_builtin_fn_t)builtin_exit, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "export", (miga_builtin_fn_t)builtin_export, MIGA_BUILTIN_CATEGORY_SPECIAL);
     ok =
-        ok && builtin_store_set(store, "readonly", (builtin_fn_t)builtin_readonly, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "return", (builtin_fn_t)builtin_return, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "set", (builtin_fn_t)builtin_set, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "shift", (builtin_fn_t)builtin_shift, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "times", (builtin_fn_t)builtin_times, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "trap", (builtin_fn_t)builtin_trap, BUILTIN_SPECIAL);
-    ok = ok && builtin_store_set(store, "unset", (builtin_fn_t)builtin_unset, BUILTIN_SPECIAL);
+        ok && builtin_store_set(store, "readonly", (miga_builtin_fn_t)builtin_readonly, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "return", (miga_builtin_fn_t)builtin_return, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "set", (miga_builtin_fn_t)builtin_set, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "shift", (miga_builtin_fn_t)builtin_shift, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "times", (miga_builtin_fn_t)builtin_times, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "trap", (miga_builtin_fn_t)builtin_trap, MIGA_BUILTIN_CATEGORY_SPECIAL);
+    ok = ok && builtin_store_set(store, "unset", (miga_builtin_fn_t)builtin_unset, MIGA_BUILTIN_CATEGORY_SPECIAL);
 
     /* -- Regular builtins ------------------------------------------------- */
 #ifdef MIGA_UCRT_API
-    ok = ok && builtin_store_set(store, "cd", (builtin_fn_t)builtin_cd, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "pwd", (builtin_fn_t)builtin_pwd, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "ls", (builtin_fn_t)builtin_ls, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "cd", (miga_builtin_fn_t)builtin_cd, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "pwd", (miga_builtin_fn_t)builtin_pwd, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "ls", (miga_builtin_fn_t)builtin_ls, MIGA_BUILTIN_CATEGORY_REGULAR);
 #endif
-    ok = ok && builtin_store_set(store, "echo", (builtin_fn_t)builtin_echo, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "printf", (builtin_fn_t)builtin_printf, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "[", (builtin_fn_t)builtin_bracket, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "alias", (builtin_fn_t)builtin_alias, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "unalias", (builtin_fn_t)builtin_unalias, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "getopts", (builtin_fn_t)builtin_getopts, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "jobs", (builtin_fn_t)builtin_jobs, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "kill", (builtin_fn_t)builtin_kill, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "wait", (builtin_fn_t)builtin_wait, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "fg", (builtin_fn_t)builtin_fg, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "bg", (builtin_fn_t)builtin_bg, BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "echo", (miga_builtin_fn_t)builtin_echo, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "printf", (miga_builtin_fn_t)builtin_printf, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "[", (miga_builtin_fn_t)builtin_bracket, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "alias", (miga_builtin_fn_t)builtin_alias, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "unalias", (miga_builtin_fn_t)builtin_unalias, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "getopts", (miga_builtin_fn_t)builtin_getopts, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "jobs", (miga_builtin_fn_t)builtin_jobs, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "kill", (miga_builtin_fn_t)builtin_kill, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "wait", (miga_builtin_fn_t)builtin_wait, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "fg", (miga_builtin_fn_t)builtin_fg, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "bg", (miga_builtin_fn_t)builtin_bg, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok =
-        ok && builtin_store_set(store, "basename", (builtin_fn_t)builtin_basename, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "dirname", (builtin_fn_t)builtin_dirname, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "true", (builtin_fn_t)builtin_true, BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "false", (builtin_fn_t)builtin_false, BUILTIN_REGULAR);
+        ok && builtin_store_set(store, "basename", (miga_builtin_fn_t)builtin_basename, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "dirname", (miga_builtin_fn_t)builtin_dirname, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "true", (miga_builtin_fn_t)builtin_true, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "false", (miga_builtin_fn_t)builtin_false, MIGA_BUILTIN_CATEGORY_REGULAR);
 
     /* -- miga extensions -------------------------------------------------- */
-    ok = ok && builtin_store_set(store, "miga_dirnamevar", (builtin_fn_t)builtin_miga_dirnamevar,
-                                 BUILTIN_REGULAR);
-    ok = ok && builtin_store_set(store, "miga_printfvar", (builtin_fn_t)builtin_miga_printfvar,
-                                 BUILTIN_REGULAR);
+    ok = ok && builtin_store_set(store, "miga_dirnamevar", (miga_builtin_fn_t)builtin_miga_dirnamevar,
+                                 MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "miga_printfvar", (miga_builtin_fn_t)builtin_miga_printfvar,
+                                 MIGA_BUILTIN_CATEGORY_REGULAR);
     ok =
-        ok && builtin_store_set(store, "miga_cat", (builtin_fn_t)builtin_miga_cat, BUILTIN_REGULAR);
+        ok && builtin_store_set(store, "miga_cat", (miga_builtin_fn_t)builtin_miga_cat, MIGA_BUILTIN_CATEGORY_REGULAR);
 
     return ok;
 }

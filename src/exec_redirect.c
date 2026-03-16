@@ -180,22 +180,22 @@ static int redirection_default_fd(const exec_redirection_t *r)
 }
 
 #ifdef MIGA_POSIX_API
-exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redirections_t *redirs)
+miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);
     Expects_not_null(redirs);
 
-    exec_t *executor = frame->executor;
+    miga_exec_t *executor = frame->executor;
     fd_table_t *fds = exec_frame_get_fds(frame);
     if (!fds)
     {
         exec_set_error_cstr(executor, "No FD table available");
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     size_t count = redirs->count;
     if (count == 0)
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
     // Step 1: Collect unique FDs that will be redirected (to save only once).
     // We still do a pre-pass so that all backups are created before any
@@ -589,14 +589,14 @@ exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redi
         }
     }
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 
 cleanup_error:
     exec_restore_redirections_posix(frame);
-    return EXEC_ERROR;
+    return MIGA_EXEC_STATUS_ERROR;
 }
 
-void exec_restore_redirections_posix(exec_frame_t *frame)
+void exec_restore_redirections_posix(miga_frame_t *frame)
 {
     if (!frame)
         return;
@@ -722,20 +722,20 @@ static int dup_to_safe_slot(int fd)
     return result;
 }
 
-exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_redirections_t *redirs)
+miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
     if (!frame || !redirs)
     {
         log_fatal(
             "Contract violation at %s:%d - exec_apply_redirections_ucrt_c received NULL argument",
             __FILE__, __LINE__);
-        return EXEC_ERROR;
+        return MIGA_EXEC_STATUS_ERROR;
     }
 
     if (redirs->count == 0)
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
-    exec_t *executor = frame->executor;
+    miga_exec_t *executor = frame->executor;
     fd_table_t *fds = exec_frame_get_fds(frame);
 
     fflush(stdout);
@@ -1150,17 +1150,17 @@ exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame, const exec_red
         }
     }
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 
 error_restore:
     /* Roll back all redirections applied so far.  The restore function closes
      * every backup and restores every orig_fd, leaving the frame's fd state
      * consistent even when a multi-redirection command partially fails. */
     exec_restore_redirections_ucrt_c(frame);
-    return EXEC_ERROR;
+    return MIGA_EXEC_STATUS_ERROR;
 }
 
-void exec_restore_redirections_ucrt_c(exec_frame_t *frame)
+void exec_restore_redirections_ucrt_c(miga_frame_t *frame)
 {
     fd_table_t *fds = exec_frame_get_fds(frame);
     if (!fds)
@@ -1258,15 +1258,15 @@ void exec_restore_redirections_ucrt_c(exec_frame_t *frame)
 // For external commands, which are called using system(), no redirection mechanism is possible.
 // However, there is the MIGA_ENV_VAR environment variable which will cause a temp file to be
 // created with environment variable content. This is implemented elsewhere.
-exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redirections_t *redirs)
+miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);
     Expects_not_null(redirs);
 
     if (redirs->count == 0)
-        return EXEC_OK;
+        return MIGA_EXEC_STATUS_OK;
 
-    exec_t *executor = frame->executor;
+    miga_exec_t *executor = frame->executor;
 
     for (size_t i = 0; i < redirs->count; i++)
     {
@@ -1486,20 +1486,20 @@ exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redi
         }
     }
 
-    return EXEC_OK;
+    return MIGA_EXEC_STATUS_OK;
 
 error_restore:
     /* Partial redirections are rolled back by the existing restore function
      * (it simply closes any non-NULL FILE* we allocated and sets the pointers
      *  to NULL, which is exactly the contract described in the stub comment). */
     exec_restore_redirections_iso_c(frame);
-    return EXEC_ERROR;
+    return MIGA_EXEC_STATUS_ERROR;
 }
 
-void exec_restore_redirections_iso_c(exec_frame_t *frame)
+void exec_restore_redirections_iso_c(miga_frame_t *frame)
 {
     // In ISO C mode, since we don't have a real redirection mechanism, there's nothing to restore.
-    // But for those internal functions that do use the exec_frame_t's stdin_fp,
+    // But for those internal functions that do use the miga_frame_t's stdin_fp,
     // stdout_fp, and stderr_fp fields, we did provide a way to set special stdin/out/err FILE *
     // values. This function just closes them.
     if (frame->stdin_fp && *frame->stdin_fp)
@@ -1521,7 +1521,7 @@ void exec_restore_redirections_iso_c(exec_frame_t *frame)
 }
 #endif /* !MIGA_POSIX_API && !MIGA_UCRT_API */
 
-void exec_redirect_restore_redirections(exec_frame_t *frame, const exec_redirections_t *redirections)
+void exec_redirect_restore_redirections(miga_frame_t *frame, const exec_redirections_t *redirections)
 {
     (void)redirections;
 #ifdef MIGA_POSIX_API
@@ -1755,15 +1755,15 @@ exec_redirections_t *exec_redirections_clone(const exec_redirections_t *redirs)
  * @param redirections The runtime redirection structure
  * @return 0 on success, -1 on error
  */
-exec_status_t exec_redirect_apply_redirectons(exec_frame_t *frame,
+miga_exec_status_t exec_redirect_apply_redirectons(miga_frame_t *frame,
                                             const exec_redirections_t *redirections)
 {
 #ifdef MIGA_POSIX_API
-    exec_status_t st = exec_apply_redirections_posix(frame, redirections);
+    miga_exec_status_t st = exec_apply_redirections_posix(frame, redirections);
 #elif defined(MIGA_UCRT_API)
-    exec_status_t st = exec_apply_redirections_ucrt_c(frame, redirections);
+    miga_exec_status_t st = exec_apply_redirections_ucrt_c(frame, redirections);
 #else
-    exec_status_t st = exec_apply_redirections_iso_c(frame, redirections);
+    miga_exec_status_t st = exec_apply_redirections_iso_c(frame, redirections);
 #endif
     return st;
 }
@@ -1780,7 +1780,7 @@ exec_status_t exec_redirect_apply_redirectons(exec_frame_t *frame,
  * @param ast_redirs The AST redirection nodes
  * @return A new exec_redirections_t structure, or NULL on error
  */
-exec_redirections_t *exec_redirections_create_from_ast_nodes(exec_frame_t *frame,
+exec_redirections_t *exec_redirections_create_from_ast_nodes(miga_frame_t *frame,
                                                              const ast_node_list_t *ast_redirs)
 {
     if (!ast_redirs || ast_node_list_size(ast_redirs) == 0)

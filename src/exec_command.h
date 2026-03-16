@@ -32,7 +32,7 @@ struct ast_node_t;
  * - Command lookup (special builtins, functions, regular builtins, external commands)
  * - External command execution (fork/exec, spawn, or system)
  */
-exec_frame_execute_result_t exec_frame_execute_simple_command_impl(exec_frame_t *frame,
+exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t *frame,
                                                                    const struct ast_node_t *node);
 
 #endif /* EXEC_COMMAND_H */

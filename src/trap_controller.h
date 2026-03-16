@@ -142,7 +142,7 @@ void trap_controller_for_each(trap_controller_t *controller,
 // Returns exit status of executed command
 int trap_controller_execute_trap(trap_controller_t *controller,
                                  int signal_number,
-                                 exec_frame_t *frame);
+                                 miga_frame_t *frame);
 
 // Execute EXIT trap
 // Called on shell termination to run cleanup commands
@@ -151,7 +151,7 @@ int trap_controller_execute_trap(trap_controller_t *controller,
 // Precondition: EXIT trap must be set
 // Returns exit status of executed command
 int trap_controller_execute_exit_trap(trap_controller_t *controller,
-                                      exec_frame_t *frame);
+                                      miga_frame_t *frame);
 
 // ============================================================================
 // Validation & Debugging

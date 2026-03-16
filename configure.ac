@@ -26,7 +26,7 @@ AM_CONDITIONAL([ENABLE_SHARED], [test "x$enable_shared" = xyes])
 AM_CONDITIONAL([ENABLE_WIN32_DLL], [test "x$enable_win32_dll" = xyes])
 
 dnl ------------------------------------------------------------------------------
-dnl - library configuration options - for migaconf.h
+dnl - library configuration options - for migaconf.h and config.h
 dnl ------------------------------------------------------------------------------
 
 dnl Tell autoheader about API-selection symbols used in config.h

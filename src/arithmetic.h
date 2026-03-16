@@ -31,7 +31,7 @@ typedef struct {
  *         arithmetic_result_free() to clean up, even on success (though it's a no-op
  *         if no error occurred).
  */
-ArithmeticResult arithmetic_evaluate(exec_frame_t *frame, const string_t *expression);
+ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expression);
 
 /**
  * Free resources associated with an ArithmeticResult.

@@ -57,7 +57,7 @@ bool exec_redirections_append(exec_redirections_t *redirections, exec_redirectio
  * @param ast_redirs The AST redirection node list.
  * @return A new exec_redirections_t, or NULL on error or empty input.
  */
-exec_redirections_t *exec_redirections_create_from_ast_nodes(exec_frame_t *frame,
+exec_redirections_t *exec_redirections_create_from_ast_nodes(miga_frame_t *frame,
                                                              const ast_node_list_t *ast_redirs);
 
 /* ============================================================================
@@ -68,16 +68,16 @@ exec_redirections_t *exec_redirections_create_from_ast_nodes(exec_frame_t *frame
  * Apply redirections from a runtime redirection list.
  * Dispatches to the correct platform-specific implementation.
  *
- * @return EXEC_OK on success, EXEC_ERROR on failure.
+ * @return MIGA_EXEC_STATUS_OK on success, MIGA_EXEC_STATUS_ERROR on failure.
  */
-exec_status_t exec_redirect_apply_redirectons(exec_frame_t *frame,
+miga_exec_status_t exec_redirect_apply_redirectons(miga_frame_t *frame,
                                             const exec_redirections_t *redirections);
 
 /**
  * Restore redirections previously applied by exec_redirect_apply_redirectons().
  * Dispatches to the correct platform-specific implementation.
  */
-void exec_redirect_restore_redirections(exec_frame_t *frame, const exec_redirections_t *redirections);
+void exec_redirect_restore_redirections(miga_frame_t *frame, const exec_redirections_t *redirections);
 
 /* ============================================================================
  * Platform-Specific Implementations
@@ -94,14 +94,14 @@ void exec_redirect_restore_redirections(exec_frame_t *frame, const exec_redirect
 
 #ifdef MIGA_POSIX_API
 
-exec_status_t exec_apply_redirections_posix(exec_frame_t *frame, const exec_redirections_t *redirs);
-void exec_restore_redirections_posix(exec_frame_t *frame);
+miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs);
+void exec_restore_redirections_posix(miga_frame_t *frame);
 
 #elifdef MIGA_UCRT_API
 
-exec_status_t exec_apply_redirections_ucrt_c(exec_frame_t *frame,
+miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame,
                                              const exec_redirections_t *redirs);
-void exec_restore_redirections_ucrt_c(exec_frame_t *frame);
+void exec_restore_redirections_ucrt_c(miga_frame_t *frame);
 
 #else
 
@@ -110,13 +110,13 @@ void exec_restore_redirections_ucrt_c(exec_frame_t *frame);
  * shell functions), redirections are applied by setting the FILE* pointers
  * on the frame.  External command redirection is not possible in ISO C mode.
  */
-exec_status_t exec_apply_redirections_iso_c(exec_frame_t *frame, const exec_redirections_t *redirs);
+miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec_redirections_t *redirs);
 
 /**
  * Restore ISO C redirections by closing any FILE* pointers that were opened
  * during apply.
  */
-void exec_restore_redirections_iso_c(exec_frame_t *frame);
+void exec_restore_redirections_iso_c(miga_frame_t *frame);
 
 #endif
 

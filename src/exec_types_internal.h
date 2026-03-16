@@ -5,8 +5,8 @@
  * @file exec_internal.h
  * @brief Internal definitions for the shell executor.
  *
- * This header contains the concrete struct definitions for exec_t and
- * exec_frame_t, as well as internal-only functions that are used by the
+ * This header contains the concrete struct definitions for miga_exec_t and
+ * miga_frame_t, as well as internal-only functions that are used by the
  * executor implementation and must NOT be used by library consumers or
  * builtin implementations.
  *
@@ -110,10 +110,10 @@ typedef struct exec_opt_flags_t exec_opt_flags_t;
     }
 
 /* ============================================================================
- * Executor State (concrete definition of exec_t)
+ * Executor State (concrete definition of miga_exec_t)
  * ============================================================================ */
 
-struct exec_t
+struct miga_exec_t
 {
     /* ─── Singleton state ─────────────────────────────────────────────── */
 
@@ -213,8 +213,8 @@ struct exec_t
     /* ─── Frame stack ─────────────────────────────────────────────────── */
 
     bool top_frame_initialized;
-    struct exec_frame_t *top_frame;
-    struct exec_frame_t *current_frame;
+    struct miga_frame_t *top_frame;
+    struct miga_frame_t *current_frame;
 };
 
 /**
@@ -301,18 +301,18 @@ typedef struct exec_redirections_t
 /**
  * Result of executing a frame or command.
  *
- * Combines the execution status (exec_status_t) with control flow state
- * (frame_control_flow_t), the shell exit status ($?), and loop depth
+ * Combines the execution status (miga_exec_status_t) with control flow state
+ * (miga_frame_flow_t), the shell exit status ($?), and loop depth
  * for break/continue.
  */
 typedef struct exec_frame_execute_result_t
 {
-    exec_status_t status;
+    miga_exec_status_t status;
 
     bool has_exit_status;
     int exit_status; /* valid if has_exit_status is true */
 
-    frame_control_flow_t flow; /* control flow: normal, break, continue, return, top */
+    miga_frame_flow_t flow; /* control flow: normal, break, continue, return, top */
     int flow_depth;            /* for break/continue: how many nested loops */
 } exec_frame_execute_result_t;
 
@@ -326,17 +326,17 @@ typedef struct exec_frame_execute_result_t
  * various pieces of state (variables, file descriptors, traps, etc.)
  * based on its policy.
  */
-struct exec_frame_t
+struct miga_frame_t
 {
     /* Frame identity */
     exec_frame_type_t type;
     const exec_frame_policy_t *policy;
 
     /* Parent frame (NULL for top-level) */
-    struct exec_frame_t *parent;
+    struct miga_frame_t *parent;
 
     /* Back-reference to executor. Canonically, frames are owned by the executor. */
-    exec_t *executor;
+    miga_exec_t *executor;
 
     /* -------------------------------------------------------------------------
      * Scope-dependent storage
@@ -377,7 +377,7 @@ struct exec_frame_t
     int last_bg_pid;      /* $! */
 
     /* Control flow state (set by builtins like return, break, continue) */
-    frame_control_flow_t pending_control_flow;
+    miga_frame_flow_t pending_control_flow;
     int pending_flow_depth; /* For 'break N' / 'continue N' */
 
     /* Source tracking */
