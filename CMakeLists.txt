@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_COLOR_DIAGNOSTICS OFF)
 
-project(mgsh LANGUAGES C)
+project(miga LANGUAGES C)
 
 # ============================================================================
 # Build Configuration Strategy
@@ -56,10 +56,10 @@ set_property(CACHE API_TYPE PROPERTY STRINGS "POSIX" "UCRT" "ISO_C")
 
 # Define the appropriate API macro based on selection
 if(API_TYPE STREQUAL "POSIX")
-    add_compile_definitions(POSIX_API)
+    add_compile_definitions(MIGA_POSIX_API)
     message(STATUS "Building with POSIX API")
 elseif(API_TYPE STREQUAL "UCRT")
-    add_compile_definitions(UCRT_API)
+    add_compile_definitions(MIGA_UCRT_API)
     message(STATUS "Building with UCRT API")
 elseif(API_TYPE STREQUAL "ISO_C")
     add_compile_definitions(ISO_C)
@@ -345,7 +345,7 @@ set(SH23LOGIC_SOURCES
     src/exec_frame.h
     "src/exec_types_internal.h"
     src/exec_parse_session.c
-    src/exec_parse_session.h
+    src/parse_session.h
     src/exec_redirect.c
     src/exec_redirect.h
     #src/exec_stream_repl.c
@@ -397,12 +397,12 @@ add_library(sh23interface INTERFACE)
 target_link_libraries(sh23interface INTERFACE sh23logic sh23store sh23base)
 
 # ============================================================================
-# Executable: mgsh
+# Executable: miga
 # ============================================================================
 
-add_executable(mgsh src/main.c)
-target_link_libraries(mgsh PRIVATE sh23interface)
-set_target_properties(mgsh PROPERTIES
+add_executable(miga src/main.c)
+target_link_libraries(miga PRIVATE sh23interface)
+set_target_properties(miga PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
@@ -422,31 +422,31 @@ target_include_directories(ctest_obj PUBLIC
 
 # Tests that only depend on sh23base
 set(SH23BASE_TEST_SOURCES
-    test/mgsh/test_xalloc_ctest.c
-    test/mgsh/test_getopt_ctest.c
-    test/mgsh/test_string_ctest.c
+    test/miga/test_xalloc_ctest.c
+    test/miga/test_getopt_ctest.c
+    test/miga/test_string_ctest.c
 )
 
 # Tests that depend on sh23store (and sh23base)
 set(SH23STORE_TEST_SOURCES
-    test/mgsh/test_alist_ctest.c
-    test/mgsh/test_ast_ctest.c
-    test/mgsh/test_sig_act_ctest.c
+    test/miga/test_alist_ctest.c
+    test/miga/test_ast_ctest.c
+    test/miga/test_sig_act_ctest.c
 )
 
 # Tests that depend on full sh23logic (all libraries)
 set(SH23LOGIC_TEST_SOURCES
-    test/mgsh/test_lexer_quotes_ctest.c
-    test/mgsh/test_lexer_param_exp_ctest.c
-    test/mgsh/test_lexer_cmd_subst_ctest.c
-    test/mgsh/test_lexer_arith_exp_ctest.c
-    test/mgsh/test_lexer_heredoc_ctest.c
-    test/mgsh/test_parser_gnode_ctest.c
-    test/mgsh/test_parser_ctest.c
-    test/mgsh/test_ast_heredoc_ctest.c
-    test/mgsh/test_tokenizer_ctest.c
-    # test/mgsh/test_expander_ctest.c
-    test/mgsh/test_exec_ctest.c
+    test/miga/test_lexer_quotes_ctest.c
+    test/miga/test_lexer_param_exp_ctest.c
+    test/miga/test_lexer_cmd_subst_ctest.c
+    test/miga/test_lexer_arith_exp_ctest.c
+    test/miga/test_lexer_heredoc_ctest.c
+    test/miga/test_parser_gnode_ctest.c
+    test/miga/test_parser_ctest.c
+    test/miga/test_ast_heredoc_ctest.c
+    test/miga/test_tokenizer_ctest.c
+    # test/miga/test_expander_ctest.c
+    test/miga/test_exec_ctest.c
 )
 
 # Build sh23base tests
@@ -545,7 +545,7 @@ if(ENABLE_COVERAGE)
             COMMAND ${LCOV} --capture --directory . --output-file coverage.raw.info
             COMMAND ${LCOV} --remove coverage.raw.info '/usr/*' '*/test/*' '*/src/main.c' '*/src/getopt.c' --output-file coverage.info
             COMMAND ${LCOV} --extract coverage.info '*/src/*.c' --output-file coverage.filtered.info
-            COMMAND ${GENHTML} coverage.filtered.info --output-directory coverage_report --title "mgsh Coverage" --branch-coverage --legend
+            COMMAND ${GENHTML} coverage.filtered.info --output-directory coverage_report --title "miga Coverage" --branch-coverage --legend
             COMMENT "Generating coverage report in coverage_report/"
             WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         )

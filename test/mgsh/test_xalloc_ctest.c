@@ -1,7 +1,7 @@
 #include <string.h>
 #include <setjmp.h>
 #include "ctest.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // Helper macros to handle MIGA_ARENA_DEBUG and non-MIGA_ARENA_DEBUG modes
 #ifdef MIGA_ARENA_DEBUG

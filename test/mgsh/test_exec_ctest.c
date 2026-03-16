@@ -13,7 +13,7 @@
 
 CTEST(test_exec_create_destroy)
 {
-    exec_t *executor = exec_create();
+    miga_exec_t *executor = exec_create();
 	exec_set_flag_xtrace(executor, true);
 
     // Verify executor was created
@@ -50,7 +50,7 @@ CTEST(test_exec_create_destroy)
 CTEST(test_exec_special_variables)
 {
     exec_cfg_t cfg = {.opt.xtrace = true};
-    exec_t *executor = exec_create(&cfg);
+    miga_exec_t *executor = exec_create(&cfg);
 
     // Test that we can modify special variable fields
     executor->last_background_pid = 12345;

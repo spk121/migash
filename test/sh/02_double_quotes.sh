@@ -62,7 +62,7 @@ assert_eq "}" "}" "close brace preserved"
 assert_eq "," "," "comma preserved"
 
 # Whitespace preservation and no word splitting
-mgsh_printfvar result '%s' "hello   world" 
+miga_printfvar result '%s' "hello   world" 
 assert_eq "hello   world" "$result" "multiple spaces preserved"
 
 count_words() {

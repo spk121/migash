@@ -2,7 +2,7 @@
 #include "ctest.h"
 #include "alias_store.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Creation and destruction

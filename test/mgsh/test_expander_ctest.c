@@ -10,7 +10,7 @@
 #include "ast.h"
 #include "variable_store.h"
 #include "positional_params.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // Test-specific pathname expansion callback that returns two fixed filenames
 static strlist_t *test_pathname_expansion_callback(void *user_data, const string_t *pattern)

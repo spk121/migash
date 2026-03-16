@@ -14,7 +14,7 @@
 #include "ctest.h"
 #include "positional_params.h"
 #include "lib.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 #include <string.h>
 
 // ============================================================================

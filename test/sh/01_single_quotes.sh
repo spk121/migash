@@ -4,7 +4,7 @@
 # value of each character within the single-quotes."
 
 
-# mgsh_dirnamevar SCRIPT_DIR "$0"
+# miga_dirnamevar SCRIPT_DIR "$0"
 # echo "Script directory: $SCRIPT_DIR"
 # . "${SCRIPT_DIR}/../test_helpers.sh"
 

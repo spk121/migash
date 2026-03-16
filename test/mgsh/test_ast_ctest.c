@@ -2,7 +2,7 @@
 #include "ast.h"
 #include "miga/string_t.h"
 #include "token.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 #include "logging.h"
 
 /* ============================================================================

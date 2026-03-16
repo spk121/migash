@@ -6,7 +6,7 @@
 #include "ctest.h"
 #include "sig_act.h"
 #include "lib.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 #include <signal.h>
 #include <stdbool.h>
 
@@ -92,7 +92,7 @@ CTEST(test_sig_act_exit_trap_set_and_restore)
     sig_act_store_t *store = sig_act_store_create();
     CTEST_ASSERT_NOT_NULL(ctest, store, "store created");
 
-#ifdef SIG_ACT_USE_SIGACTION
+#ifdef MIGA_POSIX_API
     struct sigaction sa;
     sa.sa_handler = test_signal_handler;
     sa.sa_flags = 0;
@@ -115,7 +115,7 @@ CTEST(test_sig_act_exit_trap_set_and_restore)
 // POSIX-Specific Tests
 // ============================================================================
 
-#ifdef SIG_ACT_USE_SIGACTION
+#ifdef MIGA_POSIX_API
 
 CTEST(test_sig_act_posix_set_and_save_basic)
 {
@@ -411,7 +411,7 @@ int main(int argc, const char *argv[])
         CTEST_ENTRY(test_sig_act_supported_bounds),
         CTEST_ENTRY(test_sig_act_exit_trap_set_and_restore),
 
-    #ifdef SIG_ACT_USE_SIGACTION
+    #ifdef MIGA_POSIX_API
         // POSIX-specific tests
         CTEST_ENTRY(test_sig_act_posix_set_and_save_basic),
         CTEST_ENTRY(test_sig_act_posix_set_and_save_preserves_original),

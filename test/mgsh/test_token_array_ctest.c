@@ -9,7 +9,7 @@
 #include "token.h"
 #include "logging.h"
 #include "lib.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ============================================================================
 // Token Array Lifecycle

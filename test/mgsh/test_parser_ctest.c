@@ -10,7 +10,7 @@
 #include "lower.h"
 #include "miga/string_t.h"
 #include "token.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * Helper Functions
@@ -595,7 +595,7 @@ CTEST(test_parser_braced_io_invalid_redirection)
 
 CTEST(test_exec_create_destroy)
 {
-    exec_t *executor = exec_create();
+    miga_exec_t *executor = exec_create();
     CTEST_ASSERT_NOT_NULL(ctest, executor, "executor created");
     CTEST_ASSERT_EQ(ctest, exec_get_exit_status(executor), 0, "initial exit status is 0");
     exec_destroy(&executor);

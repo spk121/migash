@@ -8,7 +8,7 @@
 #include "func_store.h"
 #include "ast.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Helper functions for creating test AST nodes
