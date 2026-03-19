@@ -1,21 +1,26 @@
-#ifndef ARITHMETIC_H
-#define ARITHMETIC_H
+#ifndef MIGA_ARITHMETIC_H
+#define MIGA_ARITHMETIC_H
 
-#include "miga/frame.h"
-#include "miga/string_t.h"
+#include "miga_cppguard.h"
+#include "miga_visibility.h"
+
+#include "type_pub.h"
+#include "miga_string.h"
+
+MIGA_EXTERN_C_START
 
 /**
  * Result of an arithmetic expression evaluation.
  *
- * The caller owns this struct and must call arithmetic_result_free() to clean up.
+ * The caller owns this struct and must call miga_arithmetic_result_free() to clean up.
  * The error field (if non-NULL) is owned by the caller and will be freed by
- * arithmetic_result_free().
+ * miga_arithmetic_result_free().
  */
-typedef struct {
+typedef struct miga_arithmetic_result_t{
     long value;      // Result value if successful
     int failed;      // 1 if error occurred, 0 if successful
-    string_t *error; // Error message if failed (owned by caller, freed by arithmetic_result_free)
-} ArithmeticResult;
+    miga_string_t *error; // Error message if failed (owned by caller, freed by miga_arithmetic_result_free)
+} miga_arithmetic_result_t;
 
 /**
  * Evaluate an arithmetic expression with full POSIX semantics.
@@ -27,14 +32,15 @@ typedef struct {
  *              The frame's variable store may be modified for assignment operations like x=5.
  * @param expression The arithmetic expression to evaluate (not modified, deep copied internally)
  *
- * @return ArithmeticResult struct containing the result or error. Caller must call
- *         arithmetic_result_free() to clean up, even on success (though it's a no-op
+ * @return miga_arithmetic_result_t struct containing the result or error. Caller must call
+ *         miga_arithmetic_result_free() to clean up, even on success (though it's a no-op
  *         if no error occurred).
  */
-ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expression);
+MIGA_API miga_arithmetic_result_t
+miga_arithmetic_evaluate(miga_frame_t *frame, const miga_string_t *expression);
 
 /**
- * Free resources associated with an ArithmeticResult.
+ * Free resources associated with an miga_arithmetic_result_t.
  *
  * This function frees the error string if present and resets the result struct.
  * It is safe to call even if the result was successful (no error).
@@ -42,6 +48,9 @@ ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expres
  *
  * @param result The result to free (must not be NULL)
  */
-void arithmetic_result_free(ArithmeticResult *result);
+MIGA_API void
+miga_arithmetic_result_free(miga_arithmetic_result_t *result);
 
-#endif
+MIGA_EXTERN_C_END
+
+#endif // MIGA_ARITHMETIC_H

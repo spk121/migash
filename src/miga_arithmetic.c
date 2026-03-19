@@ -4,27 +4,20 @@
 
 #include <ctype.h>
 
-#include "arithmetic.h"
+#include "miga_arithmetic.h"
 
-#include "alias_store.h"
+#include "type_pub.h"
+#include "miga_alias_map.h"
 #include "exec_frame_expander.h"
 #include "lexer.h"
 #include "logging.h"
-#include "miga/string_t.h"
-#include "miga/strlist.h"
+#include "miga_string.h"
+#include "strlist.h"
 #include "tokenizer.h"
-#include "miga/xalloc.h"
-
-// Ignore warning 4061: enumerator in switch of enum is not explicitly handled by a case label
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4061)
-#endif
 
 typedef struct {
-    string_t *input;
+    miga_string_t *input;
     int pos;
-    int padding;
     miga_frame_t *frame;
 } math_parser_t;
 
@@ -74,19 +67,19 @@ typedef enum {
 typedef struct {
     math_token_type_t type;
     long number;    // For MATH_TOKEN_NUMBER
-    string_t *variable; // For MATH_TOKEN_VARIABLE (caller frees)
+    miga_string_t *variable; // For MATH_TOKEN_VARIABLE (caller frees)
 } math_token_t;
 
 static bool is_alpha_or_underscore(char c) {
-    return isalpha(c) || c == '_';
+    return isalpha((unsigned char)c) || c == '_';
 }
 
 static bool is_alnum_or_underscore(char c) {
-    return isalnum(c) || c == '_';
+    return isalnum((unsigned char)c) || c == '_';
 }
 
 // Initialize parser
-static void parser_init(math_parser_t *parser, miga_frame_t *frame, const string_t *input) {
+static void parser_init(math_parser_t *parser, miga_frame_t *frame, const miga_string_t *input) {
     parser->input = string_create_from(input);
     parser->pos = 0;
     parser->frame = frame;
@@ -102,7 +95,7 @@ static void parser_cleanup(math_parser_t *parser) {
 
 // Skip whitespace
 static void skip_whitespace(math_parser_t *parser) {
-    while (parser->pos < string_length(parser->input) && isspace(string_at(parser->input, parser->pos))) {
+    while (parser->pos < string_length(parser->input) && isspace((unsigned char)string_at(parser->input, parser->pos))) {
         parser->pos++;
     }
 }
@@ -118,7 +111,7 @@ static math_token_t get_token(math_parser_t *parser) {
     }
 
     char c = string_at(parser->input, parser->pos);
-    if (isdigit(c)) {
+    if (isdigit((unsigned char)c)) {
         // POSIX requires decimal, octal (0 prefix), and hexadecimal (0x/0X prefix)
         long value = 0;
         int len = string_length(parser->input);
@@ -321,25 +314,25 @@ static math_token_t get_token(math_parser_t *parser) {
 // Free token
 static void free_token(math_token_t *token) {
     if (token->type == MATH_TOKEN_VARIABLE && token->variable) {
-        xfree(token->variable);
+        string_destroy(&token->variable);
     }
 }
 
 // Parse and evaluate expression
-static ArithmeticResult parse_expression(math_parser_t *parser, int min_precedence);
-static ArithmeticResult parse_primary(math_parser_t *parser);
+static miga_arithmetic_result_t parse_expression(math_parser_t *parser, int min_precedence);
+static miga_arithmetic_result_t parse_primary(math_parser_t *parser);
 
 // Helper to create error result
-static ArithmeticResult make_error(const char *msg) {
-    ArithmeticResult result = {0};
+static miga_arithmetic_result_t make_error(const char *msg) {
+    miga_arithmetic_result_t result = {0};
     result.failed = 1;
     result.error = string_create_from_cstr(msg);
     return result;
 }
 
 // Helper to create value result
-static ArithmeticResult make_value(long value) {
-    ArithmeticResult result = {0};
+static miga_arithmetic_result_t make_value(long value) {
+    miga_arithmetic_result_t result = {0};
     result.value = value;
     result.failed = 0;
     return result;
@@ -393,8 +386,8 @@ static bool is_right_associative(math_token_type_t type) {
 
 // Unified expression parser using precedence climbing
 // Handles unary operators, binary operators, ternary operator, and comma operator
-static ArithmeticResult parse_expression(math_parser_t *parser, int min_precedence) {
-    ArithmeticResult left;
+static miga_arithmetic_result_t parse_expression(math_parser_t *parser, int min_precedence) {
+    miga_arithmetic_result_t left;
 
     // Handle unary operators (prefix)
     int saved_pos = parser->pos;
@@ -405,7 +398,7 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
         math_token_type_t unary_op = token.type;
         free_token(&token);
 
-        ArithmeticResult expr = parse_expression(parser, 14); // Unary has highest precedence
+        miga_arithmetic_result_t expr = parse_expression(parser, 14); // Unary has highest precedence
         if (expr.failed) return expr;
 
         switch (unary_op) {
@@ -442,60 +435,68 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
         // Special handling for comma operator
         if (op == MATH_TOKEN_COMMA) {
             int next_min_prec = is_right_associative(op) ? prec : prec + 1;
-            ArithmeticResult right = parse_expression(parser, next_min_prec);
+            miga_arithmetic_result_t right = parse_expression(parser, next_min_prec);
             if (right.failed) {
-                arithmetic_result_free(&left);
+                miga_arithmetic_result_free(&left);
                 return right;
             }
             // Comma operator: evaluate both, discard right, return left
-            arithmetic_result_free(&right);
+            miga_arithmetic_result_free(&right);
             continue;
         }
 
         // Special handling for ternary operator
         if (op == MATH_TOKEN_QUESTION) {
-            ArithmeticResult true_expr = parse_expression(parser, 0); // Allow comma in branches
+            miga_arithmetic_result_t true_expr = parse_expression(parser, 0); // Allow comma in branches
             if (true_expr.failed) {
-                arithmetic_result_free(&left);
+                miga_arithmetic_result_free(&left);
                 return true_expr;
             }
 
             token = get_token(parser);
             if (token.type != MATH_TOKEN_COLON) {
                 free_token(&token);
-                arithmetic_result_free(&left);
-                arithmetic_result_free(&true_expr);
+                miga_arithmetic_result_free(&left);
+                miga_arithmetic_result_free(&true_expr);
                 return make_error("Expected ':' in ternary expression");
             }
             free_token(&token);
 
-            ArithmeticResult false_expr = parse_expression(parser, prec); // Right-associative
+            miga_arithmetic_result_t false_expr = parse_expression(parser, prec); // Right-associative
             if (false_expr.failed) {
-                arithmetic_result_free(&left);
-                arithmetic_result_free(&true_expr);
+                miga_arithmetic_result_free(&left);
+                miga_arithmetic_result_free(&true_expr);
                 return false_expr;
             }
 
-            ArithmeticResult result = left.value ? true_expr : false_expr;
-            arithmetic_result_free(&left);
-            arithmetic_result_free(left.value ? &false_expr : &true_expr);
+            long cond = left.value;
+            miga_arithmetic_result_free(&left);
+            miga_arithmetic_result_t result = cond ? true_expr : false_expr;
+            miga_arithmetic_result_free(cond ? &false_expr : &true_expr);
             left = result;
             continue;
         }
 
-        // Handle short-circuit evaluation for logical operators
-        if (op == MATH_TOKEN_LOGICAL_OR && left.value) {
-            return left;
-        }
-        if (op == MATH_TOKEN_LOGICAL_AND && !left.value) {
-            return left;
+        // Handle short-circuit evaluation for logical operators: parse the right side
+        // to advance the parser position, but discard the result.
+        if ((op == MATH_TOKEN_LOGICAL_OR && left.value) ||
+            (op == MATH_TOKEN_LOGICAL_AND && !left.value)) {
+            int sc_min_prec = prec + 1; // left-associative
+            miga_arithmetic_result_t right = parse_expression(parser, sc_min_prec);
+            if (right.failed) {
+                miga_arithmetic_result_free(&left);
+                return right;
+            }
+            miga_arithmetic_result_free(&right);
+            // left is unchanged — short-circuit result
+            continue;
         }
 
         // Standard binary operators
         int next_min_prec = is_right_associative(op) ? prec : prec + 1;
-        ArithmeticResult right = parse_expression(parser, next_min_prec);
+        miga_arithmetic_result_t right = parse_expression(parser, next_min_prec);
         if (right.failed) {
-            arithmetic_result_free(&left);
+            miga_arithmetic_result_free(&left);
             return right;
         }
 
@@ -506,16 +507,16 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
                 break;
             case MATH_TOKEN_DIVIDE:
                 if (right.value == 0) {
-                    arithmetic_result_free(&left);
-                    arithmetic_result_free(&right);
+                    miga_arithmetic_result_free(&left);
+                    miga_arithmetic_result_free(&right);
                     return make_error("Division by zero");
                 }
                 left.value /= right.value;
                 break;
             case MATH_TOKEN_MODULO:
                 if (right.value == 0) {
-                    arithmetic_result_free(&left);
-                    arithmetic_result_free(&right);
+                    miga_arithmetic_result_free(&left);
+                    miga_arithmetic_result_free(&right);
                     return make_error("Modulo by zero");
                 }
                 left.value %= right.value;
@@ -566,18 +567,18 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
                 left.value = left.value || right.value;
                 break;
             default:
-                arithmetic_result_free(&left);
-                arithmetic_result_free(&right);
+                miga_arithmetic_result_free(&left);
+                miga_arithmetic_result_free(&right);
                 return make_error("Unknown binary operator");
         }
 
-        arithmetic_result_free(&right);
+        miga_arithmetic_result_free(&right);
     }
     return left;
 }
 
 // Primary (number, variable, parenthesized expression, assignment)
-static ArithmeticResult parse_primary(math_parser_t *parser)
+static miga_arithmetic_result_t parse_primary(math_parser_t *parser)
 {
     math_token_t token = get_token(parser);
 
@@ -609,7 +610,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             long num = 0;
             if (frame_has_variable(parser->frame, token.variable))
             {
-                string_t *value = frame_get_variable_value(parser->frame, token.variable);
+                miga_string_t *value = frame_get_variable_value(parser->frame, token.variable);
                 num = string_atol(value);
                 string_destroy(&value);
             }
@@ -618,14 +619,14 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
         }
 
         // Assignment: save variable name, then consume the operator
-        string_t *var_name = token.variable;
+        miga_string_t *var_name = token.variable;
         token.variable = NULL; // detach so free_token won't destroy it
 
         math_token_t op_token = get_token(parser);
         math_token_type_t assign_type = op_token.type;
         free_token(&op_token);
 
-        ArithmeticResult right = parse_expression(parser, 0);
+        miga_arithmetic_result_t right = parse_expression(parser, 0);
         if (right.failed)
         {
             string_destroy(&var_name);
@@ -636,7 +637,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
         long var_num = 0;
         if (frame_has_variable(parser->frame, var_name))
         {
-            string_t *var_value = frame_get_variable_value(parser->frame, var_name);
+            miga_string_t *var_value = frame_get_variable_value(parser->frame, var_name);
             var_num = string_atol(var_value);
             string_destroy(&var_value);
         }
@@ -650,7 +651,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             if (value == 0)
             {
                 string_destroy(&var_name);
-                arithmetic_result_free(&right);
+                miga_arithmetic_result_free(&right);
                 return make_error("Division by zero in assignment");
             }
             value = var_num / value;
@@ -659,7 +660,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             if (value == 0)
             {
                 string_destroy(&var_name);
-                arithmetic_result_free(&right);
+                miga_arithmetic_result_free(&right);
                 return make_error("Modulo by zero in assignment");
             }
             value = var_num % value;
@@ -690,7 +691,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
         }
 
         // Update variable in the frame
-        string_t *value_str = string_from_long(value);
+        miga_string_t *value_str = string_from_long(value);
         frame_set_variable(parser->frame, var_name, value_str);
         string_destroy(&value_str);
         string_destroy(&var_name);
@@ -700,14 +701,14 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
 
     if (token.type == MATH_TOKEN_LPAREN)
     {
-        ArithmeticResult expr = parse_expression(parser, 0);
+        miga_arithmetic_result_t expr = parse_expression(parser, 0);
         if (expr.failed)
             return expr;
 
         token = get_token(parser);
         if (token.type != MATH_TOKEN_RPAREN)
         {
-            arithmetic_result_free(&expr);
+            miga_arithmetic_result_free(&expr);
             free_token(&token);
             return make_error("Expected ')'");
         }
@@ -727,7 +728,7 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
  * 4. Expand the AST (parameter expansion, command substitution, quote removal)
  * 5. Return the fully expanded string
  */
-static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_t *expr_text)
+static miga_string_t *arithmetic_expand_expression(miga_frame_t *frame, const miga_string_t *expr_text)
 {
     // Step 1: Re-lex the raw text inside $(())
     lexer_t *lx = lexer_create();
@@ -757,14 +758,14 @@ static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_
     // Step 3: Tokenize with alias expansion
     // For arithmetic expansion, we typically don't need alias expansion,
     // but we include it for POSIX compliance
-    alias_store_t *aliases = alias_store_create();
+    miga_alias_map_t *aliases = miga_alias_map_create();
     tokenizer_t *tokenizer = tokenizer_create(aliases);
     token_list_t *aliased_tokens = token_list_create();
 
     if (!tokenizer || !aliased_tokens) {
         token_list_destroy(&aliased_tokens);
         if (tokenizer) tokenizer_destroy(&tokenizer);
-        alias_store_destroy(&aliases);
+        miga_alias_map_destroy(&aliases);
         token_list_destroy(&tokens);
         lexer_destroy(&lx);
         log_error("arithmetic_expand_expression: failed to create tokenizer");
@@ -778,7 +779,7 @@ static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_
 
     // Step 4: Expand each word token
     // We need to expand parameters, command substitutions, etc.
-    string_t *result = string_create();
+    miga_string_t *result = string_create();
 
     for (int i = 0; i < token_list_size(aliased_tokens); i++) {
         const token_t *tok = token_list_get(aliased_tokens, i);
@@ -795,7 +796,7 @@ static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_
             // Concatenate all expanded words without adding spaces
             // Arithmetic expressions should not have field splitting
             for (int j = 0; j < strlist_size(expanded_words); j++) {
-                const string_t *word = strlist_at(expanded_words, j);
+                const miga_string_t *word = strlist_at(expanded_words, j);
                 string_append(result, word);
             }
 
@@ -808,7 +809,7 @@ static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_
     // Cleanup
     token_list_destroy(&aliased_tokens);
     tokenizer_destroy(&tokenizer);
-    alias_store_destroy(&aliases);
+    miga_alias_map_destroy(&aliases);
     token_list_destroy(&tokens);
     lexer_destroy(&lx);
 
@@ -816,7 +817,7 @@ static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_
 }
 
 // Evaluate arithmetic expression
-ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expression) {
+miga_arithmetic_result_t miga_arithmetic_evaluate(miga_frame_t *frame, const miga_string_t *expression) {
     // Validate inputs
     if (!frame) {
         return make_error("Execution frame is NULL");
@@ -826,7 +827,7 @@ ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expres
     }
 
     // Step 1-4: Perform full recursive expansion
-    string_t *expanded_str = arithmetic_expand_expression(frame, expression);
+    miga_string_t *expanded_str = arithmetic_expand_expression(frame, expression);
     if (!expanded_str) {
         return make_error("Failed to expand arithmetic expression");
     }
@@ -840,12 +841,12 @@ ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expres
     // Step 5: Parse and evaluate the fully expanded expression
     math_parser_t parser;
     parser_init(&parser, frame, expanded_str);
-    ArithmeticResult result = parse_expression(&parser, 0); // Start with minimum precedence
+    miga_arithmetic_result_t result = parse_expression(&parser, 0); // Start with minimum precedence
 
     // Check for trailing tokens
     math_token_t token = get_token(&parser);
     if (token.type != MATH_TOKEN_EOF && !result.failed) {
-        arithmetic_result_free(&result);
+        miga_arithmetic_result_free(&result);
         result = make_error("Unexpected tokens after expression");
     }
     free_token(&token);
@@ -856,8 +857,8 @@ ArithmeticResult arithmetic_evaluate(miga_frame_t *frame, const string_t *expres
     return result;
 }
 
-// Free ArithmeticResult
-void arithmetic_result_free(ArithmeticResult *result) {
+// Free miga_arithmetic_result_t
+void miga_arithmetic_result_free(miga_arithmetic_result_t *result) {
     if (!result) {
         return;
     }
