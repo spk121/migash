@@ -1013,7 +1013,8 @@ strlist_t *frame_get_all_positional_params(const miga_frame_t *frame)
     int count = positional_params_count(frame->positional_params);
     strlist_t *result = strlist_create();
 
-    for (int i = 0; i < count; i++)
+    /* Positional parameters are numbered from 1 ($0 is the shell/script name). */
+    for (int i = 1; i <= count; i++)
     {
         const string_t *param = positional_params_get(frame->positional_params, i);
         if (param)

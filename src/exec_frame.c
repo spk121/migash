@@ -1632,6 +1632,11 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame
             result.flow_depth = cmd_result.flow_depth;
             return result;
         }
+        if (frame->executor->exit_requested)
+        {
+            result.flow = MIGA_FRAME_FLOW_TOP;
+            return result;
+        }
 
         // Handle the separator after this command
         // cmd_separator_t sep = ast_node_command_list_get_separator(list, i);
@@ -2955,6 +2960,11 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
         executor->last_exit_status = result.exit_status;
         executor->last_exit_status_set = true;
     }
+
+    /* A return (from a sourced file) or exit that unwound to this frame:
+     * record it so the caller reading the stream stops. */
+    if (result.flow == MIGA_FRAME_FLOW_RETURN || result.flow == MIGA_FRAME_FLOW_TOP)
+        frame->pending_control_flow = result.flow;
 
     ast_node_destroy(&ast);
 

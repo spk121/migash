@@ -396,7 +396,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
     fclose(fp);
     int exit_status = dot_frame->last_exit_status;
     /* A "return" was consumed by this frame; "exit" keeps unwinding. */
-    if (dot_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP)
+    if (dot_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP || frame->executor->exit_requested)
         frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
     exec_frame_pop(&dot_frame);
     frame->last_exit_status = exit_status;
