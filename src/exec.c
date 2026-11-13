@@ -1944,8 +1944,8 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 2. Read & execute one line ---- */
         miga_exec_status_t line_status = exec_frame_stream_core(executor->current_frame, fp, session);
 
-        /* ---- 3. EOF handling ---- */
-        if (feof(fp))
+        /* ---- 3. EOF handling (a read error ends the stream the same way) ---- */
+        if (feof(fp) || ferror(fp))
         {
             if (need_continuation)
             {
@@ -2176,7 +2176,24 @@ miga_exec_status_t exec_execute_stream_once(miga_exec_t *executor, FILE *fp)
         return MIGA_EXEC_STATUS_ERROR;
     }
 
-    miga_exec_status_t raw_status = exec_frame_stream_core(executor->current_frame, fp, session);
+    /* Read the whole stream, one physical line at a time. Stop at end of
+     * file, on an error, or when the code asks to leave (exit, or return from
+     * a sourced file). */
+    miga_exec_status_t raw_status = MIGA_EXEC_STATUS_OK;
+    miga_frame_t *frame = executor->current_frame;
+    while (!feof(fp) && !ferror(fp))
+    {
+        miga_exec_status_t line_status = exec_frame_stream_core(frame, fp, session);
+        if (line_status == MIGA_EXEC_STATUS_EMPTY)
+            break; /* end of file */
+        raw_status = line_status;
+        if (line_status == MIGA_EXEC_STATUS_ERROR || line_status == MIGA_EXEC_STATUS_EXIT ||
+            line_status == MIGA_EXEC_STATUS_NOT_IMPL)
+            break;
+        if (executor->exit_requested || frame->pending_control_flow == MIGA_FRAME_FLOW_TOP ||
+            frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
+            break;
+    }
 
     /* Tear down the transient session. */
     parse_session_destroy(&session);

@@ -2972,11 +2972,13 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
 /**
  * Core implementation for executing shell commands from a stream.
  *
- * Reads lines from fp and feeds them to exec_frame_string_core one at a time,
- * handling lines longer than the read buffer by accumulating chunks. Multi-line
- * constructs are handled by the session: an INCOMPLETE result just means the
- * next line is needed. Reading stops at end of file, on an error, or when the
- * executed code asks to leave (exit, or return from a sourced file).
+ * Reads ONE physical line (of any length) from fp and feeds it to
+ * exec_frame_string_core. Multi-line constructs are handled by the session:
+ * an INCOMPLETE result means the caller should read the next line. The
+ * callers loop: the REPL prompts and checks traps/errexit/exit between lines;
+ * exec_execute_stream_once() (the "." builtin) reads to end of file.
+ *
+ * Returns MIGA_EXEC_STATUS_EMPTY at end of file with nothing left to process.
  */
 miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_session_t *session)
 {
@@ -2987,81 +2989,50 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
     Expects_not_null(session->tokenizer);
     Expects_not_null(frame->executor);
 
-    miga_exec_status_t final_status = MIGA_EXEC_STATUS_OK;
-
 #define LINE_CHUNK_SIZE 4096
     char chunk[LINE_CHUNK_SIZE];
     char *line_buf = NULL;
     size_t line_buf_size = 0;
     size_t line_len = 0;
 
-    for (;;)
+    /* Assemble one physical line of any length into line_buf. */
+    while (fgets(chunk, sizeof(chunk), fp) != NULL)
     {
-        bool have_line = false;
-
-        /* Assemble one physical line of any length into line_buf. */
-        while (fgets(chunk, sizeof(chunk), fp) != NULL)
+        size_t chunk_len = strlen(chunk);
+        if (line_len + chunk_len + 1 > line_buf_size)
         {
-            size_t chunk_len = strlen(chunk);
-            if (line_len + chunk_len + 1 > line_buf_size)
-            {
-                line_buf_size = (line_len + chunk_len + 1) * 2;
-                line_buf = (char *)xrealloc(line_buf, line_buf_size);
-            }
-            memcpy(line_buf + line_len, chunk, chunk_len);
-            line_len += chunk_len;
-            line_buf[line_len] = '\0';
-            if (chunk_len > 0 && chunk[chunk_len - 1] == '\n')
-            {
-                have_line = true;
-                break;
-            }
+            line_buf_size = (line_len + chunk_len + 1) * 2;
+            line_buf = (char *)xrealloc(line_buf, line_buf_size);
         }
-
-        if (!have_line && line_len == 0)
-            break; /* end of file, nothing pending */
-
-        miga_exec_status_t status = exec_frame_string_core(frame, line_buf, session);
-        line_len = 0;
-        if (session->line_num > 0)
-            frame->source_line = session->line_num;
-
-        switch (status)
-        {
-        case MIGA_EXEC_STATUS_OK:
-        case MIGA_EXEC_STATUS_EMPTY:
-            final_status = MIGA_EXEC_STATUS_OK;
+        memcpy(line_buf + line_len, chunk, chunk_len);
+        line_len += chunk_len;
+        line_buf[line_len] = '\0';
+        if (chunk_len > 0 && chunk[chunk_len - 1] == '\n')
             break;
-        case MIGA_EXEC_STATUS_INCOMPLETE:
-            /* The session is accumulating a multi-line construct. */
-            final_status = MIGA_EXEC_STATUS_INCOMPLETE;
-            break;
-        case MIGA_EXEC_STATUS_EXIT:
-            final_status = MIGA_EXEC_STATUS_EXIT;
-            break;
-        case MIGA_EXEC_STATUS_ERROR:
-        case MIGA_EXEC_STATUS_NOT_IMPL:
-        default:
-            final_status = status;
-            break;
-        }
-
-        if (final_status == MIGA_EXEC_STATUS_ERROR || final_status == MIGA_EXEC_STATUS_EXIT ||
-            final_status == MIGA_EXEC_STATUS_NOT_IMPL)
-            break;
-
-        /* 'exit', or 'return' from a sourced file: stop reading. */
-        if (frame->executor->exit_requested ||
-            frame->pending_control_flow == MIGA_FRAME_FLOW_TOP ||
-            frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
-            break;
-
-        if (!have_line)
-            break; /* processed a final line without a trailing newline */
     }
 
-    if (line_buf)
-        xfree(line_buf);
+    if (line_len == 0)
+    {
+        if (line_buf)
+            xfree(line_buf);
+        return MIGA_EXEC_STATUS_EMPTY; /* end of file (or read error) */
+    }
 
-    return final_status;
+    miga_exec_status_t status = exec_frame_string_core(frame, line_buf, session);
+    xfree(line_buf);
+    if (session->line_num > 0)
+        frame->source_line = session->line_num;
+
+    switch (status)
+    {
+    case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EMPTY:
+        return MIGA_EXEC_STATUS_OK;
+    case MIGA_EXEC_STATUS_INCOMPLETE:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
+    default:
+        return status;
+    }
 }

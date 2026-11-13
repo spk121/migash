@@ -11,6 +11,7 @@
 
 #ifndef __cplusplus
 #include <stddef.h>
+#include <stdio.h>
 
 /* Check for known guard macros that indicate nullptr_t exists */
 #if defined(_GCC_NULLPTR_T)
@@ -119,6 +120,14 @@ string_t *lib_quote(const string_t *key, const string_t *value);
  *         Caller is responsible for freeing the returned string with xfree().
  */
 string_t *lib_getcwd(void);
+
+/**
+ * Open a shell script for reading. On POSIX the file is placed on a
+ * descriptor >= 10 with close-on-exec, so that the script's own redirections
+ * (exec 3>file, ...) cannot clobber it and children do not inherit it.
+ * Returns NULL with errno set on failure.
+ */
+FILE *lib_fopen_script(const char *path);
 
 /* POSIX-style file descriptor constants for UCRT (Windows) */
 #ifdef MIGA_UCRT_API

@@ -5,6 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "libmigash.h"
+#ifdef MIGA_POSIX_API
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include "shell.h"
 
 /* This is not part of libmigash, so only use the public API header. */
@@ -218,7 +224,29 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
     Expects_not_null(sh);
     Expects_not_null(sh->script_filename);
 
-    FILE *fp = fopen(string_cstr(sh->script_filename), "r");
+    FILE *fp = NULL;
+#ifdef MIGA_POSIX_API
+    /* Open the script on a descriptor >= 10 with close-on-exec, so that the
+     * script's own redirections (exec 3>file, ...) cannot clobber it and
+     * child processes do not inherit it. */
+    {
+        int fd = open(string_cstr(sh->script_filename), O_RDONLY);
+        if (fd >= 0)
+        {
+            int hi = fcntl(fd, F_DUPFD_CLOEXEC, 10);
+            if (hi >= 0)
+            {
+                close(fd);
+                fd = hi;
+            }
+            fp = fdopen(fd, "r");
+            if (!fp)
+                close(fd);
+        }
+    }
+#else
+    fp = fopen(string_cstr(sh->script_filename), "r");
+#endif
     if (!fp)
     {
         exec_set_error_printf(sh->executor, "Cannot open file: %s",

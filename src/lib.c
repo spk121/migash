@@ -11,6 +11,8 @@
 #include <unistd.h>
 #endif
 
+#include <fcntl.h>
+#include <stdio.h>
 #include "lib.h"
 
 #include "miga/string_t.h"
@@ -319,4 +321,31 @@ string_t *lib_getcwd(void)
         cwd->length = strlen(result);
     }
     return cwd;
+}
+
+FILE *lib_fopen_script(const char *path)
+{
+    if (!path)
+        return NULL;
+#ifdef MIGA_POSIX_API
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return NULL;
+    int hi = fcntl(fd, F_DUPFD_CLOEXEC, 10);
+    if (hi >= 0)
+    {
+        close(fd);
+        fd = hi;
+    }
+    FILE *fp = fdopen(fd, "r");
+    if (!fp)
+    {
+        int saved = errno;
+        close(fd);
+        errno = saved;
+    }
+    return fp;
+#else
+    return fopen(path, "r");
+#endif
 }

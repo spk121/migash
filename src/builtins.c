@@ -346,12 +346,12 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
         if (result.found)
         {
             resolved_path = result.full_path;
-            fp = fopen(string_cstr(resolved_path), "r");
+            fp = lib_fopen_script(string_cstr(resolved_path));
         }
     }
     else
     {
-        fp = fopen(filename, "r");
+        fp = lib_fopen_script(filename);
     }
 
     if (!fp)
