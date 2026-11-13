@@ -207,6 +207,30 @@ static miga_exec_status_t apply_prefix_assignments(miga_frame_t *frame, variable
 }
 
 /* ============================================================================
+ * Builtin diagnostics
+ * ============================================================================ */
+
+/**
+ * Builtins report usage and runtime errors through frame_set_error_printf(),
+ * which only records the message on the executor. Print it to stderr now
+ * (POSIX utilities write diagnostics to standard error) and clear it, so that
+ * it is not mistaken later for a fatal shell error.
+ */
+static void report_builtin_error(miga_frame_t *frame, int exit_status)
+{
+    if (exit_status == 0 || !frame_has_error(frame))
+    {
+        if (frame_has_error(frame))
+            frame_clear_error(frame);
+        return;
+    }
+    const string_t *msg = frame_get_error_message(frame);
+    fflush(stdout);
+    fprintf(stderr, "%s\n", string_cstr(msg));
+    frame_clear_error(frame);
+}
+
+/* ============================================================================
  * Temporary prefix assignments (regular builtins and functions)
  * ============================================================================ */
 
@@ -444,7 +468,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
                 (miga_exec_status_t)exec_redirect_apply_redirectons(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
             {
-                status = redir_st;
+                /* POSIX: a redirection error with a function or regular
+                 * command fails that command (status 1); the shell goes on. */
+                exec_redirect_restore_redirections(frame, runtime_redirs);
+                report_builtin_error(frame, 1);
+                cmd_exit_status = 1;
                 strlist_destroy(&func_args);
                 goto done_execution;
             }
@@ -471,11 +499,14 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             miga_exec_status_t redir_st = exec_redirect_apply_redirectons(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
             {
-                status = redir_st;
+                exec_redirect_restore_redirections(frame, runtime_redirs);
+                report_builtin_error(frame, 1);
+                cmd_exit_status = 1;
                 goto done_execution;
             }
 
             cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+            report_builtin_error(frame, cmd_exit_status);
 
             exec_redirect_restore_redirections(frame, runtime_redirs);
 
@@ -491,16 +522,57 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
                 (miga_exec_status_t)exec_redirect_apply_redirectons(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
             {
+                /* POSIX: a redirection error with a special builtin is a
+                 * shell error (a non-interactive shell exits). */
+                exec_redirect_restore_redirections(frame, runtime_redirs);
+                report_builtin_error(frame, 1);
+                cmd_exit_status = 1;
                 status = redir_st;
                 goto done_execution;
             }
 
             cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+            report_builtin_error(frame, cmd_exit_status);
 
-            exec_redirect_restore_redirections(frame, runtime_redirs);
+            if (strcmp(cmd_name, "exec") == 0 && strlist_size(expanded_words) == 1)
+            {
+                /* "exec" with only redirections: they stay in effect */
+                exec_redirect_commit_redirections(frame);
+            }
+            else
+            {
+                exec_redirect_restore_redirections(frame, runtime_redirs);
+            }
 
             goto done_execution;
         }
+    }
+
+    /* Assignments plus redirections, no command name ("x=1 >file"): POSIX
+     * performs the redirections (in a subshell environment; here: apply and
+     * undo, which creates/truncates files) and the assignments persist. */
+    if (!has_words)
+    {
+        miga_exec_status_t redir_st =
+            (miga_exec_status_t)exec_redirect_apply_redirectons(frame, runtime_redirs);
+        if (redir_st != MIGA_EXEC_STATUS_OK)
+        {
+            exec_redirect_restore_redirections(frame, runtime_redirs);
+            report_builtin_error(frame, 1);
+            cmd_exit_status = 1;
+            goto done_execution;
+        }
+        exec_redirect_restore_redirections(frame, runtime_redirs);
+        if (assign_tokens && token_list_size(assign_tokens) > 0)
+        {
+            miga_exec_status_t assign_st = apply_prefix_assignments(frame, frame->variables, node);
+            if (assign_st != MIGA_EXEC_STATUS_OK)
+            {
+                status = assign_st;
+                cmd_exit_status = 1;
+            }
+        }
+        goto done_execution;
     }
 
     /* External command execution */
@@ -541,7 +613,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             miga_exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
             {
-                _exit(127);
+                /* POSIX: redirection error on a command -> status 1 */
+                report_builtin_error(frame, 1);
+                _exit(1);
             }
 
             /* Close CLOEXEC FDs */
@@ -686,7 +760,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
                     for (int i = 0; argv[i]; i++)
                         xfree(argv[i]);
                     xfree(argv);
-                    status = redir_st;
+                    exec_redirect_restore_redirections(frame, runtime_redirs);
+                    report_builtin_error(frame, 1);
+                    cmd_exit_status = 1;
                     goto done_execution;
                 }
             }

@@ -2310,7 +2310,10 @@ static int cd_do_chdir(miga_frame_t *frame,
 
     if (flag_P)
     {
-        new_cwd = GETCWD(NULL, 0);
+        /* Keep every new_cwd path in arena memory (xstrdup) so one xfree fits */
+        char *sys_cwd = GETCWD(NULL, 0);
+        new_cwd = sys_cwd ? xstrdup(sys_cwd) : NULL;
+        free(sys_cwd);
         if (!new_cwd)
         {
             fprintf(stderr, "cd: warning: cannot determine new directory: %s\n", strerror(errno));
@@ -2334,8 +2337,8 @@ static int cd_do_chdir(miga_frame_t *frame,
 
     frame_set_persistent_variable_cstr(frame, "OLDPWD", old_cwd);
     frame_set_persistent_variable_cstr(frame, "PWD", new_cwd);
-    free(old_cwd);
-    free(new_cwd);
+    free(old_cwd); /* from getcwd(3) */
+    xfree(new_cwd);
     return exit_status;
 }
 
@@ -5185,153 +5188,324 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
+/* ----------------------------------------------------------------------------
+ * test / [ : POSIX conditional expression evaluator
+ *
+ * Grammar (POSIX test, XSI parts included where cheap):
+ *   expr    : or
+ *   or      : and ( '-o' and )*
+ *   and     : not ( '-a' not )*
+ *   not     : '!' not | primary
+ *   primary : '(' expr ')' | unary-op WORD | WORD binary-op WORD | WORD
+ *
+ * The 0-4 argument cases are resolved exactly as POSIX specifies, which keeps
+ * strings that look like operators (e.g. [ "$x" = "-n" ]) unambiguous.
+ * ------------------------------------------------------------------------- */
+
+typedef struct
+{
+    const strlist_t *args;
+    int pos;
+    int end;
+    bool error;
+    const char *error_msg;
+} test_parser_t;
+
+static const char *test_arg(test_parser_t *p, int i)
+{
+    return string_cstr(strlist_at(p->args, i));
+}
+
+static bool test_is_unary_op(const char *s)
+{
+    return s[0] == '-' && s[1] != '\0' && s[2] == '\0' && strchr("bcdefghLprsSuwxznt", s[1]) != NULL;
+}
+
+static bool test_is_binary_op(const char *s)
+{
+    return strcmp(s, "=") == 0 || strcmp(s, "!=") == 0 || strcmp(s, "-eq") == 0 ||
+           strcmp(s, "-ne") == 0 || strcmp(s, "-gt") == 0 || strcmp(s, "-ge") == 0 ||
+           strcmp(s, "-lt") == 0 || strcmp(s, "-le") == 0;
+}
+
+static bool test_parse_int(const char *s, long *out)
+{
+    if (!s || *s == '\0')
+        return false;
+    char *endp = NULL;
+    errno = 0;
+    long v = strtol(s, &endp, 10);
+    if (errno != 0 || endp == s)
+        return false;
+    while (*endp == ' ' || *endp == '\t')
+        endp++;
+    if (*endp != '\0')
+        return false;
+    *out = v;
+    return true;
+}
+
+static bool test_unary(test_parser_t *p, const char *op, const char *arg)
+{
+#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
+    struct stat st;
+#endif
+    switch (op[1])
+    {
+    case 'z':
+        return arg[0] == '\0';
+    case 'n':
+        return arg[0] != '\0';
+    case 't': {
+        long fd;
+        if (!test_parse_int(arg, &fd) || fd < 0)
+            return false;
+#ifdef MIGA_POSIX_API
+        return isatty((int)fd) != 0;
+#elif defined(MIGA_UCRT_API)
+        return _isatty((int)fd) != 0;
+#else
+        return false;
+#endif
+    }
+#ifdef MIGA_POSIX_API
+    case 'e':
+        return stat(arg, &st) == 0;
+    case 'f':
+        return stat(arg, &st) == 0 && S_ISREG(st.st_mode);
+    case 'd':
+        return stat(arg, &st) == 0 && S_ISDIR(st.st_mode);
+    case 'b':
+        return stat(arg, &st) == 0 && S_ISBLK(st.st_mode);
+    case 'c':
+        return stat(arg, &st) == 0 && S_ISCHR(st.st_mode);
+    case 'p':
+        return stat(arg, &st) == 0 && S_ISFIFO(st.st_mode);
+    case 'S':
+        return stat(arg, &st) == 0 && S_ISSOCK(st.st_mode);
+    case 'h':
+    case 'L':
+        return lstat(arg, &st) == 0 && S_ISLNK(st.st_mode);
+    case 'g':
+        return stat(arg, &st) == 0 && (st.st_mode & S_ISGID);
+    case 'u':
+        return stat(arg, &st) == 0 && (st.st_mode & S_ISUID);
+    case 's':
+        return stat(arg, &st) == 0 && st.st_size > 0;
+    case 'r':
+        return access(arg, R_OK) == 0;
+    case 'w':
+        return access(arg, W_OK) == 0;
+    case 'x':
+        return access(arg, X_OK) == 0;
+#elif defined(MIGA_UCRT_API)
+    case 'e':
+        return stat(arg, &st) == 0;
+    case 'f':
+        return stat(arg, &st) == 0 && (st.st_mode & _S_IFREG);
+    case 'd':
+        return stat(arg, &st) == 0 && (st.st_mode & _S_IFDIR);
+    case 's':
+        return stat(arg, &st) == 0 && st.st_size > 0;
+    case 'r':
+        return _access(arg, 4) == 0;
+    case 'w':
+        return _access(arg, 2) == 0;
+    case 'x':
+        return _access(arg, 0) == 0;
+    case 'b': case 'c': case 'p': case 'S': case 'h': case 'L': case 'g': case 'u':
+        return false;
+#else
+    case 'e': case 'f': case 'r': {
+        FILE *f = fopen(arg, "r");
+        if (f) { fclose(f); return true; }
+        return false;
+    }
+    case 'd': case 'b': case 'c': case 'p': case 'S': case 'h': case 'L':
+    case 'g': case 'u': case 's': case 'w': case 'x':
+        return false;
+#endif
+    default:
+        p->error = true;
+        p->error_msg = "unknown unary operator";
+        return false;
+    }
+}
+
+static bool test_binary(test_parser_t *p, const char *a, const char *op, const char *b)
+{
+    if (strcmp(op, "=") == 0)
+        return strcmp(a, b) == 0;
+    if (strcmp(op, "!=") == 0)
+        return strcmp(a, b) != 0;
+
+    long x, y;
+    if (!test_parse_int(a, &x) || !test_parse_int(b, &y))
+    {
+        p->error = true;
+        p->error_msg = "integer expression expected";
+        return false;
+    }
+    if (strcmp(op, "-eq") == 0) return x == y;
+    if (strcmp(op, "-ne") == 0) return x != y;
+    if (strcmp(op, "-gt") == 0) return x > y;
+    if (strcmp(op, "-ge") == 0) return x >= y;
+    if (strcmp(op, "-lt") == 0) return x < y;
+    if (strcmp(op, "-le") == 0) return x <= y;
+    p->error = true;
+    p->error_msg = "unknown binary operator";
+    return false;
+}
+
+static bool test_expr(test_parser_t *p);
+
+static bool test_primary(test_parser_t *p)
+{
+    int remaining = p->end - p->pos;
+    if (remaining <= 0)
+    {
+        p->error = true;
+        p->error_msg = "argument expected";
+        return false;
+    }
+    const char *a = test_arg(p, p->pos);
+
+    /* Parenthesised sub-expression */
+    if (strcmp(a, "(") == 0 && remaining >= 3)
+    {
+        int save = p->pos;
+        p->pos++;
+        bool v = test_expr(p);
+        if (!p->error && p->pos < p->end && strcmp(test_arg(p, p->pos), ")") == 0)
+        {
+            p->pos++;
+            return v;
+        }
+        /* not a group after all: treat "(" as a plain string */
+        p->pos = save;
+        p->error = false;
+    }
+
+    /* WORD binary-op WORD */
+    if (remaining >= 3 && test_is_binary_op(test_arg(p, p->pos + 1)))
+    {
+        bool v = test_binary(p, a, test_arg(p, p->pos + 1), test_arg(p, p->pos + 2));
+        p->pos += 3;
+        return v;
+    }
+
+    /* unary-op WORD */
+    if (remaining >= 2 && test_is_unary_op(a))
+    {
+        bool v = test_unary(p, a, test_arg(p, p->pos + 1));
+        p->pos += 2;
+        return v;
+    }
+
+    /* "!" primary */
+    if (strcmp(a, "!") == 0 && remaining >= 2)
+    {
+        p->pos++;
+        return !test_primary(p);
+    }
+
+    /* single WORD: true if non-empty */
+    p->pos++;
+    return a[0] != '\0';
+}
+
+static bool test_and(test_parser_t *p)
+{
+    bool v = test_primary(p);
+    while (!p->error && p->pos < p->end && strcmp(test_arg(p, p->pos), "-a") == 0)
+    {
+        p->pos++;
+        bool r = test_primary(p);
+        v = v && r;
+    }
+    return v;
+}
+
+static bool test_expr(test_parser_t *p)
+{
+    bool v = test_and(p);
+    while (!p->error && p->pos < p->end && strcmp(test_arg(p, p->pos), "-o") == 0)
+    {
+        p->pos++;
+        bool r = test_and(p);
+        v = v || r;
+    }
+    return v;
+}
+
+/**
+ * Evaluate test/[ arguments args[first..end). Returns 0 (true), 1 (false)
+ * or 2 (error, with a diagnostic recorded on the frame).
+ */
+static int test_evaluate(miga_frame_t *frame, const char *name, const strlist_t *args, int first,
+                         int end)
+{
+    test_parser_t p = {.args = args, .pos = first, .end = end, .error = false, .error_msg = NULL};
+    int n = end - first;
+    bool result;
+
+    /* POSIX: the small argument counts are defined explicitly. */
+    if (n == 0)
+        result = false;
+    else if (n == 1)
+        result = test_arg(&p, first)[0] != '\0';
+    else if (n == 2 && strcmp(test_arg(&p, first), "!") == 0)
+        result = test_arg(&p, first + 1)[0] == '\0';
+    else if (n == 2 && test_is_unary_op(test_arg(&p, first)))
+        result = test_unary(&p, test_arg(&p, first), test_arg(&p, first + 1));
+    else if (n == 3 && test_is_binary_op(test_arg(&p, first + 1)))
+        result = test_binary(&p, test_arg(&p, first), test_arg(&p, first + 1),
+                             test_arg(&p, first + 2));
+    else if (n == 3 && strcmp(test_arg(&p, first), "!") == 0 &&
+             test_is_unary_op(test_arg(&p, first + 1)))
+        result = !test_unary(&p, test_arg(&p, first + 1), test_arg(&p, first + 2));
+    else if (n == 4 && strcmp(test_arg(&p, first), "!") == 0 &&
+             test_is_binary_op(test_arg(&p, first + 2)))
+        result = !test_binary(&p, test_arg(&p, first + 1), test_arg(&p, first + 2),
+                              test_arg(&p, first + 3));
+    else
+    {
+        result = test_expr(&p);
+        if (!p.error && p.pos < p.end)
+        {
+            p.error = true;
+            p.error_msg = "too many arguments";
+        }
+    }
+
+    if (p.error)
+    {
+        frame_set_error_printf(frame, "%s: %s", name, p.error_msg ? p.error_msg : "syntax error");
+        return 2;
+    }
+    return result ? 0 : 1;
+}
+
+int builtin_test(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    return test_evaluate(frame, "test", args, 1, strlist_size(args));
+}
+
 int builtin_bracket(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
 
     int argc = strlist_size(args);
-
-    /* Last argument must be "]" */
-    if (argc < 2)
+    if (argc < 2 || string_length(strlist_at(args, argc - 1)) != 1 ||
+        string_cstr(strlist_at(args, argc - 1))[0] != ']')
     {
         frame_set_error_printf(frame, "[: missing ']'");
         return 2;
     }
-
-    const string_t *last_str = strlist_at(args, argc - 1);
-    if (string_length(last_str) != 1 || string_cstr(last_str)[0] != ']')
-    {
-        frame_set_error_printf(frame, "[: missing ']'");
-        return 2;
-    }
-
-    /* [ ] is false */
-    if (argc == 2)
-    {
-        return 1;
-    }
-
-    /* Single argument - test if non-empty string */
-    if (argc == 3)
-    {
-        const string_t *arg = strlist_at(args, 1);
-        return (string_length(arg) > 0) ? 0 : 1;
-    }
-
-    /* Unary operators or field splitting artifacts */
-    if (argc == 4)
-    {
-        const string_t *op_str = strlist_at(args, 1);
-        const string_t *arg_str = strlist_at(args, 2);
-        const char *op = string_cstr(op_str);
-
-        /* First check for unary operators */
-
-        /* File descriptor tests */
-        if (strcmp(op, "-t") == 0)
-        {
-            int endpos = 0;
-            long fd = string_atol_at(arg_str, 0, &endpos);
-
-            /* Check if valid file descriptor number */
-            if (endpos != (int)string_length(arg_str) || fd < 0)
-            {
-                frame_set_error_printf(frame, "[: -t: invalid file descriptor");
-                return 2;
-            }
-
-#ifdef MIGA_POSIX_API
-            return isatty((int)fd) ? 0 : 1;
-#elif defined MIGA_UCRT_API
-            return _isatty((int)fd) ? 0 : 1;
-#endif
-            /* else, fallthrough to failure */
-        }
-
-        /* String tests */
-        if (strcmp(op, "-z") == 0)
-            return (string_length(arg_str) == 0) ? 0 : 1;
-
-        if (strcmp(op, "-n") == 0)
-            return (string_length(arg_str) > 0) ? 0 : 1;
-
-        /* Check for field splitting artifact: binary operator as first argument.
-         *
-         * This happens when field splitting removes the entire first argument
-         * (producing zero words), leaving the binary operator as the first token.
-         * Per POSIX, this is expected behavior when an unquoted expansion produces
-         * only IFS whitespace.
-         *
-         * Example: [ $nl = "x" ] where nl contains only whitespace
-         * Correctly becomes: [ = "x" ] after field splitting (argc=4)
-         */
-
-        /* Common binary operators */
-        if (strcmp(op, "=") == 0 || strcmp(op, "!=") == 0 || strcmp(op, "-eq") == 0 ||
-            strcmp(op, "-ne") == 0 || strcmp(op, "-lt") == 0 || strcmp(op, "-le") == 0 ||
-            strcmp(op, "-gt") == 0 || strcmp(op, "-ge") == 0)
-        {
-            fprintf(stderr, "[: %s: unary operator expected\n", op);
-            return 2;
-        }
-
-        /* Unknown operator or too many arguments */
-        fprintf(stderr, "[: too many arguments\n");
-        return 2;
-    }
-
-    /* Binary operators */
-    if (argc == 5)
-    {
-        const string_t *arg1_str = strlist_at(args, 1);
-        const string_t *op_str = strlist_at(args, 2);
-        const string_t *arg2_str = strlist_at(args, 3);
-        const char *op = string_cstr(op_str);
-
-        /* String comparisons */
-        if (strcmp(op, "=") == 0)
-            return (string_eq(arg1_str, arg2_str)) ? 0 : 1;
-
-        if (strcmp(op, "!=") == 0)
-            return (string_ne(arg1_str, arg2_str)) ? 0 : 1;
-
-        /* Integer comparisons */
-        int endpos1 = 0, endpos2 = 0;
-        long val1 = string_atol_at(arg1_str, 0, &endpos1);
-        long val2 = string_atol_at(arg2_str, 0, &endpos2);
-
-        /* Check if both arguments are valid integers */
-        int arg1_is_int = (endpos1 == (int)string_length(arg1_str));
-        int arg2_is_int = (endpos2 == (int)string_length(arg2_str));
-
-        if (arg1_is_int && arg2_is_int)
-        {
-            if (strcmp(op, "-eq") == 0)
-                return (val1 == val2) ? 0 : 1;
-
-            if (strcmp(op, "-ne") == 0)
-                return (val1 != val2) ? 0 : 1;
-
-            if (strcmp(op, "-lt") == 0)
-                return (val1 < val2) ? 0 : 1;
-
-            if (strcmp(op, "-le") == 0)
-                return (val1 <= val2) ? 0 : 1;
-
-            if (strcmp(op, "-gt") == 0)
-                return (val1 > val2) ? 0 : 1;
-
-            if (strcmp(op, "-ge") == 0)
-                return (val1 >= val2) ? 0 : 1;
-        }
-
-        frame_set_error_printf(frame, "[: unknown operator '%s'", op);
-        return 2;
-    }
-
-    frame_set_error_printf(frame, "[: too many arguments");
-    return 2;
+    return test_evaluate(frame, "[", args, 1, argc - 1);
 }
 
 /* ============================================================================

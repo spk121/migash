@@ -245,8 +245,10 @@ string_t *string_create_from_range(const string_t *str, int start, int end)
 
 void string_destroy(string_t **str)
 {
-    return_if_null(str);
-    return_if_null(*str);
+    /* Destroying a NULL handle is a no-op: callers routinely destroy
+     * optional fields unconditionally. */
+    if (str == NULL || *str == NULL)
+        return;
 
     if (string_is_heap_allocated(*str))
         xfree((*str)->data);

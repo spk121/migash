@@ -80,6 +80,14 @@ miga_exec_status_t exec_redirect_apply_redirectons(miga_frame_t *frame,
  */
 void exec_redirect_restore_redirections(miga_frame_t *frame, const exec_redirections_t *redirections);
 
+/**
+ * Make redirections previously applied by exec_redirect_apply_redirectons()
+ * permanent for this frame: the saved copies of the original descriptors are
+ * closed and forgotten instead of being restored. Used by "exec" with only
+ * redirections (POSIX: they affect the current shell execution environment).
+ */
+void exec_redirect_commit_redirections(miga_frame_t *frame);
+
 /* ============================================================================
  * Platform-Specific Implementations
  * ============================================================================

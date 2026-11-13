@@ -2899,6 +2899,43 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
         return MIGA_EXEC_STATUS_EMPTY;
     }
 
+    /* The grammar must consume the whole line. Anything left over (e.g. a
+     * stray ')' or an operand the parser could not place) is a syntax error,
+     * not something to drop silently. */
+    {
+        token_type_t rest = parser_current_token_type(parser);
+        while (rest == TOKEN_NEWLINE)
+        {
+            parser_advance(parser);
+            rest = parser_current_token_type(parser);
+        }
+        if (rest != TOKEN_EOF)
+        {
+            const token_t *tok = parser_current_token(parser);
+            string_t *tok_str = string_create();
+            if (tok && token_get_type(tok) == TOKEN_WORD)
+            {
+                /* Show the word's literal text (expansions as "$...") */
+                for (int i = 0; i < token_part_count(tok); i++)
+                {
+                    const part_t *part = tok->parts->parts[i];
+                    if (part_get_type(part) == PART_LITERAL && part->text)
+                        string_append(tok_str, part->text);
+                    else
+                        string_append_cstr(tok_str, "$...");
+                }
+            }
+            if (string_length(tok_str) == 0)
+                string_append_cstr(tok_str, tok ? token_type_to_cstr(token_get_type(tok)) : "?");
+            frame_set_error_printf(frame, "syntax error at line %d: unexpected token '%s'",
+                                   session->line_num, string_cstr(tok_str));
+            string_destroy(&tok_str);
+            g_node_destroy(&gnode);
+            parser_destroy(&parser);
+            return MIGA_EXEC_STATUS_ERROR;
+        }
+    }
+
     ast_node_t *ast = ast_lower(gnode);
     g_node_destroy(&gnode);
     parser_destroy(&parser);

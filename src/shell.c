@@ -19,7 +19,39 @@ struct shell_t
     string_t *script_filename; // Script file name (if any)
     string_t *command_string;  // Command string (if any)
     miga_exec_t *executor;          // Points to the currently executing miga_exec_t
+    int exit_code;             // Exit status the shell process should return
 };
+
+/**
+ * Record the process exit status after a run. POSIX: the shell exits with the
+ * status of the last command executed; a shell error that left no status
+ * (syntax error, failed redirection of a special builtin, ...) exits non-zero.
+ */
+static void shell_record_exit_code(shell_t *sh, miga_exec_status_t status, int exit_code)
+{
+    switch (status)
+    {
+    case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
+        sh->exit_code = exit_code & 0xff;
+        break;
+    case MIGA_EXEC_STATUS_INCOMPLETE:
+        sh->exit_code = 2; /* syntax error: unterminated input */
+        break;
+    case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
+    default:
+        sh->exit_code = exit_code ? (exit_code & 0xff) : 2;
+        break;
+    }
+}
+
+int shell_get_exit_code(const shell_t *sh)
+{
+    Expects_not_null(sh);
+    return sh->exit_code;
+}
 
 static sh_status_t shell_execute_script_file(shell_t *sh);
 static sh_status_t shell_execute_interactive(shell_t *sh);
@@ -135,7 +167,9 @@ sh_status_t shell_execute(shell_t *sh)
         }
         return shell_execute_command_string(sh);
     case SHELL_MODE_STDIN:
-        exec_setup_interactive(sh->executor);
+        /* main() upgrades stdin mode to interactive when stdin is a terminal,
+         * so reaching here means a pipe or file: no prompts. */
+        exec_setup_noninteractive(sh->executor);
         return shell_execute_stdin(sh);
     case SHELL_MODE_UNKNOWN:
     case SHELL_MODE_INVALID_UID_GID:
@@ -205,13 +239,17 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
 
     miga_exec_status_t status = exec_execute_stream(sh->executor, fp);
     fclose(fp);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
 
     // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
@@ -227,12 +265,16 @@ sh_status_t shell_execute_command_string(shell_t *sh)
     const char *cmd = string_cstr(sh->command_string);
 
     miga_exec_result_t result = exec_execute_command_string(sh->executor, cmd);
+    shell_record_exit_code(sh, result.status, result.exit_code);
 
     switch (result.status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
@@ -246,12 +288,16 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
 
     exec_setup_interactive(sh->executor);
     miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
 
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
@@ -263,12 +309,16 @@ sh_status_t shell_execute_stdin(shell_t *sh)
 {
     Expects_not_null(sh);
     miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
     // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:

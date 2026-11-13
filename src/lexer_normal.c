@@ -87,26 +87,6 @@ static void advance_over_operator(lexer_t *lx, token_type_t type)
     }
 }
 
-static bool is_heredoc_command_separator_token(token_type_t type)
-{
-    return type == TOKEN_NEWLINE || type == TOKEN_SEMI || type == TOKEN_AMPER ||
-           type == TOKEN_PIPE || type == TOKEN_LPAREN ||
-           type == TOKEN_EOF; // start of input also counts
-}
-
-static bool heredoc_previous_token_allows_io_number(const lexer_t *lx)
-{
-    if (token_list_size(lx->tokens) == 0)
-        return true;
-
-    const token_t *last = token_list_get_last(lx->tokens);
-    if (!last)
-        return true;
-
-    token_type_t t = token_get_type(last);
-    return is_heredoc_command_separator_token(t);
-}
-
 /* Parse a heredoc delimiter according to POSIX 2.3 rule 3.
  * Quotes are only allowed to surround the ENTIRE delimiter.
  * Returns true on success, false on syntax error.
@@ -252,7 +232,7 @@ static heredoc_process_result_t try_process_heredoc(lexer_t *lx)
     Expects_not_null(lx);
     Expects_not_null(lx->tokens);
 
-    if (lexer_input_starts_with_integer(lx) && heredoc_previous_token_allows_io_number(lx))
+    if (lexer_input_starts_with_integer(lx) && !lx->in_word)
     {
         int digit_count = 0;
         int io_number = lexer_peek_integer(lx, &digit_count);
@@ -544,29 +524,12 @@ static bool is_redirection_start_char(char c)
     return c == '<' || c == '>';
 }
 
-static bool previous_token_allows_io_number(const lexer_t *lx)
-{
-    if (token_list_size(lx->tokens) == 0)
-        return true; // start of input
-
-    const token_t *last = token_list_get_last(lx->tokens);
-    if (!last)
-        return true;
-
-    token_type_t t = token_get_type(last);
-    return t == TOKEN_NEWLINE || t == TOKEN_SEMI || t == TOKEN_AMPER || t == TOKEN_PIPE ||
-           t == TOKEN_LPAREN || t == TOKEN_AND_IF || // &&
-           t == TOKEN_OR_IF ||                       // ||
-           t == TOKEN_EOF;
-    // Note: TOKEN_EOF covers the case after a complete command
-}
-
 static bool try_emit_io_number(lexer_t *lx)
 {
     Expects_not_null(lx);
 
-    // 1. Must be at start of potential redirection context
-    if (!previous_token_allows_io_number(lx))
+    // 1. The digits must start a new token (e.g. "cmd 2>err", not "x=2>f").
+    if (lx->in_word)
         return false;
 
     // 2. Must start with one or more digits

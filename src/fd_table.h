@@ -31,6 +31,7 @@ typedef enum fd_flags_t
     FD_IS_CLOSE_ON_EXEC = 1 << 0,    ///< Close-on-exec flag (should be closed in child)
     FD_IS_REDIRECTED = 1 << 1, ///< FD was created by shell redirection
     FD_IS_SAVED = 1 << 2,      ///< FD is a saved copy of another FD
+    FD_IS_RESTORE_CLOSE = 1 << 3, ///< FD was closed before being redirected; restore by closing it
 } fd_flags_t;
 
 /**

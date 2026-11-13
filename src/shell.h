@@ -104,6 +104,9 @@ sh_status_t shell_execute(shell_t *sh);
 // the shell has already executed it. Errors are reported via sh->error.
 const char *shell_last_error(shell_t *sh);
 
+/* Exit status the shell process should return after shell_execute(). */
+int shell_get_exit_code(const shell_t *sh);
+
 // Clear the last error message.
 void shell_reset_error(shell_t *sh);
 

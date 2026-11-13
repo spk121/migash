@@ -15,8 +15,6 @@ if [ -z "$TMPDIR" ]; then
     fi
 fi
 
-TMPDIR="$TEMP"
-
 printf "  Testing unquoted special character behavior...\n"
 
 # Pipe |
@@ -32,7 +30,6 @@ result=$(echo hello; echo world)
 expected="hello
 world"
 assert_eq "$expected" "$result" "semicolon separates commands"
-exit
 
 # Less-than < (input redirection)
 echo "test content" > "$TMPDIR/quoting_redirect_test_$$"

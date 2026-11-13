@@ -715,18 +715,14 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
 
                     if (all_digits)
                     {
-                        // Convert to TOKEN_IO_NUMBER by attaching it to the redirection operator
+                        // This word is the IO_NUMBER of the redirection that
+                        // follows: convert the word itself (the parser expects
+                        // IO_NUMBER followed by the operator token).
                         int io_num = atoi(word_text);
-                        token_list_set_io_number(tok->input_tokens, tok->input_pos + 1, io_num);
+                        token_set_type(token, TOKEN_IO_NUMBER);
+                        token_set_io_number(token, io_num);
                         xfree(word_text);
-
-                        // Remove this WORD token from input - it's been converted to an IO number
-                        // on the redirection operator. The token will be destroyed.
-                        token_list_remove(tok->input_tokens, tok->input_pos);
-
-                        // Don't increment input_pos - the next token is now at the current position
-                        // Continue processing from the same position
-                        return TOK_OK;
+                        goto add_token;
                     }
                 }
                 xfree(word_text);
