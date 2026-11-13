@@ -4,7 +4,7 @@
 #include "alias.h"
 #include "alias_store.h"
 #include "alias_array.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // Test alias_name_is_valid with valid names
 CTEST(test_alias_name_valid_simple)

@@ -6,7 +6,7 @@
 #include "ctest.h"
 #include "sig_act.h"
 #include "lib.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 #include <signal.h>
 #include <stdbool.h>
 

@@ -240,61 +240,6 @@ sh_status_t shell_execute_command_string(shell_t *sh)
     }
 }
 
-/**
- * Read a single line from stdin into a caller-provided buffer, with dynamic
- * fallback for lines that exceed the buffer.
- *
- * @param static_buf   Caller's stack buffer
- * @param static_size  Size of the stack buffer
- * @param out_buf      Receives a pointer to the line (either static_buf or a
- *                     heap allocation that the caller must free)
- * @param out_len      Receives the length of the line (excluding NUL)
- * @return true on success, false on EOF or error
- */
-// FIXME: get rid of this. Use exec.c functions instead.
-static bool read_line(char *static_buf, size_t static_size, char **out_buf, size_t *out_len)
-{
-    if (!fgets(static_buf, (int)static_size, stdin))
-        return false;
-
-    size_t len = strlen(static_buf);
-
-    /* If the line fits (terminated by newline or EOF hit before buffer full),
-     * we're done — no allocation needed. */
-    if (len < static_size - 1 || static_buf[len - 1] == '\n')
-    {
-        *out_buf = static_buf;
-        *out_len = len;
-        return true;
-    }
-
-    /* Line was truncated — switch to dynamic accumulation. */
-    size_t cap = static_size * 2;
-    char *dyn = xmalloc(cap);
-    memcpy(dyn, static_buf, len);
-
-    for (;;)
-    {
-        if (len + static_size > cap)
-        {
-            cap *= 2;
-            dyn = xrealloc(dyn, cap);
-        }
-
-        if (!fgets(dyn + len, (int)(cap - len), stdin))
-            break; /* EOF mid-line; return what we have */
-
-        len += strlen(dyn + len);
-
-        if (dyn[len - 1] == '\n')
-            break; /* got a full line */
-    }
-
-    *out_buf = dyn;
-    *out_len = len;
-    return true;
-}
-
 static sh_status_t shell_execute_interactive(shell_t *sh)
 {
     Expects_not_null(sh);

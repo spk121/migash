@@ -615,7 +615,20 @@ static bool try_emit_braced_io_location(lexer_t *lx)
             if (next == '<' || next == '>')
             {
                 int len = n + 1; // include closing brace
-                string_t *io_location = string_create_from_cstr_len(string_data(lx->input) + lx->pos, len);
+                /* The inner text must be a decimal number or a valid name
+                 * (POSIX.1-2024 token recognition). Anything else is an
+                 * ordinary word, e.g. the command named "{2x}". */
+                const char *inner = string_data(lx->input) + lx->pos + 1;
+                int inner_len = len - 2;
+                bool all_digits = true;
+                for (int i = 0; i < inner_len; i++)
+                    if (!isdigit((unsigned char)inner[i]))
+                        all_digits = false;
+                bool is_name = !isdigit((unsigned char)inner[0]);
+                if (!all_digits && !is_name)
+                    return false;
+
+                string_t *io_location = string_create_from_cstr_len(inner, inner_len);
                 lexer_emit_io_location_token(lx, string_cstr(io_location));
                 string_destroy(&io_location);
                 lexer_advance_n_chars(lx, len);

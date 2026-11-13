@@ -6,7 +6,7 @@
 #include "lexer_arith_exp.h"
 #include "token.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * Basic Arithmetic Expansion Tests

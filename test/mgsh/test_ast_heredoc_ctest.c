@@ -5,7 +5,7 @@
 #include "miga/string_t.h"
 #include "token.h"
 #include "tokenizer.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 #include "lower.h"
 #include "logging.h"
 

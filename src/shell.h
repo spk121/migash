@@ -1,9 +1,6 @@
 #ifndef SHELL_T_H
 #define SHELL_T_H
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
 
 #include "miga/exec.h"
 #include "exec_frame.h"

@@ -7,7 +7,7 @@
 #include "ctest.h"
 #include "variable_store.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Creation and Destruction Tests
@@ -228,11 +228,12 @@ CTEST(test_variable_store_get_variable_entry)
 
     variable_store_add_cstr(store, "VAR", "value", true, false);
 
-    const variable_map_entry_t *entry = variable_store_get_variable_cstr(store, "VAR");
-    CTEST_ASSERT_NOT_NULL(ctest, entry, "entry found");
-    CTEST_ASSERT_STR_EQ(ctest, string_cstr(entry->mapped.value), "value", "value in entry");
-    CTEST_ASSERT_TRUE(ctest, entry->mapped.exported, "exported flag in entry");
-    CTEST_ASSERT_FALSE(ctest, entry->mapped.read_only, "read_only flag in entry");
+    variable_view_t view;
+    bool found = variable_store_get_variable_cstr(store, "VAR", &view);
+    CTEST_ASSERT_TRUE(ctest, found, "entry found");
+    CTEST_ASSERT_STR_EQ(ctest, string_cstr(view.value), "value", "value in entry");
+    CTEST_ASSERT_TRUE(ctest, view.exported, "exported flag in entry");
+    CTEST_ASSERT_FALSE(ctest, view.read_only, "read_only flag in entry");
 
     variable_store_destroy(&store);
 }

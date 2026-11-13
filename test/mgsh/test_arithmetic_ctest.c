@@ -10,13 +10,13 @@
 #include "positional_params.h"
 #include "miga/exec.h"
 #include "exec_frame.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* Helper to evaluate an arithmetic expression and check the result */
-static ArithmeticResult eval_expr(exec_t *exp, const char *expr_cstr)
+static ArithmeticResult eval_expr(miga_exec_t *exp, const char *expr_cstr)
 {
     string_t *expr = string_create_from_cstr(expr_cstr);
-    ArithmeticResult result = arithmetic_evaluate(exp->current_frame, expr);
+    ArithmeticResult result = arithmetic_evaluate(exec_get_current_frame(exp), expr);
     string_destroy(&expr);
     return result;
 }
@@ -27,8 +27,8 @@ static ArithmeticResult eval_expr(exec_t *exp, const char *expr_cstr)
 
 CTEST(test_arithmetic_addition)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "2+3");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -41,8 +41,8 @@ CTEST(test_arithmetic_addition)
 
 CTEST(test_arithmetic_subtraction)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "10-4");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -55,8 +55,8 @@ CTEST(test_arithmetic_subtraction)
 
 CTEST(test_arithmetic_multiplication)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "6*7");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -69,8 +69,8 @@ CTEST(test_arithmetic_multiplication)
 
 CTEST(test_arithmetic_division)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "20/4");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -83,8 +83,8 @@ CTEST(test_arithmetic_division)
 
 CTEST(test_arithmetic_modulo)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "17%5");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -97,8 +97,8 @@ CTEST(test_arithmetic_modulo)
 
 CTEST(test_arithmetic_division_by_zero)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "5/0");
     CTEST_ASSERT_EQ(ctest, r.failed, 1, "division by zero fails");
@@ -110,8 +110,8 @@ CTEST(test_arithmetic_division_by_zero)
 
 CTEST(test_arithmetic_modulo_by_zero)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "5%0");
     CTEST_ASSERT_EQ(ctest, r.failed, 1, "modulo by zero fails");
@@ -127,8 +127,8 @@ CTEST(test_arithmetic_modulo_by_zero)
 
 CTEST(test_arithmetic_unary_plus)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "+5");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -141,8 +141,8 @@ CTEST(test_arithmetic_unary_plus)
 
 CTEST(test_arithmetic_unary_minus)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "-5");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -155,8 +155,8 @@ CTEST(test_arithmetic_unary_minus)
 
 CTEST(test_arithmetic_bitwise_not)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "~0");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -169,8 +169,8 @@ CTEST(test_arithmetic_bitwise_not)
 
 CTEST(test_arithmetic_logical_not)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "!0");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -192,8 +192,8 @@ CTEST(test_arithmetic_logical_not)
 
 CTEST(test_arithmetic_less_than)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "3<5");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -211,8 +211,8 @@ CTEST(test_arithmetic_less_than)
 
 CTEST(test_arithmetic_greater_than)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "5>3");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -230,8 +230,8 @@ CTEST(test_arithmetic_greater_than)
 
 CTEST(test_arithmetic_less_equal)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "3<=5");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -249,8 +249,8 @@ CTEST(test_arithmetic_less_equal)
 
 CTEST(test_arithmetic_greater_equal)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "5>=3");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -268,8 +268,8 @@ CTEST(test_arithmetic_greater_equal)
 
 CTEST(test_arithmetic_equality)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "5==5");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -287,8 +287,8 @@ CTEST(test_arithmetic_equality)
 
 CTEST(test_arithmetic_not_equal)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "5!=3");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -310,8 +310,8 @@ CTEST(test_arithmetic_not_equal)
 
 CTEST(test_arithmetic_bitwise_and)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "12&10");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -324,8 +324,8 @@ CTEST(test_arithmetic_bitwise_and)
 
 CTEST(test_arithmetic_bitwise_or)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "12|10");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -338,8 +338,8 @@ CTEST(test_arithmetic_bitwise_or)
 
 CTEST(test_arithmetic_bitwise_xor)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "12^10");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -352,8 +352,8 @@ CTEST(test_arithmetic_bitwise_xor)
 
 CTEST(test_arithmetic_left_shift)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "1<<4");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -366,8 +366,8 @@ CTEST(test_arithmetic_left_shift)
 
 CTEST(test_arithmetic_right_shift)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "16>>2");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -384,8 +384,8 @@ CTEST(test_arithmetic_right_shift)
 
 CTEST(test_arithmetic_logical_and)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "1&&1");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -408,8 +408,8 @@ CTEST(test_arithmetic_logical_and)
 
 CTEST(test_arithmetic_logical_or)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "0||0");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -436,8 +436,8 @@ CTEST(test_arithmetic_logical_or)
 
 CTEST(test_arithmetic_ternary)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "1?10:20");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -459,8 +459,8 @@ CTEST(test_arithmetic_ternary)
 
 CTEST(test_arithmetic_parentheses)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "2+3*4");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -482,8 +482,8 @@ CTEST(test_arithmetic_parentheses)
 
 CTEST(test_arithmetic_octal)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "010");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -501,8 +501,8 @@ CTEST(test_arithmetic_octal)
 
 CTEST(test_arithmetic_hexadecimal)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r1 = eval_expr(exp, "0x10");
     CTEST_ASSERT_EQ(ctest, r1.failed, 0, "no error");
@@ -525,8 +525,8 @@ CTEST(test_arithmetic_hexadecimal)
 
 CTEST(test_arithmetic_zero)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "0");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -543,8 +543,8 @@ CTEST(test_arithmetic_zero)
 
 CTEST(test_arithmetic_variable)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "x", "10", false, false);
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "y", "5", false, false);
@@ -560,8 +560,8 @@ CTEST(test_arithmetic_variable)
 
 CTEST(test_arithmetic_variable_with_digits)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "var1", "100", false, false);
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "count2", "50", false, false);
@@ -577,8 +577,8 @@ CTEST(test_arithmetic_variable_with_digits)
 
 CTEST(test_arithmetic_unset_variable)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "unset_var+5");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -595,8 +595,8 @@ CTEST(test_arithmetic_unset_variable)
 
 CTEST(test_arithmetic_assignment)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "x=42");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -613,8 +613,8 @@ CTEST(test_arithmetic_assignment)
 
 CTEST(test_arithmetic_plus_assign)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "x", "10", false, false);
 
@@ -636,8 +636,8 @@ CTEST(test_arithmetic_plus_assign)
 
 CTEST(test_arithmetic_comma)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     ArithmeticResult r = eval_expr(exp, "1,2,3");
     CTEST_ASSERT_EQ(ctest, r.failed, 0, "no error");
@@ -654,8 +654,8 @@ CTEST(test_arithmetic_comma)
 
 CTEST(test_arithmetic_complex_expression)
 {
-    exec_cfg_t cfg = {0};
-    exec_t *exp = exec_create(&cfg);
+    miga_exec_t *exp = exec_create();
+    exec_setup_noninteractive(exp);
 
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "a", "2", false, false);
     variable_store_add_cstr(exec_frame_get_variables(exp->current_frame), "b", "3", false, false);

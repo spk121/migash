@@ -64,6 +64,9 @@ case "$configuration" in
   posix)
     CONFIG_DEFINE="#define MIGA_POSIX_API 1"
     AC_DEFINE([MIGA_POSIX_API], [1], [Build with POSIX API])
+    dnl Request the POSIX.1-2024 interfaces from the C library. config.h is the
+    dnl first include of every source file, so this precedes all system headers.
+    AC_DEFINE([_POSIX_C_SOURCE], [202405L], [Request POSIX.1-2024 interfaces])
     ;;
   ucrt)
     CONFIG_DEFINE="#define MIGA_UCRT_API 1"

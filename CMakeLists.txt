@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_COLOR_DIAGNOSTICS OFF)
 
-project(mgsh LANGUAGES C)
+project(migash VERSION 0.0.1 LANGUAGES C)
 
 # ============================================================================
 # Build Configuration Strategy
@@ -56,16 +56,20 @@ set_property(CACHE API_TYPE PROPERTY STRINGS "POSIX" "UCRT" "ISO_C")
 
 # Define the appropriate API macro based on selection
 if(API_TYPE STREQUAL "POSIX")
-    add_compile_definitions(POSIX_API)
     message(STATUS "Building with POSIX API")
 elseif(API_TYPE STREQUAL "UCRT")
-    add_compile_definitions(UCRT_API)
     message(STATUS "Building with UCRT API")
 elseif(API_TYPE STREQUAL "ISO_C")
-    add_compile_definitions(ISO_C)
     message(STATUS "Building with ISO C (no platform-specific API)")
 else()
     message(FATAL_ERROR "Invalid API_TYPE: ${API_TYPE}. Must be POSIX, UCRT, or ISO_C")
+endif()
+
+# Feature-test macro for the C library. The sources build with a strict C
+# standard, so POSIX declarations must be requested explicitly. Autotools puts
+# the same definition in config.h.
+if(API_TYPE STREQUAL "POSIX" AND NOT MSVC)
+    add_compile_definitions(_POSIX_C_SOURCE=202405L)
 endif()
 
 # ============================================================================
@@ -87,8 +91,8 @@ endif()
 
 # Define build type macros
 add_compile_definitions(
-    $<$<CONFIG:Debug>:SH23_DEBUG_BUILD>
-    $<$<CONFIG:Release>:SH23_RELEASE_BUILD>
+    $<$<CONFIG:Debug>:MIGA_DEBUG_BUILD>
+    $<$<CONFIG:Release>:MIGA_RELEASE_BUILD>
 )
 
 # ============================================================================
@@ -215,143 +219,96 @@ endif()
 
 
 # ============================================================================
-# Library type and strict linking configuration
+# Generated configuration header (include/miga/migaconf.h)
 # ============================================================================
+#
+# The sources select their platform API with MIGA_POSIX_API, MIGA_UCRT_API or
+# MIGA_ISO_C_API, which come from the generated header include/miga/migaconf.h.
+# Autotools generates it with configure; here we do the same with configure_file
+# so both build systems agree.
 
-# Determine library type based on build configuration
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR ENABLE_COVERAGE OR ENABLE_SANITIZERS)
-    # Debug/testing: use shared libs to catch layering violations where possible
-    if(UNIX AND NOT APPLE AND API_TYPE STREQUAL "POSIX")
-        # Optimal case: Linux + POSIX = shared libs with strict validation
-        set(SH23_LIBRARY_TYPE SHARED)
-        message(STATUS "Building shared libraries for debug/testing with strict linking")
-    else()
-        # All other cases: static libraries (no layering validation)
-        set(SH23_LIBRARY_TYPE STATIC)
-        if(API_TYPE STREQUAL "ISO_C")
-            message(STATUS "Building static libraries (ISO C mode: no layering validation)")
-        else()
-            message(STATUS "Building static libraries (no --no-undefined on this platform)")
-        endif()
-    endif()
+if(API_TYPE STREQUAL "POSIX")
+    set(MIGA_API_MACRO MIGA_POSIX_API)
+elseif(API_TYPE STREQUAL "UCRT")
+    set(MIGA_API_MACRO MIGA_UCRT_API)
 else()
-    # Release: always static
-    set(SH23_LIBRARY_TYPE STATIC)
-    message(STATUS "Building static libraries for release")
+    set(MIGA_API_MACRO MIGA_ISO_C_API)
 endif()
-
-# Helper function to enable strict no-undefined checking
-function(enable_strict_linking target)
-    # Only apply strict linking when:
-    # 1. Building shared libraries AND
-    # 2. Using POSIX API (not ISO_C) AND
-    # 3. On a platform that supports --no-undefined
-    if(SH23_LIBRARY_TYPE STREQUAL SHARED AND API_TYPE STREQUAL "POSIX")
-        target_link_options(${target} PRIVATE -Wl,--no-undefined)
-        message(STATUS "  ${target}: strict linking enabled")
-    endif()
-endfunction()
-
-# ============================================================================
-# Library 1: sh23base - Base utilities
-# ============================================================================
-set(SH23BASE_SOURCES
-    src/getopt.c
-    src/getopt.h
-    src/getopt_string.c
-    src/getopt_string.h
-    src/glob_util.c
-    src/glob_util.h
-    src/lib.c
-    src/lib.h
-    src/logging.c
-    src/logging.h
-    src/pattern_removal.c
-    src/pattern_removal.h
-    src/string_t.c
-    src/string_t.h
-    src/strlist.c
-    src/strlist.h
-    src/xalloc.c
-    src/xalloc.h
+set(CONFIG_DEFINE "#define ${MIGA_API_MACRO} 1")
+# The sources test the API macro before including any project header (to pick
+# system headers), so it must also be defined on the command line, the way the
+# autotools build defines it in config.h.
+add_compile_definitions(${MIGA_API_MACRO}=1)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/miga/migaconf.h.in
+    ${CMAKE_BINARY_DIR}/include/miga/migaconf.h
+    @ONLY
 )
 
-add_library(sh23base ${SH23_LIBRARY_TYPE} ${SH23BASE_SOURCES})
-target_include_directories(sh23base PUBLIC src include)
-enable_strict_linking(sh23base)
+# ============================================================================
+# Library type configuration
+# ============================================================================
+
+# Debug on Linux/POSIX: build the shared library so that --no-undefined and
+# hidden visibility catch symbol leaks between the library and the shell
+# executable. Everywhere else: static.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR ENABLE_COVERAGE OR ENABLE_SANITIZERS)
+    if(UNIX AND NOT APPLE AND API_TYPE STREQUAL "POSIX")
+        set(MIGA_LIBRARY_TYPE SHARED)
+        message(STATUS "Building libmigash as a shared library with strict linking")
+    else()
+        set(MIGA_LIBRARY_TYPE STATIC)
+        message(STATUS "Building libmigash as a static library")
+    endif()
+else()
+    set(MIGA_LIBRARY_TYPE STATIC)
+    message(STATUS "Building libmigash as a static library (release)")
+endif()
 
 # ============================================================================
-# Library 2: sh23store - Data stores (depends on sh23base)
+# libmigash sources
 # ============================================================================
-set(SH23STORE_SOURCES
+
+set(MIGASH_LIB_SOURCES
     src/alias.c
     src/alias.h
     src/alias_array.c
     src/alias_array.h
     src/alias_store.c
     src/alias_store.h
-    src/ast.c
-    src/ast.h
-    src/fd_table.c
-    src/fd_table.h
-    src/func_map.c
-    src/func_map.h
-    src/func_store.c
-    src/func_store.h
-    src/gnode.c
-    src/gnode.h
-    src/gprint.c
-    src/gprint.h
-    src/job_store.c
-    src/job_store.h
-    src/sig_act.c
-    src/sig_act.h
-    src/token.c
-    src/token.h
-    src/token_array.c
-    src/token_array.h
-    src/trap_store.c
-    src/trap_store.h
-    src/variable_map.c
-    src/variable_map.h
-    src/variable_store.c
-    src/variable_store.h
-)
-
-add_library(sh23store ${SH23_LIBRARY_TYPE} ${SH23STORE_SOURCES})
-target_include_directories(sh23store PUBLIC src include)
-target_link_libraries(sh23store PUBLIC sh23base)
-enable_strict_linking(sh23store)
-
-# ============================================================================
-# Library 3: sh23logic - Core shell logic (depends on sh23store and sh23base)
-# ============================================================================
-set(SH23LOGIC_SOURCES
     src/arithmetic.c
     src/arithmetic.h
+    src/ast.c
+    src/ast.h
     src/builtin_store.c
     src/builtin_store.h
     src/builtins.c
     src/builtins.h
     src/exec.c
-    src/exec.h
     src/exec_command.c
     src/exec_command.h
-    #src/exec_compound.c
-    #src/exec_compound.h
-    src/exec_frame_expander.c
-    src/exec_frame_expander.h
     src/exec_frame.c
     src/exec_frame.h
-    "src/exec_types_internal.h"
-    src/exec_parse_session.c
-    src/exec_parse_session.h
+    src/exec_frame_expander.c
+    src/exec_frame_expander.h
+    src/exec_frame_policy.h
     src/exec_redirect.c
     src/exec_redirect.h
-    #src/exec_stream_repl.c
-    #src/exec_stream_repl.h
+    src/exec_types_internal.h
+    src/fd_table.c
+    src/fd_table.h
     src/frame.c
-    src/frame.h
+    src/func_map.c
+    src/func_map.h
+    src/func_store.c
+    src/func_store.h
+    src/getopt.c
+    src/glob_util.c
+    src/glob_util.h
+    src/gnode.c
+    src/gnode.h
+    src/gprint.c
+    src/gprint.h
     src/job_store.c
     src/job_store.h
     src/lexer.c
@@ -360,49 +317,107 @@ set(SH23LOGIC_SOURCES
     src/lexer_arith_exp.h
     src/lexer_cmd_subst.c
     src/lexer_cmd_subst.h
+    src/lexer_dquote.c
+    src/lexer_dquote.h
     src/lexer_heredoc.c
     src/lexer_heredoc.h
     src/lexer_normal.c
     src/lexer_normal.h
-    src/lexer_squote.c
-    src/lexer_squote.h
-    src/lexer_dquote.c
-    src/lexer_dquote.h
     src/lexer_param_exp.c
     src/lexer_param_exp.h
-    src/lexer_t.h
     src/lexer_priv_t.h
+    src/lexer_squote.c
+    src/lexer_squote.h
+    src/lexer_t.h
+    src/lib.c
+    src/lib.h
+    src/logging.c
+    src/logging.h
     src/lower.c
     src/lower.h
+    src/parse_session.c
+    src/parse_session.h
     src/parser.c
     src/parser.h
+    src/pattern_removal.c
+    src/pattern_removal.h
     src/positional_params.c
     src/positional_params.h
-    src/shell.c
-    src/shell.h
+    src/sig_act.c
+    src/sig_act.h
+    src/string_t.c
+    src/strlist.c
+    src/token.c
+    src/token.h
+    src/token_array.c
+    src/token_array.h
     src/tokenizer.c
     src/tokenizer.h
+    src/trap_controller.c
+    src/trap_controller.h
+    src/trap_store.c
+    src/trap_store.h
+    src/variable_map.c
+    src/variable_map.h
+    src/variable_store.c
+    src/variable_store.h
+    src/xalloc.c
 )
 
-add_library(sh23logic ${SH23_LIBRARY_TYPE} ${SH23LOGIC_SOURCES})
-target_include_directories(sh23logic PUBLIC src include)
-target_link_libraries(sh23logic PUBLIC sh23store sh23base)
-enable_strict_linking(sh23logic)
+# The public headers, so that IDEs list them.
+set(MIGASH_PUBLIC_HEADERS
+    include/libmigash.h
+    include/miga/api.h
+    include/miga/exec.h
+    include/miga/frame.h
+    include/miga/getopt.h
+    include/miga/mutex.h
+    include/miga/string_t.h
+    include/miga/strlist.h
+    include/miga/type_pub.h
+    include/miga/xalloc.h
+)
+
+# All library code is compiled once into an object library. The real library
+# is assembled from those objects, and the unit tests link the objects
+# directly so that they can reach internal (hidden) symbols.
+add_library(migash_objs OBJECT ${MIGASH_LIB_SOURCES} ${MIGASH_PUBLIC_HEADERS})
+target_include_directories(migash_objs PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+if(MIGA_LIBRARY_TYPE STREQUAL SHARED)
+    set_target_properties(migash_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_compile_definitions(migash_objs PUBLIC MIGA_BUILD_SHARED)
+endif()
+
+add_library(migash_lib ${MIGA_LIBRARY_TYPE} $<TARGET_OBJECTS:migash_objs>)
+set_target_properties(migash_lib PROPERTIES OUTPUT_NAME migash)
+target_include_directories(migash_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_link_libraries(migash_lib PUBLIC $<$<BOOL:${UNIX}>:m>)
+if(MIGA_LIBRARY_TYPE STREQUAL SHARED)
+    target_link_options(migash_lib PRIVATE -Wl,--no-undefined)
+    message(STATUS "  libmigash: strict linking enabled")
+endif()
 
 # ============================================================================
-# Library 4: sh23interface - Public interface (depends on sh23logic, sh23store, sh23base)
+# Executable: migash
 # ============================================================================
+#
+# main.c and shell.c are the shell program. They may use only the public API in
+# include/, which the shared-library build enforces through hidden visibility.
 
-add_library(sh23interface INTERFACE)
-target_link_libraries(sh23interface INTERFACE sh23logic sh23store sh23base)
-
-# ============================================================================
-# Executable: mgsh
-# ============================================================================
-
-add_executable(mgsh src/main.c)
-target_link_libraries(mgsh PRIVATE sh23interface)
-set_target_properties(mgsh PROPERTIES
+add_executable(migash src/main.c src/shell.c src/shell.h)
+target_link_libraries(migash PRIVATE migash_lib)
+target_include_directories(migash PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include
+)
+set_target_properties(migash PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
@@ -412,7 +427,7 @@ set_target_properties(mgsh PROPERTIES
 
 enable_testing()
 
-# Object library for the shared CTest framework used by all shell tests
+# Object library for the shared CTest framework used by all unit tests
 add_library(ctest_obj OBJECT
     test/ctest/ctest.c
     test/ctest/ctest.h)
@@ -420,47 +435,51 @@ target_include_directories(ctest_obj PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
 )
 
-# Tests that only depend on sh23base
-set(SH23BASE_TEST_SOURCES
-    test/mgsh/test_xalloc_ctest.c
-    test/mgsh/test_getopt_ctest.c
-    test/mgsh/test_string_ctest.c
-)
-
-# Tests that depend on sh23store (and sh23base)
-set(SH23STORE_TEST_SOURCES
+set(MIGASH_UNIT_TEST_SOURCES
+    test/mgsh/test_alias_ctest.c
     test/mgsh/test_alist_ctest.c
+    test/mgsh/test_arithmetic_ctest.c
     test/mgsh/test_ast_ctest.c
-    test/mgsh/test_sig_act_ctest.c
-)
-
-# Tests that depend on full sh23logic (all libraries)
-set(SH23LOGIC_TEST_SOURCES
-    test/mgsh/test_lexer_quotes_ctest.c
-    test/mgsh/test_lexer_param_exp_ctest.c
-    test/mgsh/test_lexer_cmd_subst_ctest.c
-    test/mgsh/test_lexer_arith_exp_ctest.c
-    test/mgsh/test_lexer_heredoc_ctest.c
-    test/mgsh/test_parser_gnode_ctest.c
-    test/mgsh/test_parser_ctest.c
     test/mgsh/test_ast_heredoc_ctest.c
-    test/mgsh/test_tokenizer_ctest.c
-    # test/mgsh/test_expander_ctest.c
     test/mgsh/test_exec_ctest.c
+    test/mgsh/test_fd_table_ctest.c
+    test/mgsh/test_func_store_ctest.c
+    test/mgsh/test_getopt_ctest.c
+    test/mgsh/test_job_store_ctest.c
+    test/mgsh/test_lexer_arith_exp_ctest.c
+    test/mgsh/test_lexer_cmd_subst_ctest.c
+    test/mgsh/test_lexer_heredoc_ctest.c
+    test/mgsh/test_lexer_param_exp_ctest.c
+    test/mgsh/test_lexer_quotes_ctest.c
+    test/mgsh/test_parser_ctest.c
+    test/mgsh/test_parser_gnode_ctest.c
+    test/mgsh/test_pattern_removal_ctest.c
+    test/mgsh/test_positional_params_ctest.c
+    test/mgsh/test_sig_act_ctest.c
+    test/mgsh/test_string_ctest.c
+    test/mgsh/test_string_list_ctest.c
+    test/mgsh/test_token_array_ctest.c
+    test/mgsh/test_token_ctest.c
+    test/mgsh/test_tokenizer_ctest.c
+    test/mgsh/test_variable_store_ctest.c
+    test/mgsh/test_xalloc_ctest.c
 )
 
-# Build sh23base tests
-foreach(test_src ${SH23BASE_TEST_SOURCES})
+foreach(test_src ${MIGASH_UNIT_TEST_SOURCES})
     get_filename_component(test_name ${test_src} NAME_WE)
 
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
+    add_executable(${test_name} ${test_src}
+        $<TARGET_OBJECTS:ctest_obj>
+        $<TARGET_OBJECTS:migash_objs>)
     # Test-specific C code can be conditionally compiled with #ifdef IN_CTEST
     target_compile_definitions(${test_name} PRIVATE IN_CTEST)
     target_include_directories(${test_name} PRIVATE
-        src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
     )
-    target_link_libraries(${test_name} PRIVATE sh23base)
+    target_link_libraries(${test_name} PRIVATE $<$<BOOL:${UNIX}>:m>)
 
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test
@@ -477,59 +496,14 @@ foreach(test_src ${SH23BASE_TEST_SOURCES})
     )
 endforeach()
 
-# Build sh23store tests
-foreach(test_src ${SH23STORE_TEST_SOURCES})
-    get_filename_component(test_name ${test_src} NAME_WE)
-
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
-    target_compile_definitions(${test_name} PRIVATE IN_CTEST)
-    target_include_directories(${test_name} PRIVATE
-        src
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
+# End-to-end shell tests: run the POSIX conformance scripts under the built shell.
+# These need a POSIX sh to drive the runner, so they are registered on UNIX only.
+if(UNIX)
+    add_test(NAME shell_tests
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh
     )
-    target_link_libraries(${test_name} PRIVATE sh23store sh23base)
-
-    set_target_properties(${test_name} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test
-    )
-
-    add_test(NAME ${test_name}
-        COMMAND ${test_name}
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test
-    )
-
-    set_tests_properties(${test_name} PROPERTIES
-        FAIL_REGULAR_EXPRESSION "not ok|\\b(Bail out!|Bailout!)\\b"
-        PASS_REGULAR_EXPRESSION "ok"
-    )
-endforeach()
-
-# Build sh23logic tests
-foreach(test_src ${SH23LOGIC_TEST_SOURCES})
-    get_filename_component(test_name ${test_src} NAME_WE)
-
-    add_executable(${test_name} ${test_src} $<TARGET_OBJECTS:ctest_obj> "src/exec_types_public.h")
-    target_compile_definitions(${test_name} PRIVATE IN_CTEST)
-    target_include_directories(${test_name} PRIVATE
-        src
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/ctest
-    )
-    target_link_libraries(${test_name} PRIVATE sh23interface)
-
-    set_target_properties(${test_name} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test
-    )
-
-    add_test(NAME ${test_name}
-        COMMAND ${test_name}
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test
-    )
-
-    set_tests_properties(${test_name} PROPERTIES
-        FAIL_REGULAR_EXPRESSION "not ok|\\b(Bail out!|Bailout!)\\b"
-        PASS_REGULAR_EXPRESSION "ok"
-    )
-endforeach()
+endif()
 
 # ============================================================================
 # Code coverage target
@@ -545,7 +519,7 @@ if(ENABLE_COVERAGE)
             COMMAND ${LCOV} --capture --directory . --output-file coverage.raw.info
             COMMAND ${LCOV} --remove coverage.raw.info '/usr/*' '*/test/*' '*/src/main.c' '*/src/getopt.c' --output-file coverage.info
             COMMAND ${LCOV} --extract coverage.info '*/src/*.c' --output-file coverage.filtered.info
-            COMMAND ${GENHTML} coverage.filtered.info --output-directory coverage_report --title "mgsh Coverage" --branch-coverage --legend
+            COMMAND ${GENHTML} coverage.filtered.info --output-directory coverage_report --title "migash Coverage" --branch-coverage --legend
             COMMENT "Generating coverage report in coverage_report/"
             WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         )

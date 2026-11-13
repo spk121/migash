@@ -73,16 +73,14 @@ lex_status_t lexer_process_arith_exp(lexer_t *lx)
             }
             else if (c2 == '\0')
             {
-                // EOF after single ) — need more input
+                // EOF after a single ')'. The input could continue on the next
+                // line (this may really be "$( (1+2) ..." with a subshell), so
+                // ask for more. Consume the ')' so the lexer is at end of input;
+                // the session re-lexes the pending text when more arrives.
+                lexer_advance(lx);
                 string_destroy(&expr_text);
                 string_clear(lx->operator_buffer);
-
-                // TODO: is it worth handling this LEX_INCOMPLETE edge case, when normally
-                // we expect input to be line-buffered?
-                // return LEX_INCOMPLETE;
-
-                lexer_set_error(lx, "Missing closing parentheses in arithmetic expansion");
-                return LEX_ERROR;
+                return LEX_INCOMPLETE;
             }
             else
             {

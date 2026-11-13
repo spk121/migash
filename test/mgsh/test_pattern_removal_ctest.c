@@ -6,7 +6,7 @@
 #include "ctest.h"
 #include "pattern_removal.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * Helper Functions

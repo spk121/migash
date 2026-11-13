@@ -13,7 +13,6 @@
 #include "config.h"
 #endif
 #ifdef MIGA_POSIX_API
-#define _GNU_SOURCE
 #endif 
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
@@ -239,7 +238,8 @@ static void init_positional_params(miga_frame_t *frame, miga_exec_t *exec, exec_
         {
         case EXEC_POSITIONAL_INIT_ARGV:
             frame->positional_params = positional_params_create_from_argv(
-                string_cstr(exec->shell_name), exec->argc, (const char **)exec->argv);
+                exec->shell_name ? string_cstr(exec->shell_name) : "sh", exec->argc,
+                (const char **)exec->argv);
             break;
         case EXEC_POSITIONAL_INIT_CALL_ARGS:
             if (params && params->arguments)

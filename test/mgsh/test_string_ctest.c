@@ -1,7 +1,7 @@
 #include <string.h>
 #include "ctest.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Creation

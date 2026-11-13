@@ -1,4 +1,4 @@
-# GNU Makefile for mgsh (Fedora Linux + GCC only)
+# GNU Makefile for migash (Linux + GCC only)
 # Supports: POSIX and ISO_C API modes
 # Features: Debug/Release, sanitizers, coverage, shared libs in Debug for
 # strict linking, tests via 'make check'
@@ -11,7 +11,7 @@ MKDIR := mkdir -p
 
 # Default target
 .PHONY: all
-all: mgsh
+all: migash
 
 # --------------------------------------------------------------------------
 # Configuration variables (override on command line if needed)
@@ -34,7 +34,7 @@ else
   CFLAGS_BASE := -O2
 endif
 
-CFLAGS_COMMON := -std=c23 -Wall
+CFLAGS_COMMON := -std=c2x -Wall
 
 CFLAGS_EXTRA := -Wextra -Wpedantic -Wshadow -Wformat=2 \
 	-Wformat-signedness -Wformat-security -Wconversion \
@@ -43,32 +43,38 @@ CFLAGS_EXTRA := -Wextra -Wpedantic -Wshadow -Wformat=2 \
 	-Wmissing-declarations -Wcast-align -Wcast-qual -Wunused \
 	-Wvla -Wswitch-default -Wswitch-enum -Wfloat-equal -Wundef \
 	-fanalyzer -Wlogical-op -Warith-conversion -Wduplicated-cond \
-	-Wduplicated-branches -D_POSIX_C_SOURCE=202401L
+	-Wduplicated-branches
 
 # For EMACS
 # CFLAGS_COMMON += -fno-diagnostics-color -fdiagnostics-urls=never
 
 # Flags based on API type and C library
+# The sources select the platform API with MIGA_POSIX_API / MIGA_UCRT_API /
+# MIGA_ISO_C_API, defined both on the command line and in the generated
+# include/miga/migaconf.h (see CMakeLists.txt and configure.ac).
 ifeq ($(API_TYPE),ISO_C)
   VISIBILITY :=
-  API_DEFINE := -DISO_C_API
+  API_MACRO := MIGA_ISO_C_API
+  API_DEFINE := -D$(API_MACRO)=1
 endif
 ifeq ($(API_TYPE),UCRT)
   VISIBILITY :=
-  API_DEFINE := -DUCRT_API
+  API_MACRO := MIGA_UCRT_API
+  API_DEFINE := -D$(API_MACRO)=1
 endif
 ifeq ($(API_TYPE),POSIX)
   # FIXME: do proper visibility and declspec for share objects
   # VISIBILITY := -fvisibility=hidden
   VISIBILITY :=
-  API_DEFINE := -DPOSIX_API
+  API_MACRO := MIGA_POSIX_API
+  API_DEFINE := -D$(API_MACRO)=1 -D_POSIX_C_SOURCE=202405L
 endif
 
 # Debug/Release macro
 ifeq ($(BUILD_TYPE),Debug)
-  BUILD_DEFINE := -DMGSH_DEBUG_BUILD
+  BUILD_DEFINE := -DMIGA_DEBUG_BUILD
 else
-  BUILD_DEFINE := -DMGSH_RELEASE_BUILD
+  BUILD_DEFINE := -DMIGA_RELEASE_BUILD
 endif
 
 # Sanitizers / Coverage
@@ -98,7 +104,7 @@ endif
 
 # Final compiler flags
 CFLAGS := $(CFLAGS_BASE) $(CFLAGS_COMMON) $(VISIBILITY) $(SAN_FLAGS) \
-	$(COV_FLAGS) $(API_DEFINE) $(BUILD_DEFINE) -I src
+	$(COV_FLAGS) $(API_DEFINE) $(BUILD_DEFINE) -I src -I include
 
 LDFLAGS := $(LDFLAGS_SAN) $(LDFLAGS_COV)
 
@@ -112,7 +118,15 @@ LIB_DIR := $(BUILD_DIR)/lib
 OBJ_DIR := $(BUILD_DIR)/obj
 TEST_DIR := $(BUILD_DIR)/test
 
-$(shell $(MKDIR) $(BIN_DIR) $(LIB_DIR) $(OBJ_DIR) $(TEST_DIR))
+$(shell $(MKDIR) $(BIN_DIR) $(LIB_DIR) $(OBJ_DIR) $(TEST_DIR) $(BUILD_DIR)/include/miga)
+
+# The generated configuration header lives in the build directory
+CFLAGS += -I $(BUILD_DIR)/include
+
+# Generated configuration header, as produced by configure / CMake
+CONFIG_HEADER := $(BUILD_DIR)/include/miga/migaconf.h
+$(CONFIG_HEADER): include/miga/migaconf.h.in
+	sed 's/@CONFIG_DEFINE@/#define $(API_MACRO) 1/' $< > $@
 
 # --------------------------------------------------------------------------
 # Source lists (mirroring the CMake structure)
@@ -120,7 +134,6 @@ $(shell $(MKDIR) $(BIN_DIR) $(LIB_DIR) $(OBJ_DIR) $(TEST_DIR))
 
 MGSHBASE_SOURCES := \
 src/getopt.c \
-src/getopt_string.c \
 src/glob_util.c \
 src/lib.c \
 src/logging.c \
@@ -155,10 +168,8 @@ src/exec.c \
 src/exec_command.c \
 src/exec_frame_expander.c \
 src/exec_frame.c \
-src/exec_parse_session.c \
 src/exec_redirect.c \
 src/frame.c \
-src/getopt_string.c \
 src/lower.c \
 src/lexer.c \
 src/lexer_arith_exp.c \
@@ -169,11 +180,12 @@ src/lexer_squote.c \
 src/lexer_dquote.c \
 src/lexer_param_exp.c \
 src/tokenizer.c \
+src/parse_session.c \
 src/parser.c \
 src/positional_params.c \
-src/shell.c
+src/trap_controller.c
 
-MAIN_SOURCE := src/main.c
+MAIN_SOURCE := src/main.c src/shell.c
 
 CTEST_OBJ_SOURCE := test/ctest/ctest.c
 
@@ -189,9 +201,12 @@ test/mgsh/test_ast_ctest.c \
 test/mgsh/test_sig_act_ctest.c
 
 LOGIC_TESTS := \
+	test/mgsh/test_alias_ctest.c \
 	test/mgsh/test_arithmetic_ctest.c \
 	test/mgsh/test_ast_heredoc_ctest.c \
-	test/mgsh/test_expander_ctest.c \
+	test/mgsh/test_exec_ctest.c \
+	test/mgsh/test_fd_table_ctest.c \
+	test/mgsh/test_func_store_ctest.c \
 	test/mgsh/test_job_store_ctest.c \
 	test/mgsh/test_lexer_arith_exp_ctest.c \
 	test/mgsh/test_lexer_cmd_subst_ctest.c \
@@ -200,10 +215,13 @@ LOGIC_TESTS := \
 	test/mgsh/test_lexer_quotes_ctest.c \
 	test/mgsh/test_parser_ctest.c \
 	test/mgsh/test_parser_gnode_ctest.c \
+	test/mgsh/test_pattern_removal_ctest.c \
 	test/mgsh/test_positional_params_ctest.c \
-	test/mgsh/test_tokenizer_ctest.c
-
-	# test/mgsh/test_exec_ctest.c
+	test/mgsh/test_string_list_ctest.c \
+	test/mgsh/test_token_array_ctest.c \
+	test/mgsh/test_token_ctest.c \
+	test/mgsh/test_tokenizer_ctest.c \
+	test/mgsh/test_variable_store_ctest.c
 
 ALL_TEST_SOURCES := $(BASE_TESTS) $(STORE_TESTS) $(LOGIC_TESTS)
 
@@ -214,16 +232,16 @@ ALL_TEST_SOURCES := $(BASE_TESTS) $(STORE_TESTS) $(LOGIC_TESTS)
 BASE_OBJS := $(addprefix $(OBJ_DIR)/,$(MGSHBASE_SOURCES:.c=.o))
 STORE_OBJS := $(addprefix $(OBJ_DIR)/,$(MGSHSTORE_SOURCES:.c=.o))
 LOGIC_OBJS := $(addprefix $(OBJ_DIR)/,$(MGSHLOGIC_SOURCES:.c=.o))
-MAIN_OBJ := $(OBJ_DIR)/src/main.o
+MAIN_OBJS := $(addprefix $(OBJ_DIR)/,$(MAIN_SOURCE:.c=.o))
 CTEST_OBJ := $(OBJ_DIR)/test/ctest/ctest.o
 
 # --------------------------------------------------------------------------
 # Library targets
 # --------------------------------------------------------------------------
 
-BASE_LIB := $(LIB_DIR)/libmgshbase.$(LIB_EXT)
-STORE_LIB := $(LIB_DIR)/libmgshstore.$(LIB_EXT)
-LOGIC_LIB := $(LIB_DIR)/libmgshlogic.$(LIB_EXT)
+BASE_LIB := $(LIB_DIR)/libmigabase.$(LIB_EXT)
+STORE_LIB := $(LIB_DIR)/libmigastore.$(LIB_EXT)
+LOGIC_LIB := $(LIB_DIR)/libmigalogic.$(LIB_EXT)
 
 ifeq ($(LIB_TYPE),shared)
 $(BASE_LIB): $(BASE_OBJS)
@@ -233,12 +251,12 @@ $(BASE_LIB): $(BASE_OBJS)
 $(STORE_LIB): $(STORE_OBJS) $(BASE_LIB)
 	$(MKDIR) $(@D)
 	$(CC) $(LIB_FLAGS) -o $@ $(STORE_OBJS) \
-	  -L$(LIB_DIR) -lmgshbase $(LDFLAGS)
+	  -L$(LIB_DIR) -lmigabase $(LDFLAGS)
 
 $(LOGIC_LIB): $(LOGIC_OBJS) $(STORE_LIB) $(BASE_LIB)
 	$(MKDIR) $(@D)
 	$(CC) $(LIB_FLAGS) -o $@ $(LOGIC_OBJS) \
-	  -L$(LIB_DIR) -lmgshstore -lmgshbase $(LDFLAGS)
+	  -L$(LIB_DIR) -lmigastore -lmigabase $(LDFLAGS)
 else
 $(BASE_LIB): $(BASE_OBJS)
 	$(MKDIR) $(@D)
@@ -257,12 +275,13 @@ endif
 # Executable
 # --------------------------------------------------------------------------
 
-$(BIN_DIR)/mgsh: $(MAIN_OBJ) $(LOGIC_LIB) $(STORE_LIB) $(BASE_LIB)
+$(BIN_DIR)/migash: $(MAIN_OBJS) $(LOGIC_LIB) $(STORE_LIB) $(BASE_LIB)
 	$(MKDIR) $(@D)
-	$(CC) -o $@ $(MAIN_OBJ) \
-	  -L$(LIB_DIR) -lmgshlogic -lmgshstore -lmgshbase $(LDFLAGS)
+	$(CC) -o $@ $(MAIN_OBJS) \
+	  -L$(LIB_DIR) -Wl,--start-group -lmigalogic -lmigastore -lmigabase -Wl,--end-group -lm $(LDFLAGS)
 
-mgsh: $(BIN_DIR)/mgsh
+.PHONY: migash
+migash: $(BIN_DIR)/migash
 
 # --------------------------------------------------------------------------
 # Test executables
@@ -270,18 +289,18 @@ mgsh: $(BIN_DIR)/mgsh
 
 # Base tests: only depend on mgshbase
 define BUILD_BASE_TEST
-$(TEST_DIR)/$(notdir $(basename $1)): $1 $(CTEST_OBJ) $(BASE_LIB)
+$(TEST_DIR)/$(notdir $(basename $1)): $1 $(CTEST_OBJ) $(LOGIC_LIB) $(STORE_LIB) $(BASE_LIB)
 	@test -n "$(@D)" && $(MKDIR) $(@D) || true
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -DIN_CTEST -I test/ctest -o $$@ $$< $(CTEST_OBJ) \
-	  -L$(LIB_DIR) -lmgshbase $(LDFLAGS)
+	  -L$(LIB_DIR) -Wl,--start-group -lmigalogic -lmigastore -lmigabase -Wl,--end-group -lm $(LDFLAGS)
 endef
 
 # Store tests: depend on mgshstore and mgshbase
 define BUILD_STORE_TEST
-$(TEST_DIR)/$(notdir $(basename $1)): $1 $(CTEST_OBJ) $(STORE_LIB) $(BASE_LIB)
+$(TEST_DIR)/$(notdir $(basename $1)): $1 $(CTEST_OBJ) $(LOGIC_LIB) $(STORE_LIB) $(BASE_LIB)
 	@test -n "$(@D)" && $(MKDIR) $(@D) || true
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -DIN_CTEST -I test/ctest -o $$@ $$< $(CTEST_OBJ) \
-	  -L$(LIB_DIR) -lmgshstore -lmgshbase $(LDFLAGS)
+	  -L$(LIB_DIR) -Wl,--start-group -lmigalogic -lmigastore -lmigabase -Wl,--end-group -lm $(LDFLAGS)
 endef
 
 # Logic tests: depend on all libraries
@@ -289,7 +308,7 @@ define BUILD_LOGIC_TEST
 $(TEST_DIR)/$(notdir $(basename $1)): $1 $(CTEST_OBJ) $(LOGIC_LIB) $(STORE_LIB) $(BASE_LIB)
 	@test -n "$(@D)" && $(MKDIR) $(@D) || true
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -DIN_CTEST -I test/ctest -o $$@ $$< $(CTEST_OBJ) \
-	  -L$(LIB_DIR) -lmgshlogic -lmgshstore -lmgshbase $(LDFLAGS)
+	  -L$(LIB_DIR) -Wl,--start-group -lmigalogic -lmigastore -lmigabase -Wl,--end-group -lm $(LDFLAGS)
 endef
 
 $(foreach test,$(BASE_TESTS),$(eval $(call BUILD_BASE_TEST,$(test))))
@@ -302,15 +321,15 @@ TEST_EXES := $(addprefix $(TEST_DIR)/,$(notdir $(basename $(ALL_TEST_SOURCES))))
 # Compilation rules
 # --------------------------------------------------------------------------
 
-$(OBJ_DIR)/src/%.o: %.c
+$(OBJ_DIR)/src/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
 
-$(OBJ_DIR)/test/ctest/%.o: %.c
+$(OBJ_DIR)/test/ctest/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
 
-$(OBJ_DIR)/%.o: %.c
+$(OBJ_DIR)/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
 	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
 

@@ -121,7 +121,7 @@ string_t *fd_table_generate_heredoc_name(int target_fd);
  * @param table The FD table
  * @param fd File descriptor number
  * @param flags Flags to associate with this FD
- * @param path Path associated with this FD (copies, does not take ownership)
+ * @param path Path associated with this FD (copies, does not take ownership); may be NULL
  * @return true on success, false on allocation failure
  */
 bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *path);

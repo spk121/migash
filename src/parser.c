@@ -948,6 +948,7 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
 
     /* Try function_definition first */
     gnode_t *func = NULL;
+    int start_position = parser->position;
     parse_status_t status = gparse_function_definition(parser, &func);
 
     if (status == PARSE_OK)
@@ -955,6 +956,16 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
         node->data.child = func;
         *out_node = node;
         return PARSE_OK;
+    }
+
+    /* If the function-definition parser consumed "name ( )" and then failed,
+     * this is a syntax error in a function definition, not a different kind of
+     * command. Do not fall through to the other alternatives, which would
+     * silently parse the remainder as a simple command. */
+    if (status == PARSE_ERROR && parser->position != start_position)
+    {
+        g_node_destroy(&node);
+        return PARSE_ERROR;
     }
 
     /* If function definition parsing is incomplete, don't try other alternatives */

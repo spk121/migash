@@ -13,9 +13,6 @@
  * Library consumers should include only exec.h and frame.h.
  */
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
 
 #include <signal.h>
 #include <stdbool.h>

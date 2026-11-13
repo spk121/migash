@@ -7,7 +7,6 @@
 #ifdef MIGA_POSIX_API
 // #define _POSIX_C_SOURCE 202405L
 // Need the full power of _GNU_SOURCE for realpath()
-#define _GNU_SOURCE
 #endif
 
 #include <errno.h>
@@ -1775,8 +1774,7 @@ int builtin_unset(miga_frame_t *frame, const strlist_t *args)
                         string_cstr(strlist_at(args, i)));
                 err_count++;
             }
-            else if (err == MIGA_FUNC_STATUS_EMPTY_NAME || err == MIGA_FUNC_STATUS_NAME_TOO_LONG ||
-                     err == MIGA_FUNC_STATUS_INVALID_NAMEs
+            else if (err == MIGA_FUNC_STATUS_EMPTY_NAME || err == MIGA_FUNC_STATUS_INVALID_NAME)
             {
                 fprintf(stderr, "unset: invalid function name '%s'\n",
                         string_cstr(strlist_at(args, i)));

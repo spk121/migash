@@ -4,7 +4,6 @@
 
 #ifdef MIGA_POSIX_API
 // #define _POSIX_C_SOURCE 202405L
-#define _GNU_SOURCE
 #endif
 
 #ifdef MIGA_UCRT_API

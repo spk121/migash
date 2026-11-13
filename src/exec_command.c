@@ -4,9 +4,6 @@
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #endif
-#ifdef MIGA_POSIX_API
-#define _GNU_SOURCE
-#endif
 
 #include <errno.h>
 #include <stdbool.h>

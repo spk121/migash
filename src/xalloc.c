@@ -2,9 +2,6 @@
 #include "config.h"
 #endif
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
 
 #include <setjmp.h>
 #include <stdint.h>

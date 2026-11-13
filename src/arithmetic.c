@@ -6,13 +6,10 @@
 
 #include "arithmetic.h"
 
-#include "alias_store.h"
 #include "exec_frame_expander.h"
-#include "lexer.h"
 #include "logging.h"
 #include "miga/string_t.h"
 #include "miga/strlist.h"
-#include "tokenizer.h"
 #include "miga/xalloc.h"
 
 // Ignore warning 4061: enumerator in switch of enum is not explicitly handled by a case label
@@ -24,7 +21,10 @@
 typedef struct {
     string_t *input;
     int pos;
-    int padding;
+    /* > 0 while parsing an operand whose value is not used (the unevaluated
+     * side of && / ||, or the untaken branch of ?:). Assignments are then
+     * not stored and division by zero is not an error, per POSIX. */
+    int suppress_side_effects;
     miga_frame_t *frame;
 } math_parser_t;
 
@@ -89,6 +89,7 @@ static bool is_alnum_or_underscore(char c) {
 static void parser_init(math_parser_t *parser, miga_frame_t *frame, const string_t *input) {
     parser->input = string_create_from(input);
     parser->pos = 0;
+    parser->suppress_side_effects = 0;
     parser->frame = frame;
 }
 
@@ -454,7 +455,11 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
 
         // Special handling for ternary operator
         if (op == MATH_TOKEN_QUESTION) {
+            if (!left.value)
+                parser->suppress_side_effects++;
             ArithmeticResult true_expr = parse_expression(parser, 0); // Allow comma in branches
+            if (!left.value)
+                parser->suppress_side_effects--;
             if (true_expr.failed) {
                 arithmetic_result_free(&left);
                 return true_expr;
@@ -469,7 +474,11 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
             }
             free_token(&token);
 
+            if (left.value)
+                parser->suppress_side_effects++;
             ArithmeticResult false_expr = parse_expression(parser, prec); // Right-associative
+            if (left.value)
+                parser->suppress_side_effects--;
             if (false_expr.failed) {
                 arithmetic_result_free(&left);
                 arithmetic_result_free(&true_expr);
@@ -483,20 +492,30 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
             continue;
         }
 
-        // Handle short-circuit evaluation for logical operators
-        if (op == MATH_TOKEN_LOGICAL_OR && left.value) {
-            return left;
-        }
-        if (op == MATH_TOKEN_LOGICAL_AND && !left.value) {
-            return left;
-        }
+        // Short-circuit evaluation for logical operators: the right operand
+        // must still be parsed (to consume it), but it is not evaluated.
+        bool short_circuit = (op == MATH_TOKEN_LOGICAL_OR && left.value) ||
+                             (op == MATH_TOKEN_LOGICAL_AND && !left.value);
+        if (short_circuit)
+            parser->suppress_side_effects++;
 
         // Standard binary operators
         int next_min_prec = is_right_associative(op) ? prec : prec + 1;
         ArithmeticResult right = parse_expression(parser, next_min_prec);
+
+        if (short_circuit)
+            parser->suppress_side_effects--;
+
         if (right.failed) {
             arithmetic_result_free(&left);
             return right;
+        }
+
+        if (short_circuit) {
+            // Result is the (normalised) left value; right is discarded.
+            left.value = left.value ? 1 : 0;
+            arithmetic_result_free(&right);
+            continue;
         }
 
         // Apply the operator
@@ -506,6 +525,10 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
                 break;
             case MATH_TOKEN_DIVIDE:
                 if (right.value == 0) {
+                    if (parser->suppress_side_effects) {
+                        left.value = 0;
+                        break;
+                    }
                     arithmetic_result_free(&left);
                     arithmetic_result_free(&right);
                     return make_error("Division by zero");
@@ -514,6 +537,10 @@ static ArithmeticResult parse_expression(math_parser_t *parser, int min_preceden
                 break;
             case MATH_TOKEN_MODULO:
                 if (right.value == 0) {
+                    if (parser->suppress_side_effects) {
+                        left.value = 0;
+                        break;
+                    }
                     arithmetic_result_free(&left);
                     arithmetic_result_free(&right);
                     return make_error("Modulo by zero");
@@ -647,6 +674,8 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             value = var_num * value;
             break;
         case MATH_TOKEN_DIVIDE_ASSIGN:
+            if (value == 0 && parser->suppress_side_effects)
+                break;
             if (value == 0)
             {
                 string_destroy(&var_name);
@@ -656,6 +685,8 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             value = var_num / value;
             break;
         case MATH_TOKEN_MODULO_ASSIGN:
+            if (value == 0 && parser->suppress_side_effects)
+                break;
             if (value == 0)
             {
                 string_destroy(&var_name);
@@ -689,10 +720,13 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
             break; // MATH_TOKEN_ASSIGN uses right.value directly
         }
 
-        // Update variable in the frame
-        string_t *value_str = string_from_long(value);
-        frame_set_variable(parser->frame, var_name, value_str);
-        string_destroy(&value_str);
+        // Update variable in the frame (unless this operand is not evaluated)
+        if (!parser->suppress_side_effects)
+        {
+            string_t *value_str = string_from_long(value);
+            frame_set_variable(parser->frame, var_name, value_str);
+            string_destroy(&value_str);
+        }
         string_destroy(&var_name);
 
         return make_value(value);
@@ -719,100 +753,18 @@ static ArithmeticResult parse_primary(math_parser_t *parser)
 }
 
 /**
- * Recursively expand an arithmetic expression through the full lex-parse-expand chain.
- * This implements the POSIX-compliant expansion for arithmetic expressions:
- * 1. Re-lex the expression text
- * 2. Tokenize (with alias expansion)
- * 3. Parse into AST
- * 4. Expand the AST (parameter expansion, command substitution, quote removal)
- * 5. Return the fully expanded string
+ * Expand the text inside $(( )) before it is parsed as arithmetic.
+ *
+ * POSIX (2.6.4) says the expression is treated as if it were in double quotes:
+ * parameter expansion, command substitution and quote removal are performed,
+ * but no field splitting or pathname expansion. Operators such as '<', '&',
+ * '|' and '(' are plain characters of the expression, not shell operators, so
+ * the text must not be re-lexed as shell input. The here-document expander
+ * implements exactly these rules for raw text.
  */
 static string_t *arithmetic_expand_expression(miga_frame_t *frame, const string_t *expr_text)
 {
-    // Step 1: Re-lex the raw text inside $(())
-    lexer_t *lx = lexer_create();
-    if (!lx) {
-        log_error("arithmetic_expand_expression: failed to create lexer");
-        return NULL;
-    }
-
-    lexer_append_input(lx, expr_text);
-
-    // Step 2: Tokenize
-    token_list_t *tokens = token_list_create();
-    if (!tokens) {
-        lexer_destroy(&lx);
-        log_error("arithmetic_expand_expression: failed to create token list");
-        return NULL;
-    }
-
-    lex_status_t lex_status = lexer_tokenize(lx, tokens, NULL);
-    if (lex_status != LEX_OK) {
-        log_warn("arithmetic_expand_expression: lexer failed with status %d", lex_status);
-        token_list_destroy(&tokens);
-        lexer_destroy(&lx);
-        return NULL;
-    }
-
-    // Step 3: Tokenize with alias expansion
-    // For arithmetic expansion, we typically don't need alias expansion,
-    // but we include it for POSIX compliance
-    alias_store_t *aliases = alias_store_create();
-    tokenizer_t *tokenizer = tokenizer_create(aliases);
-    token_list_t *aliased_tokens = token_list_create();
-
-    if (!tokenizer || !aliased_tokens) {
-        token_list_destroy(&aliased_tokens);
-        if (tokenizer) tokenizer_destroy(&tokenizer);
-        alias_store_destroy(&aliases);
-        token_list_destroy(&tokens);
-        lexer_destroy(&lx);
-        log_error("arithmetic_expand_expression: failed to create tokenizer");
-        return NULL;
-    }
-
-    tok_status_t tok_status = tokenizer_process(tokenizer, tokens, aliased_tokens);
-    if (tok_status != TOK_OK) {
-        log_warn("arithmetic_expand_expression: tokenizer returned status %d", tok_status);
-    }
-
-    // Step 4: Expand each word token
-    // We need to expand parameters, command substitutions, etc.
-    string_t *result = string_create();
-
-    for (int i = 0; i < token_list_size(aliased_tokens); i++) {
-        const token_t *tok = token_list_get(aliased_tokens, i);
-        token_type_t tok_type = token_get_type(tok);
-
-        if (tok_type == TOKEN_WORD) {
-            // Expand the word using the frame-based API
-            strlist_t *expanded_words = exec_frame_expander_expand_word(frame, tok);
-
-            if (!expanded_words) {
-                continue;
-            }
-
-            // Concatenate all expanded words without adding spaces
-            // Arithmetic expressions should not have field splitting
-            for (int j = 0; j < strlist_size(expanded_words); j++) {
-                const string_t *word = strlist_at(expanded_words, j);
-                string_append(result, word);
-            }
-
-            strlist_destroy(&expanded_words);
-        } else if (tok_type == TOKEN_NEWLINE) {
-            // Skip newlines in arithmetic expressions
-        }
-    }
-
-    // Cleanup
-    token_list_destroy(&aliased_tokens);
-    tokenizer_destroy(&tokenizer);
-    alias_store_destroy(&aliases);
-    token_list_destroy(&tokens);
-    lexer_destroy(&lx);
-
-    return result;
+    return expand_heredoc(frame, expr_text, false);
 }
 
 // Evaluate arithmetic expression

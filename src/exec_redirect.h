@@ -12,6 +12,7 @@
  *   - Platform-specific apply/restore declarations
  */
 
+#include "miga/migaconf.h"
 #include "ast.h"
 #include "exec_types_internal.h"
 
