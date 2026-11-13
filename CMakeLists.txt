@@ -69,7 +69,8 @@ endif()
 # standard, so POSIX declarations must be requested explicitly. Autotools puts
 # the same definition in config.h.
 if(API_TYPE STREQUAL "POSIX" AND NOT MSVC)
-    add_compile_definitions(_POSIX_C_SOURCE=202405L)
+    # POSIX.1-2024 plus the XSI extensions (realpath, ...)
+    add_compile_definitions(_POSIX_C_SOURCE=202405L _XOPEN_SOURCE=700)
 endif()
 
 # ============================================================================

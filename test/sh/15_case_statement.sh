@@ -4,7 +4,7 @@
 # pattern matching rules, nested cases, fall-through (;; vs ;& / ;& not POSIX),
 # and special/edge cases.
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing case statement behavior...\n"
 

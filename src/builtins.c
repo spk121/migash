@@ -597,9 +597,11 @@ int builtin_exit(miga_frame_t *frame, const strlist_t *args)
     }
     else
     {
-        // If not top-level, set pending control flow to return and propagate status
-        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_RETURN, 0);
+        // Not top-level (function, loop, brace group, ...): unwind every
+        // frame to the top level and have the main loop stop.
+        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
         frame->last_exit_status = exit_status;
+        exec_request_exit(frame->executor, exit_status);
     }
 
     // Not reached if top-level

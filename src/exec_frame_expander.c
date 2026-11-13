@@ -13,12 +13,14 @@
 #endif
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "arithmetic.h"
 #include "exec_frame.h"
+#include "miga/exec.h"
 #include "exec_frame_expander.h"
 #include "exec_types_internal.h"
 #include "glob_util.h"
@@ -653,24 +655,85 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
         return string_create();
     }
 
-    FILE *pipe = popen(cmd, "r");
-    if (pipe == NULL)
+    /* POSIX 2.6.3: the command is executed in a subshell environment. Fork,
+     * run it through this shell's own executor in the child with stdout
+     * connected to a pipe, and collect the output in the parent. Running it
+     * in-process (rather than popen(3), which uses /bin/sh) keeps shell
+     * functions, aliases, unexported variables and builtins visible. */
+    int fds[2];
+    if (pipe(fds) == -1)
     {
-        log_error("expand_command_subst: popen failed for '%s'", cmd);
-        record_subst_status(frame, 1);
+        log_error("expand_command_subst: pipe failed: %s", strerror(errno));
+        record_subst_status(frame, 1 << 8);
         return string_create();
     }
 
-    string_t *output = string_create();
-    char buffer[256];
+    fflush(stdout);
+    fflush(stderr);
 
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL)
+    pid_t pid = fork();
+    if (pid < 0)
     {
-        string_append_cstr(output, buffer);
+        log_error("expand_command_subst: fork failed: %s", strerror(errno));
+        close(fds[0]);
+        close(fds[1]);
+        record_subst_status(frame, 1 << 8);
+        return string_create();
     }
 
-    int exit_code = pclose(pipe);
-    record_subst_status(frame, exit_code);
+    if (pid == 0)
+    {
+        /* Child: stdout goes to the pipe. */
+        close(fds[0]);
+        if (fds[1] != STDOUT_FILENO)
+        {
+            dup2(fds[1], STDOUT_FILENO);
+            close(fds[1]);
+        }
+
+        miga_exec_t *executor = frame->executor;
+        parse_session_t *session = exec_create_parse_session(executor);
+        miga_exec_status_t st = MIGA_EXEC_STATUS_ERROR;
+        if (session)
+            st = exec_frame_string_core(frame, cmd, session);
+
+        int code = executor->last_exit_status & 0xff;
+        if (st == MIGA_EXEC_STATUS_INCOMPLETE)
+            code = 2; /* syntax error: unterminated input */
+        else if (st != MIGA_EXEC_STATUS_OK && st != MIGA_EXEC_STATUS_EXIT &&
+                 st != MIGA_EXEC_STATUS_EMPTY && code == 0)
+            code = 1;
+
+        fflush(stdout);
+        fflush(stderr);
+        _exit(code);
+    }
+
+    /* Parent: read everything the child writes. */
+    close(fds[1]);
+    string_t *output = string_create();
+    char buffer[4096];
+    for (;;)
+    {
+        ssize_t n = read(fds[0], buffer, sizeof(buffer));
+        if (n > 0)
+        {
+            string_append_data(output, buffer, (int)n);
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        break;
+    }
+    close(fds[0]);
+
+    int wstatus = 0;
+    pid_t waited;
+    do
+    {
+        waited = waitpid(pid, &wstatus, 0);
+    } while (waited < 0 && errno == EINTR);
+    record_subst_status(frame, waited < 0 ? (1 << 8) : wstatus);
 
     /* Strip trailing newlines per POSIX */
     strip_trailing_newlines(output);
@@ -948,7 +1011,11 @@ static string_t *expand_part(miga_frame_t *frame, const part_t *part)
         return expand_parameter_with_modifier(frame, part);
 
     case PART_COMMAND_SUBST: {
-        /* Convert nested tokens to command string */
+        /* The lexer stores the raw command text in part->text. (Older code
+         * produced nested tokens instead; join them if that is all we have.) */
+        if (part->text && string_length(part->text) > 0)
+            return expand_command_subst(frame, part->text);
+
         string_t *cmd = string_create();
         int len = part->nested ? token_list_size(part->nested) : 0;
         for (int i = 0; i < len; i++)

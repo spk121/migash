@@ -9,7 +9,7 @@
 #   - Quoting behavior, field splitting, empty fields
 #   - Nested function calls (positional parameters are local to function scope)
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing positional and special parameters (POSIX 2.5.1 + 2.5.2)...\n"
 

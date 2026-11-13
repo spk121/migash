@@ -86,7 +86,10 @@ static bool lexer_check_heredoc_delimiter(lexer_t *lx, const string_t *delim, bo
     Expects_le(pos, string_length(lx->input));
     if (string_length(lx->input) == pos)
     {
+        // Delimiter is the last line of the input with no trailing newline:
+        // the here-document is complete.
         lexer_advance_n_chars(lx, pos - pos_initial);
+        return true;
     }
     else if (string_at(lx->input, pos) == '\n')
     {

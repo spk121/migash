@@ -67,6 +67,7 @@ case "$configuration" in
     dnl Request the POSIX.1-2024 interfaces from the C library. config.h is the
     dnl first include of every source file, so this precedes all system headers.
     AC_DEFINE([_POSIX_C_SOURCE], [202405L], [Request POSIX.1-2024 interfaces])
+    AC_DEFINE([_XOPEN_SOURCE], [700], [Request the XSI extensions (realpath, ...)])
     ;;
   ucrt)
     CONFIG_DEFINE="#define MIGA_UCRT_API 1"

@@ -456,6 +456,56 @@ static struct reserved_word_entry reserved_words[] = {
     {NULL, TOKEN_WORD} // sentinel
 };
 
+void token_demote_assignment(token_t *tok)
+{
+    Expects_not_null(tok);
+    if (token_get_type(tok) != TOKEN_ASSIGNMENT_WORD)
+        return;
+
+    /* Rebuild the parts: a literal "name=" merged with the first value part
+     * when that is an unquoted literal (which is how the lexer split it),
+     * followed by the remaining value parts. */
+    string_t *lead = string_create_from(tok->assignment_name);
+    string_append_char(lead, '=');
+
+    part_list_t *value = tok->assignment_value;
+    int n = value ? part_list_size(value) : 0;
+    int first = 0;
+    if (n > 0)
+    {
+        part_t *p0 = part_list_get(value, 0);
+        if (part_get_type(p0) == PART_LITERAL && !p0->was_single_quoted && !p0->was_double_quoted)
+        {
+            string_append(lead, p0->text);
+            part_destroy(&p0);
+            value->parts[0] = NULL;
+            first = 1;
+        }
+    }
+
+    /* token_add_part() requires a WORD token */
+    tok->type = TOKEN_WORD;
+
+    part_t *lead_part = part_create_literal(lead);
+    string_destroy(&lead);
+    token_add_part(tok, lead_part);
+    for (int i = first; i < n; i++)
+    {
+        part_t *p = part_list_get(value, i);
+        value->parts[i] = NULL;
+        token_add_part(tok, p);
+    }
+    if (value)
+    {
+        value->size = 0;
+        part_list_destroy(&tok->assignment_value);
+    }
+    tok->assignment_value = NULL;
+    string_destroy(&tok->assignment_name);
+    tok->assignment_name = NULL;
+    token_recompute_expansion_flags(tok);
+}
+
 bool token_try_promote_to_reserved_word(token_t *tok, bool allow_in)
 {
     Expects_not_null(tok);

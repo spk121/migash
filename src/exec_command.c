@@ -29,6 +29,7 @@
 #endif
 
 #include "exec_command.h"
+#include "miga/frame.h"
 
 #include "ast.h"
 // #include "builtins.h"
@@ -206,6 +207,88 @@ static miga_exec_status_t apply_prefix_assignments(miga_frame_t *frame, variable
 }
 
 /* ============================================================================
+ * Temporary prefix assignments (regular builtins and functions)
+ * ============================================================================ */
+
+typedef struct
+{
+    string_t *name;
+    string_t *old_value; /* NULL if the variable did not exist */
+    bool existed;
+    bool was_exported;
+} saved_var_t;
+
+typedef struct
+{
+    saved_var_t *items;
+    int count;
+} assignment_backup_t;
+
+/**
+ * Apply the command's prefix assignments to the frame's variable store for the
+ * duration of the command, remembering the previous state so that
+ * restore_prefix_assignments() can undo them. The variables are exported while
+ * the command runs, as POSIX requires for the command's environment.
+ */
+static miga_exec_status_t apply_prefix_assignments_temporarily(miga_frame_t *frame,
+                                                               const ast_node_t *node,
+                                                               assignment_backup_t *backup)
+{
+    const token_list_t *assignments = node->data.simple_command.assignments;
+    int n = assignments ? token_list_size(assignments) : 0;
+    backup->items = n > 0 ? xcalloc((size_t)n, sizeof(saved_var_t)) : NULL;
+    backup->count = 0;
+
+    for (int i = 0; i < n; i++)
+    {
+        const token_t *tok = token_list_get(assignments, i);
+        saved_var_t *sv = &backup->items[backup->count];
+        sv->name = string_create_from(tok->assignment_name);
+        sv->existed = variable_store_has_name(frame->variables, sv->name);
+        if (sv->existed)
+        {
+            sv->old_value = string_create_from(variable_store_get_value(frame->variables, sv->name));
+            sv->was_exported = variable_store_is_exported(frame->variables, sv->name);
+        }
+        backup->count++;
+
+        string_t *value = expand_assignment_value(frame, tok);
+        if (!value)
+        {
+            exec_set_error_cstr(frame->executor, "assignment expansion failed");
+            return MIGA_EXEC_STATUS_ERROR;
+        }
+        var_store_error_t err = variable_store_add(frame->variables, sv->name, value, true, false);
+        string_destroy(&value);
+        if (err != VAR_STORE_ERROR_NONE)
+        {
+            exec_set_error_printf(frame->executor, "%s: cannot assign variable (error %d)",
+                                  string_cstr(sv->name), err);
+            return MIGA_EXEC_STATUS_ERROR;
+        }
+    }
+    return MIGA_EXEC_STATUS_OK;
+}
+
+static void restore_prefix_assignments(miga_frame_t *frame, assignment_backup_t *backup)
+{
+    for (int i = backup->count - 1; i >= 0; i--)
+    {
+        saved_var_t *sv = &backup->items[i];
+        if (sv->existed)
+            variable_store_add(frame->variables, sv->name, sv->old_value, sv->was_exported, false);
+        else
+            variable_store_remove(frame->variables, sv->name);
+        string_destroy(&sv->name);
+        if (sv->old_value)
+            string_destroy(&sv->old_value);
+    }
+    xfree(backup->items);
+    backup->items = NULL;
+    backup->count = 0;
+}
+
+/* ============================================================================
  * Simple Command Execution
  * ============================================================================ */
 exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t *frame,
@@ -224,8 +307,10 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
 
     bool has_words = (word_tokens && token_list_size(word_tokens) > 0);
 
-    /* Assignment-only command (no words, no redirs) */
-    if (!has_words && !redirs)
+    /* Assignment-only command (no words, no redirs). The lowering step always
+     * allocates a redirection list, so test its size, not just the pointer. */
+    bool has_redirs = (redirs && ast_node_list_size(redirs) > 0);
+    if (!has_words && !has_redirs)
     {
         if (assign_tokens)
         {
@@ -255,11 +340,13 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK};
     }
 
-    /* Swap in temporary variable store */
-    frame->saved_variables = frame->variables;
-    variable_store_t *temp_vars = build_temp_store_for_siple_command(frame, node);
-    frame->variables = temp_vars;
-    temp_vars = NULL;
+    int cmd_exit_status = 0;
+
+    /* Prefix assignments applied for the duration of a regular builtin or a
+     * function call (restored at done_execution). */
+    assignment_backup_t assignment_backup = {0};
+    /* Variable store used to build the environment of an external command. */
+    variable_store_t *env_store = NULL;
 
     /* Convert AST redirections early */
     exec_redirections_t *runtime_redirs = NULL;
@@ -269,6 +356,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         if (!runtime_redirs)
         {
             status = MIGA_EXEC_STATUS_ERROR;
+            cmd_exit_status = 1;
             goto out_restore_vars;
         }
     }
@@ -281,10 +369,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     if (has_words && !expanded_words)
     {
         status = MIGA_EXEC_STATUS_ERROR;
+        cmd_exit_status = 1;
         goto out_destroy_redirs;
     }
-
-    int cmd_exit_status = 0;
 
     if (has_words)
     {
@@ -303,14 +390,35 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         bool builtin_found = builtin_store_lookup(frame->executor->builtins, cmd_name, &builtin_fn,
                                                   &builtin_category);
 
-        /* Special builtins: persist assignments */
-        if (builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL && assign_tokens &&
-            token_list_size(assign_tokens) > 0)
+        /* POSIX command search order: special builtins, then functions, then
+         * regular builtins, then external utilities. */
+        bool is_special = builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL;
+        const ast_node_t *func_body =
+            is_special ? NULL : func_store_get_def_cstr(frame->functions, cmd_name);
+        bool is_regular = !is_special && func_body == NULL && builtin_found &&
+                          builtin_category == MIGA_BUILTIN_CATEGORY_REGULAR;
+        bool has_assignments = assign_tokens && token_list_size(assign_tokens) > 0;
+
+        if (has_assignments && is_special)
         {
-            miga_exec_status_t assign_st = apply_prefix_assignments(frame, frame->saved_variables, node);
+            /* Special builtins: assignments persist in the current environment */
+            miga_exec_status_t assign_st = apply_prefix_assignments(frame, frame->variables, node);
             if (assign_st != MIGA_EXEC_STATUS_OK)
             {
                 status = assign_st;
+                cmd_exit_status = 1;
+                goto done_execution;
+            }
+        }
+        else if (has_assignments && (func_body != NULL || is_regular))
+        {
+            /* Functions and regular builtins: assignments last for the command */
+            miga_exec_status_t assign_st =
+                apply_prefix_assignments_temporarily(frame, node, &assignment_backup);
+            if (assign_st != MIGA_EXEC_STATUS_OK)
+            {
+                status = assign_st;
+                cmd_exit_status = 1;
                 goto done_execution;
             }
         }
@@ -318,12 +426,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         /* ────────────────────────────────────────────────
            Internal commands (builtins + functions)
            ──────────────────────────────────────────────── */
-        // Even if we know we have a regular builtin, we have to check for a function of the same
-        // name first, because functions take precedence over regular builtins.
         bool is_internal = false;
 
         /* Shell function */
-        const ast_node_t *func_body = func_store_get_def_cstr(frame->functions, cmd_name);
         if (func_body != NULL)
         {
             is_internal = true;
@@ -348,6 +453,10 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
                 exec_frame_execute_function_body(frame, func_body, func_args, func_redirs);
             cmd_exit_status = func_result.exit_status;
 
+            /* 'exit' inside the function: keep unwinding past the caller */
+            if (func_result.flow == MIGA_FRAME_FLOW_TOP)
+                frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
+
             strlist_destroy(&func_args);
 
             exec_redirect_restore_redirections(frame, runtime_redirs);
@@ -355,7 +464,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         }
 
         /* Regular builtin */
-        if (builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_REGULAR)
+        if (is_regular)
         {
             is_internal = true;
 
@@ -373,8 +482,8 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             goto done_execution;
         }
 
-        /* Special builtins (non-assignment case) */
-        if (builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL)
+        /* Special builtins */
+        if (is_special)
         {
             is_internal = true;
 
@@ -399,6 +508,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     {
         const char *cmd_name = string_cstr(strlist_at(expanded_words, 0));
 
+        /* Environment: the shell's variables plus the prefix assignments */
+        env_store = build_temp_store_for_siple_command(frame, node);
+
 #ifdef MIGA_POSIX_API
         if (!cmd_name || *cmd_name == '\0')
         {
@@ -415,7 +527,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         }
         argv[argc] = NULL;
 
-        char *const *envp = variable_store_get_envp(frame->variables);
+        char *const *envp = variable_store_get_envp(env_store);
 
         pid_t pid = fork();
         if (pid == -1)
@@ -545,7 +657,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             goto done_execution;
         }
 
-        char *const *envp = variable_store_get_envp(executor->variables);
+        char *const *envp = variable_store_get_envp(env_store);
 
         intptr_t spawn_result = 0;
         if (frame->policy && frame->policy->classification.is_background)
@@ -646,7 +758,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             string_append(cmdline, strlist_at(expanded_words, i));
         }
 
-        string_t *env_fname = variable_store_write_env_file(frame->variables);
+        string_t *env_fname = variable_store_write_env_file(env_store);
 
         int rc = system(string_cstr(cmdline));
 
@@ -677,6 +789,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
 done_execution:
     frame->last_exit_status = cmd_exit_status;
 
+    if (assignment_backup.items)
+        restore_prefix_assignments(frame, &assignment_backup);
+    if (env_store)
+        variable_store_destroy(&env_store);
+
     /* Update $_ with last argument */
     if (strlist_size(expanded_words) > 1)
     {
@@ -695,12 +812,11 @@ out_destroy_redirs:
     exec_redirections_destroy(&runtime_redirs);
 
 out_restore_vars:
-    /* Restore original variable store */
-    variable_store_destroy(&frame->variables);
-    frame->variables = frame->saved_variables;
-    frame->saved_variables = NULL;
-
-    return (exec_frame_execute_result_t){.status = status};
+    /* Every simple command yields an exit status; compound commands (if,
+     * while, &&, ...) read it from the result, not from the frame. */
+    frame->last_exit_status = cmd_exit_status;
+    return (exec_frame_execute_result_t){
+        .status = status, .has_exit_status = true, .exit_status = cmd_exit_status};
 }
 
 /* ============================================================================

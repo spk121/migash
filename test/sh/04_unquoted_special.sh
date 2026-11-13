@@ -2,7 +2,7 @@
 # Test: Special Characters Without Quoting
 # Verify that special characters have their special meaning when unquoted
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then

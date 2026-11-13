@@ -2,7 +2,7 @@
 # Test: Quoting and Pathname Expansion (Globbing)
 # Verify quoting correctly prevents glob expansion (POSIX 2.6.6)
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then

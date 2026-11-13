@@ -4,7 +4,7 @@
 #         quoted words, reserved words, non-interactive behavior notes,
 #         and interaction with word splitting/field splitting.
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing alias substitution (POSIX 2.3.1)...\n"
 

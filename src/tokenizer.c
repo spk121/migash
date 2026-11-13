@@ -394,14 +394,23 @@ void tokenizer_update_command_position(tokenizer_t *tok, const token_t *token)
     case TOKEN_CASE:
     case TOKEN_LBRACE:
         tok->at_command_position = true;
+        tok->in_cmd_prefix = false;
         // Clear expanded aliases - we're starting a new command
         tokenizer_clear_expanded_aliases(tok);
+        break;
+
+    case TOKEN_ASSIGNMENT_WORD:
+        // Still in the command prefix: the next word may be another
+        // assignment or the command name, but not a reserved word.
+        tok->at_command_position = true;
+        tok->in_cmd_prefix = true;
         break;
 
     default:
         // After a word or other token, we're no longer at command position
         // (unless the alias ends with a blank, which is handled separately)
         tok->at_command_position = false;
+        tok->in_cmd_prefix = false;
         break;
     }
 }
@@ -602,6 +611,14 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
         }
     }
 
+    // The lexer promotes every "name=value" word to an ASSIGNMENT_WORD. POSIX
+    // token rule 7b only recognises assignments before the command name, so
+    // after it the word is an ordinary argument (e.g. "export FOO=bar").
+    if (token_get_type(token) == TOKEN_ASSIGNMENT_WORD && !tok->at_command_position)
+    {
+        token_demote_assignment(token);
+    }
+
     // No alias expansion - check if this WORD token should be converted to TOKEN_IO_NUMBER
     // A WORD that consists only of digits and is immediately followed by a
     // redirection operator should be an IO_NUMBER
@@ -609,7 +626,7 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
     {
         // First, check if this word is a reserved word at command position
         // But only if it wasn't quoted - quoted words are always literal
-        if (tok->at_command_position && !token_was_quoted(token))
+        if (tok->at_command_position && !tok->in_cmd_prefix && !token_was_quoted(token))
         {
             // Check if we're in a case statement and the next token is ')'
             // If so, this word is a case pattern and should NOT be promoted to a reserved word
@@ -830,6 +847,18 @@ tok_status_t tokenizer_process(tokenizer_t *tok, token_list_t *input_tokens, tok
         status = tokenizer_process_one_token(tok);
         if (status != TOK_OK)
         {
+            /* Tokens before input_pos were moved to the output or buffer lists
+             * and are owned there now; drop them from the input list so that
+             * the caller's destroy of the input does not free them twice. The
+             * token that failed and the ones after it stay with the input. */
+            int moved = tok->input_pos;
+            int remaining = token_list_size(input_tokens) - moved;
+            for (int i = 0; i < remaining; i++)
+                input_tokens->tokens[i] = input_tokens->tokens[i + moved];
+            input_tokens->size = remaining;
+            tok->input_tokens = NULL;
+            tok->output_tokens = NULL;
+            tok->input_pos = 0;
             return status;
         }
     }

@@ -877,59 +877,26 @@ static exec_frame_execute_result_t execute_frame_body(miga_frame_t *frame, exec_
         }
     }
 
-    /* Handle pipe FD setup for EXEC_FRAME_PIPELINE_CMD */
-#ifdef MIGA_POSIX_API
-    if (params->stdin_pipe_fd >= 0)
+    /* Execute based on what's provided. Loops carry a body too, so they must
+     * be recognised before the plain-body case. */
+    if (params->iteration_words)
     {
-        dup2(params->stdin_pipe_fd, STDIN_FILENO);
-        close(params->stdin_pipe_fd);
-
-        // Track: STDIN is now a pipe-redirected FD
-        string_t *name =
-            fd_table_generate_name_ex(STDIN_FILENO, params->stdin_pipe_fd, FD_IS_REDIRECTED);
-        fd_table_add(frame->open_fds, STDIN_FILENO, FD_IS_REDIRECTED, name);
-        string_destroy(&name);
-    }
-    if (params->stdout_pipe_fd >= 0)
-    {
-        dup2(params->stdout_pipe_fd, STDOUT_FILENO);
-        close(params->stdout_pipe_fd);
-
-        // Track: STDOUT is now a pipe-redirected FD
-        string_t *name =
-            fd_table_generate_name_ex(STDOUT_FILENO, params->stdout_pipe_fd, FD_IS_REDIRECTED);
-        fd_table_add(frame->open_fds, STDOUT_FILENO, FD_IS_REDIRECTED, name);
-        string_destroy(&name);
-    }
-    if (params->pipe_fds_to_close)
-    {
-        for (int i = 0; i < params->pipe_fds_count; i++)
-        {
-            close(params->pipe_fds_to_close[i]);
-            fd_table_mark_closed(frame->open_fds, params->pipe_fds_to_close[i]);
-        }
-    }
-#endif
-
-    /* Execute body based on what's provided */
-    if (params->body)
-    {
-        result = exec_frame_execute_dispatch(frame, params->body);
+        /* For loop */
+        result = exec_frame_execute_iteration_loop(frame, params);
     }
     else if (params->condition)
     {
         /* While/until loop */
         result = exec_frame_execute_condition_loop(frame, params);
     }
-    else if (params->iteration_words)
-    {
-        /* For loop */
-        result = exec_frame_execute_iteration_loop(frame, params);
-    }
     else if (params->pipeline_commands)
     {
         /* Pipeline orchestration */
         result = exec_frame_execute_pipeline_orchestrate(frame, params);
+    }
+    else if (params->body)
+    {
+        result = exec_frame_execute_dispatch(frame, params->body);
     }
 
     /* Handle control flow */
@@ -999,7 +966,7 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_
         // Execute body
         exec_frame_execute_result_t body_result;
         if (params->body->type == AST_COMMAND_LIST)
-            body_result = exec_frame_execute_iteration_loop(frame, params);
+            body_result = exec_frame_execute_compound_list(frame, params->body);
         else
             body_result = exec_frame_execute_dispatch(frame, params->body);
 
@@ -1657,6 +1624,15 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame
             result.exit_status = cmd_result.exit_status;
         }
 
+        // break / continue / return / exit: stop executing this list and let
+        // the enclosing loop, function or shell handle it.
+        if (cmd_result.flow != MIGA_FRAME_FLOW_NORMAL)
+        {
+            result.flow = cmd_result.flow;
+            result.flow_depth = cmd_result.flow_depth;
+            return result;
+        }
+
         // Handle the separator after this command
         // cmd_separator_t sep = ast_node_command_list_get_separator(list, i);
         if (sep == CMD_EXEC_BACKGROUND)
@@ -1723,7 +1699,7 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, 
         return result;
     }
 
-    if (left_result.status != MIGA_EXEC_STATUS_OK)
+    if (left_result.status != MIGA_EXEC_STATUS_OK || left_result.flow != MIGA_FRAME_FLOW_NORMAL)
     {
         result = left_result;
         return result;
@@ -2960,7 +2936,10 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
  * Core implementation for executing shell commands from a stream.
  *
  * Reads lines from fp and feeds them to exec_frame_string_core one at a time,
- * handling lines longer than the read buffer by accumulating chunks.
+ * handling lines longer than the read buffer by accumulating chunks. Multi-line
+ * constructs are handled by the session: an INCOMPLETE result just means the
+ * next line is needed. Reading stops at end of file, on an error, or when the
+ * executed code asks to leave (exit, or return from a sourced file).
  */
 miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_session_t *session)
 {
@@ -2973,84 +2952,40 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
 
     miga_exec_status_t final_status = MIGA_EXEC_STATUS_OK;
 
-    /* Read a single logical line of any size, efficiently */
 #define LINE_CHUNK_SIZE 4096
     char chunk[LINE_CHUNK_SIZE];
     char *line_buf = NULL;
     size_t line_buf_size = 0;
     size_t line_len = 0;
 
-    while (fgets(chunk, sizeof(chunk), fp) != NULL)
+    for (;;)
     {
-        size_t chunk_len = strlen(chunk);
+        bool have_line = false;
 
-        if (chunk_len > 0 && chunk[chunk_len - 1] == '\n')
+        /* Assemble one physical line of any length into line_buf. */
+        while (fgets(chunk, sizeof(chunk), fp) != NULL)
         {
-            if (line_len == 0)
+            size_t chunk_len = strlen(chunk);
+            if (line_len + chunk_len + 1 > line_buf_size)
             {
-                /* Fast path: entire line fits in chunk */
-                miga_exec_status_t status = exec_frame_string_core(frame, chunk, session);
-                if (session->line_num > 0)
-                    frame->source_line = session->line_num;
-
-                switch (status)
-                {
-                case MIGA_EXEC_STATUS_OK:
-                case MIGA_EXEC_STATUS_EMPTY:
-                    final_status = MIGA_EXEC_STATUS_OK;
-                    break;
-                case MIGA_EXEC_STATUS_INCOMPLETE:
-                    final_status = MIGA_EXEC_STATUS_INCOMPLETE;
-                    break;
-                case MIGA_EXEC_STATUS_ERROR:
-                    final_status = MIGA_EXEC_STATUS_ERROR;
-                    break;
-                }
-                return final_status;
+                line_buf_size = (line_len + chunk_len + 1) * 2;
+                line_buf = (char *)xrealloc(line_buf, line_buf_size);
             }
-            else
+            memcpy(line_buf + line_len, chunk, chunk_len);
+            line_len += chunk_len;
+            line_buf[line_len] = '\0';
+            if (chunk_len > 0 && chunk[chunk_len - 1] == '\n')
             {
-                /* Append final chunk to accumulated buffer */
-                if (line_len + chunk_len + 1 > line_buf_size)
-                {
-                    line_buf_size = (line_len + chunk_len + 1) * 2;
-                    line_buf = (char *)xrealloc(line_buf, line_buf_size);
-                }
-                memcpy(line_buf + line_len, chunk, chunk_len);
-                line_len += chunk_len;
-                line_buf[line_len] = '\0';
-                break; /* Line complete — fall through to process it */
+                have_line = true;
+                break;
             }
         }
-        else
-        {
-            /* No newline yet — accumulate */
-            if (line_buf == NULL)
-            {
-                line_buf_size = (chunk_len + 1) * 2;
-                line_buf = (char *)xmalloc(line_buf_size);
-                memcpy(line_buf, chunk, chunk_len);
-                line_len = chunk_len;
-                line_buf[line_len] = '\0';
-            }
-            else
-            {
-                if (line_len + chunk_len + 1 > line_buf_size)
-                {
-                    line_buf_size = (line_len + chunk_len + 1) * 2;
-                    line_buf = (char *)xrealloc(line_buf, line_buf_size);
-                }
-                memcpy(line_buf + line_len, chunk, chunk_len);
-                line_len += chunk_len;
-                line_buf[line_len] = '\0';
-            }
-        }
-    }
 
-    /* Process whatever we accumulated (may be empty on pure EOF) */
-    if (line_len > 0)
-    {
+        if (!have_line && line_len == 0)
+            break; /* end of file, nothing pending */
+
         miga_exec_status_t status = exec_frame_string_core(frame, line_buf, session);
+        line_len = 0;
         if (session->line_num > 0)
             frame->source_line = session->line_num;
 
@@ -3061,12 +2996,31 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
             final_status = MIGA_EXEC_STATUS_OK;
             break;
         case MIGA_EXEC_STATUS_INCOMPLETE:
+            /* The session is accumulating a multi-line construct. */
             final_status = MIGA_EXEC_STATUS_INCOMPLETE;
             break;
+        case MIGA_EXEC_STATUS_EXIT:
+            final_status = MIGA_EXEC_STATUS_EXIT;
+            break;
         case MIGA_EXEC_STATUS_ERROR:
-            final_status = MIGA_EXEC_STATUS_ERROR;
+        case MIGA_EXEC_STATUS_NOT_IMPL:
+        default:
+            final_status = status;
             break;
         }
+
+        if (final_status == MIGA_EXEC_STATUS_ERROR || final_status == MIGA_EXEC_STATUS_EXIT ||
+            final_status == MIGA_EXEC_STATUS_NOT_IMPL)
+            break;
+
+        /* 'exit', or 'return' from a sourced file: stop reading. */
+        if (frame->executor->exit_requested ||
+            frame->pending_control_flow == MIGA_FRAME_FLOW_TOP ||
+            frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN)
+            break;
+
+        if (!have_line)
+            break; /* processed a final line without a trailing newline */
     }
 
     if (line_buf)

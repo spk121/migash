@@ -381,6 +381,13 @@ void token_append_cstr_to_last_literal_part(token_t *token, const char *str);
 bool token_try_promote_to_reserved_word(token_t *tok, bool allow_in);
 
 /**
+ * Turn an ASSIGNMENT_WORD back into an ordinary WORD with the same text,
+ * e.g. for "name=value" after the command name (POSIX token rule 7b only
+ * recognises assignment words before the command name).
+ */
+void token_demote_assignment(token_t *tok);
+
+/**
  * Try to convert a TOKEN_WORD to TOKEN_BANG.
  * Returns true if conversion was done, false otherwise.
  */

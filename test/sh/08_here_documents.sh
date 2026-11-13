@@ -2,7 +2,7 @@
 # Test: Quoting and Here-Documents (POSIX 2.7.4)
 # Verify quoting correctly controls here-document behavior
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing quoting with here-documents...\n"
 

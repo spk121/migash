@@ -2,7 +2,7 @@
 # Test: Quoting and Word Splitting (Field Splitting)
 # Verify quoting correctly prevents word splitting (POSIX 2.6.5)
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then

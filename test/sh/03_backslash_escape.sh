@@ -3,7 +3,7 @@
 # "A backslash that is not quoted shall preserve the literal value of the
 # following character, with the exception of a newline."
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then
