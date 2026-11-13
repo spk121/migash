@@ -1,5 +1,43 @@
 # Pre-alpha review: issue list
 
+## Status (2026-11-13)
+
+Work on this list is on branch `claude/funny-albattani-7jvldd`. Items are
+marked **fixed** below where the branch addresses them; everything else is
+still open.
+
+- Build and tests (A): 1-6 **fixed**. All three build systems build; the 27
+  unit tests pass under CMake, autotools (`make check`) and the GNUmakefile;
+  the shell conformance scripts really run their assertions now.
+- Core execution (B): 7-13 **fixed**; 14 **fixed** (exit status, silent
+  errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
+  17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered;
+  `read`, `type`, `command`, `umask`, `hash`, `ulimit` still missing);
+  18 **fixed**; 19 **fixed**; 20-22 **open** (traps, SIGINT, interactive
+  prompts) except the banner, which is now interactive-only.
+- Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
+- Conformance (D): 27 **fixed**; 28-36 open.
+- Code health (E): 37 partly (all three build systems work and agree on
+  file lists and macros; still three of them); 38-43 open.
+
+The shell conformance suite (`test/sh`) now reports 439 passing and 61
+failing assertions. The failures cluster as follows and are the next
+targets:
+
+| File | Fails | What is missing |
+|------|-------|-----------------|
+| 08_here_documents | 16 | parameter/command/arithmetic expansion in unquoted here-document bodies, `<<-` tab stripping cases |
+| 17_positional_parameters | 17 | `${10}` and above, `shift n` edge cases, `$#` after `set --` with many words |
+| 10_word_splitting | 7 | field splitting of unquoted expansions and command substitution |
+| 16_alias_substitution | 6 | alias expansion in non-interactive mode (optional in POSIX, but the suite expects it) |
+| 12_reserved_words | 5 | `for`/`while`/`until` recognised after a preceding command on the same line |
+| 15_case_statement | 3 | empty branches, bracket-expression negation, field splitting of the case word |
+| 03_backslash_escape | 2 | backslash-newline continuation inside words |
+| 02, 04, 05, 11, 14 | 1 each | multiple-space preservation in `"$(...)"`, `"$@"` count, glob counts |
+
+---
+
+
 Review of `master` at commit `d7f0836` ("more faff"), POSIX configuration,
 Linux/gcc 13. Everything below was reproduced on a locally built binary; file
 and line references are to that commit.
