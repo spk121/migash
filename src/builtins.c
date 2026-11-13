@@ -47,6 +47,7 @@
 #include "miga/getopt.h"
 #include "miga/frame.h"
 #include "exec_types_internal.h"
+#include "exec_frame.h"
 #include "func_store.h"
 #include "job_store.h"
 #include "lib.h"
@@ -388,9 +389,17 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
         strlist_destroy(&new_params);
     }
 
+    /* Run the file in a DOT_SCRIPT frame: it shares everything with the
+     * caller but is the target for "return". */
+    miga_frame_t *dot_frame = exec_frame_push(frame, EXEC_FRAME_DOT_SCRIPT, frame->executor, NULL);
     miga_exec_status_t status = exec_execute_stream_once(frame->executor, fp);
     fclose(fp);
-    int exit_status = frame_get_last_exit_status(frame);
+    int exit_status = dot_frame->last_exit_status;
+    /* A "return" was consumed by this frame; "exit" keeps unwinding. */
+    if (dot_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP)
+        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
+    exec_frame_pop(&dot_frame);
+    frame->last_exit_status = exit_status;
 
     if (saved_params)
     {
