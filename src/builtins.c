@@ -1313,23 +1313,65 @@ int builtin_trap(miga_frame_t *frame, const strlist_t *args)
     return exit_status;
 }
 
-#ifdef MIGA_POSIX_API
 /* ============================================================================
- * read - read a line from standard input into variables (POSIX)
+ * read - read a line from standard input into variables
  *
  *   read [-r] var...
  *
- * One line is read a byte at a time with read(2), so that a loop such as
- * "while read line; do ...; done < file" or a pipeline feeding several reads
- * consumes exactly one line per call. Without -r a backslash escapes the next
- * character (which then cannot act as an IFS separator) and backslash-newline
- * continues the line. The line is split with IFS: leading IFS whitespace is
- * dropped, each variable but the last gets one field, the last gets the rest
- * with trailing IFS whitespace removed. An empty IFS means no splitting.
- * Status: 0, 1 at end of file (what was read is still assigned), 2 for a
- * usage error, an invalid name or a read-only variable.
+ * The logic is portable; only the byte source differs by configuration:
+ *   - POSIX: read(2) on descriptor 0, one byte at a time, so that a loop such
+ *     as "while read line; do ...; done < file" or a pipeline feeding several
+ *     reads consumes exactly one line per call;
+ *   - otherwise: getc() on the builtin's standard input stream (the stream a
+ *     redirection installed, or stdin). main() makes stdin unbuffered in
+ *     those configurations so that the shell does not swallow input that a
+ *     later command should see.
+ *
+ * Without -r a backslash escapes the next character (which then cannot act as
+ * an IFS separator) and backslash-newline continues the line. The line is
+ * split with IFS: leading IFS whitespace is dropped, each variable but the
+ * last gets one field, the last gets the rest with trailing IFS whitespace
+ * removed. An empty IFS means no splitting. Status: 0, 1 at end of file (what
+ * was read is still assigned), 2 for a usage error, an invalid name or a
+ * read-only variable.
  * ============================================================================
  */
+
+/* A byte source: returns the byte (0..255), READ_BYTE_EOF or READ_BYTE_ERROR. */
+#define READ_BYTE_EOF (-1)
+#define READ_BYTE_ERROR (-2)
+typedef int (*read_byte_fn)(void *ctx);
+
+#ifdef MIGA_POSIX_API
+static int read_byte_from_fd(void *ctx)
+{
+    int fd = *(int *)ctx;
+    unsigned char c;
+    ssize_t n;
+    do
+        n = read(fd, &c, 1);
+    while (n < 0 && errno == EINTR);
+    if (n == 1)
+        return c;
+    return n == 0 ? READ_BYTE_EOF : READ_BYTE_ERROR;
+}
+#else
+static int read_byte_from_stream(void *ctx)
+{
+    FILE *fp = ctx;
+    int c = getc(fp);
+    if (c != EOF)
+        return c;
+    if (ferror(fp))
+    {
+        clearerr(fp);
+        return READ_BYTE_ERROR;
+    }
+    clearerr(fp); /* a terminal may deliver more input after an end-of-file */
+    return READ_BYTE_EOF;
+}
+#endif
+
 static bool read_char_is_ifs(char c, const char *ifs)
 {
     return c != '\0' && strchr(ifs, c) != NULL;
@@ -1338,6 +1380,120 @@ static bool read_char_is_ifs(char c, const char *ifs)
 static bool read_char_is_ifs_white(char c, const char *ifs)
 {
     return (c == ' ' || c == '\t' || c == '\n') && read_char_is_ifs(c, ifs);
+}
+
+/* Collect one line from the byte source. literal gets '1' for each byte that a
+ * backslash protected, '0' otherwise. Returns 0, 1 at end of file, 2 on a read
+ * error (reported). */
+static int read_collect_line(read_byte_fn get_byte, void *ctx, bool raw, string_t *line,
+                             string_t *literal)
+{
+    for (;;)
+    {
+        int b = get_byte(ctx);
+        if (b == READ_BYTE_ERROR)
+        {
+            fprintf(stderr, "read: read error\n");
+            return 2;
+        }
+        if (b == READ_BYTE_EOF)
+            return 1;
+        if (!raw && b == '\\')
+        {
+            b = get_byte(ctx);
+            if (b < 0)
+                return 1; /* a trailing backslash at end of file is dropped */
+            if (b == '\n')
+                continue; /* line continuation */
+            string_append_char(line, (char)b);
+            string_append_char(literal, '1');
+            continue;
+        }
+        if (b == '\n')
+            return 0;
+        string_append_char(line, (char)b);
+        string_append_char(literal, '0');
+    }
+}
+
+/* Split the line with IFS and assign the fields to the variables. Returns 0,
+ * or 2 if a variable could not be assigned (reported). */
+static int read_assign_fields(miga_frame_t *frame, const strlist_t *args, int first_name,
+                              const string_t *line, const string_t *literal)
+{
+    string_t *ifs_var = frame_has_variable_cstr(frame, "IFS") ? frame_get_variable_cstr(frame, "IFS")
+                                                               : string_create_from_cstr(" \t\n");
+    const char *ifs = string_cstr(ifs_var);
+    const char *text = string_cstr(line);
+    const char *lit = string_cstr(literal);
+    int len = string_length(line);
+    int nvars = strlist_size(args) - first_name;
+    bool allexport = frame->opt_flags && frame->opt_flags->allexport;
+    int status = 0;
+
+    int pos = 0;
+    if (*ifs)
+        while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+            pos++;
+
+    for (int k = 0; k < nvars; k++)
+    {
+        const string_t *name = strlist_at(args, first_name + k);
+        string_t *value = string_create();
+
+        if (k == nvars - 1)
+        {
+            /* the rest of the line, minus trailing IFS whitespace */
+            int end = len;
+            if (*ifs)
+                while (end > pos && lit[end - 1] == '0' && read_char_is_ifs_white(text[end - 1], ifs))
+                    end--;
+            for (int j = pos; j < end; j++)
+                string_append_char(value, text[j]);
+            pos = len;
+        }
+        else if (*ifs)
+        {
+            /* one field, then the delimiter: an IFS whitespace run, optionally
+             * followed by one non-whitespace IFS character and more whitespace */
+            while (pos < len && !(lit[pos] == '0' && read_char_is_ifs(text[pos], ifs)))
+                string_append_char(value, text[pos++]);
+            if (pos < len)
+            {
+                if (read_char_is_ifs_white(text[pos], ifs))
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                if (pos < len && lit[pos] == '0' && read_char_is_ifs(text[pos], ifs) &&
+                    !read_char_is_ifs_white(text[pos], ifs))
+                {
+                    pos++;
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                }
+            }
+        }
+        else if (k == 0)
+        {
+            string_append_cstr(value, text);
+            pos = len;
+        }
+
+        var_store_error_t err = variable_store_add(frame->variables, name, value, allexport, false);
+        string_destroy(&value);
+        if (err == VAR_STORE_ERROR_READ_ONLY)
+        {
+            fprintf(stderr, "read: %s: is read only\n", string_cstr(name));
+            status = 2;
+        }
+        else if (err != VAR_STORE_ERROR_NONE)
+        {
+            fprintf(stderr, "read: %s: not a valid identifier\n", string_cstr(name));
+            status = 2;
+        }
+    }
+
+    string_destroy(&ifs_var);
+    return status;
 }
 
 int builtin_read(miga_frame_t *frame, const strlist_t *args)
@@ -1382,133 +1538,34 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args)
         return 2;
     }
 
-    /* Collect the line. literal[k] marks a byte that a backslash protected. */
+    fflush(stdout); /* a prompt written just before read must appear first */
+
+#ifdef MIGA_POSIX_API
+    int fd = STDIN_FILENO;
+    read_byte_fn get_byte = read_byte_from_fd;
+    void *ctx = &fd;
+#else
+    FILE *in = builtin_stdin(frame);
+    if (!in)
+    {
+        fprintf(stderr, "read: standard input is not available\n");
+        return 1;
+    }
+    read_byte_fn get_byte = read_byte_from_stream;
+    void *ctx = in;
+#endif
+
     string_t *line = string_create();
     string_t *literal = string_create(); /* '1' or '0' per byte of line */
-    bool eof = false;
-    int status = 0;
-
-    fflush(stdout); /* a prompt written just before read must appear first */
-    for (;;)
-    {
-        char c;
-        ssize_t n = read(STDIN_FILENO, &c, 1);
-        if (n < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            fprintf(stderr, "read: %s\n", strerror(errno));
-            status = 1;
-            eof = true;
-            break;
-        }
-        if (n == 0)
-        {
-            eof = true;
-            break;
-        }
-        if (!raw && c == '\\')
-        {
-            n = read(STDIN_FILENO, &c, 1);
-            while (n < 0 && errno == EINTR)
-                n = read(STDIN_FILENO, &c, 1);
-            if (n <= 0)
-            {
-                eof = true; /* a trailing backslash at end of file is dropped */
-                break;
-            }
-            if (c == '\n')
-                continue; /* line continuation */
-            string_append_char(line, c);
-            string_append_char(literal, '1');
-            continue;
-        }
-        if (c == '\n')
-            break;
-        string_append_char(line, c);
-        string_append_char(literal, '0');
-    }
-
-    /* IFS: unset means space, tab, newline; set but empty means no splitting */
-    string_t *ifs_var = frame_has_variable_cstr(frame, "IFS") ? frame_get_variable_cstr(frame, "IFS")
-                                                               : string_create_from_cstr(" \t\n");
-    const char *ifs = string_cstr(ifs_var);
-    const char *text = string_cstr(line);
-    const char *lit = string_cstr(literal);
-    int len = string_length(line);
-    int nvars = argc - first_name;
-    bool allexport = frame->opt_flags && frame->opt_flags->allexport;
-
-    int pos = 0;
-    if (*ifs)
-        while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
-            pos++;
-
-    for (int k = 0; k < nvars; k++)
-    {
-        const string_t *name = strlist_at(args, first_name + k);
-        string_t *value = string_create();
-
-        if (k == nvars - 1)
-        {
-            /* the rest of the line, minus trailing IFS whitespace */
-            int end = len;
-            if (*ifs)
-                while (end > pos && lit[end - 1] == '0' && read_char_is_ifs_white(text[end - 1], ifs))
-                    end--;
-            for (int j = pos; j < end; j++)
-                string_append_char(value, text[j]);
-            pos = len;
-        }
-        else if (*ifs)
-        {
-            /* one field, then the delimiter: an IFS whitespace run, optionally
-             * followed by one non-whitespace IFS character and more whitespace */
-            while (pos < len && !(lit[pos] == '0' && read_char_is_ifs(text[pos], ifs)))
-                string_append_char(value, text[pos++]);
-            if (pos < len)
-            {
-                bool white = read_char_is_ifs_white(text[pos], ifs);
-                if (white)
-                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
-                        pos++;
-                if (pos < len && lit[pos] == '0' && read_char_is_ifs(text[pos], ifs) &&
-                    !read_char_is_ifs_white(text[pos], ifs))
-                {
-                    pos++;
-                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
-                        pos++;
-                }
-            }
-        }
-        else if (k == 0)
-        {
-            string_append_cstr(value, text);
-            pos = len;
-        }
-
-        var_store_error_t err = variable_store_add(frame->variables, name, value, allexport, false);
-        string_destroy(&value);
-        if (err == VAR_STORE_ERROR_READ_ONLY)
-        {
-            fprintf(stderr, "read: %s: is read only\n", string_cstr(name));
-            status = 2;
-        }
-        else if (err != VAR_STORE_ERROR_NONE)
-        {
-            fprintf(stderr, "read: %s: not a valid identifier\n", string_cstr(name));
-            status = 2;
-        }
-    }
-
-    string_destroy(&ifs_var);
+    int read_status = read_collect_line(get_byte, ctx, raw, line, literal);
+    int assign_status = read_assign_fields(frame, args, first_name, line, literal);
     string_destroy(&line);
     string_destroy(&literal);
-    if (status == 0 && eof)
-        status = 1;
-    return status;
+
+    if (assign_status != 0)
+        return assign_status;
+    return read_status; /* 0, or 1 at end of file */
 }
-#endif /* MIGA_POSIX_API */
 
 /* ============================================================================
  * times - Print accumulated user and system times
@@ -3795,6 +3852,7 @@ static int wait_for_all(miga_frame_t *frame)
     if (!frame || !frame->executor)
         return 0;
     job_store_t *jobs = frame->executor->jobs;
+    (void)jobs; /* only the POSIX implementation records job states */
 
     int last_exit_status = 0;
 
@@ -4748,6 +4806,7 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
+    FILE *out = builtin_stdout(frame); /* honours redirections in every configuration */
 
 
     int flag_n = 0; /* suppress newline */
@@ -4794,7 +4853,7 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
     {
         if (i > state.optind)
         {
-            putchar(' ');
+            fputc(' ', out);
         }
 
         const char *arg = string_cstr(strlist_at(args, i));
@@ -4810,33 +4869,33 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
                     switch (*p)
                     {
                     case 'a':
-                        putchar('\a');
+                        fputc('\a', out);
                         break;
                     case 'b':
-                        putchar('\b');
+                        fputc('\b', out);
                         break;
                     case 'c':
                         return 0; /* Stop printing */
                     case 'e':
-                        putchar('\033');
+                        fputc('\033', out);
                         break; /* ESC */
                     case 'f':
-                        putchar('\f');
+                        fputc('\f', out);
                         break;
                     case 'n':
-                        putchar('\n');
+                        fputc('\n', out);
                         break;
                     case 'r':
-                        putchar('\r');
+                        fputc('\r', out);
                         break;
                     case 't':
-                        putchar('\t');
+                        fputc('\t', out);
                         break;
                     case 'v':
-                        putchar('\v');
+                        fputc('\v', out);
                         break;
                     case '\\':
-                        putchar('\\');
+                        fputc('\\', out);
                         break;
                     case '0': /* Octal */
                     {
@@ -4846,32 +4905,32 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
                             p++;
                             val = val * 8 + (*p - '0');
                         }
-                        putchar(val);
+                        fputc(val, out);
                         break;
                     }
                     default:
                         /* Unknown escape - print literally */
-                        putchar('\\');
-                        putchar(*p);
+                        fputc('\\', out);
+                        fputc(*p, out);
                         break;
                     }
                 }
                 else
                 {
-                    putchar(*p);
+                    fputc(*p, out);
                 }
             }
         }
         else
         {
             /* No escape interpretation - print as-is */
-            fputs(arg, stdout);
+            fputs(arg, out);
         }
     }
 
     if (!flag_n)
     {
-        putchar('\n');
+        fputc('\n', out);
     }
 
     fflush(stdout);
@@ -5281,6 +5340,7 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
+    FILE *out = builtin_stdout(frame); /* honours redirections in every configuration */
 
     int argc = strlist_size(args);
 
@@ -5341,34 +5401,34 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
                 switch (*f)
                 {
                 case 'a':
-                    putchar('\a');
+                    fputc('\a', out);
                     break;
                 case 'b':
-                    putchar('\b');
+                    fputc('\b', out);
                     break;
                 case 'c':
                     stop_output = 1;
                     break;
                 case 'e':
-                    putchar('\033');
+                    fputc('\033', out);
                     break;
                 case 'f':
-                    putchar('\f');
+                    fputc('\f', out);
                     break;
                 case 'n':
-                    putchar('\n');
+                    fputc('\n', out);
                     break;
                 case 'r':
-                    putchar('\r');
+                    fputc('\r', out);
                     break;
                 case 't':
-                    putchar('\t');
+                    fputc('\t', out);
                     break;
                 case 'v':
-                    putchar('\v');
+                    fputc('\v', out);
                     break;
                 case '\\':
-                    putchar('\\');
+                    fputc('\\', out);
                     break;
                 case '0': /* Octal */
                 {
@@ -5382,18 +5442,18 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
                         count++;
                     }
                     f--;
-                    putchar(val);
+                    fputc(val, out);
                     break;
                 }
                 default:
-                    putchar(*f);
+                    fputc(*f, out);
                     break;
                 }
                 f++;
             }
             else
             {
-                putchar(*f);
+                fputc(*f, out);
                 f++;
             }
         }

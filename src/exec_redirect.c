@@ -192,6 +192,12 @@ typedef struct
 {
     int fd;     /* the redirected descriptor */
     int backup; /* copy of its previous open file, or -1 when it was closed */
+    /* Stream slots (configurations without descriptors): the frame's
+     * stdin/stdout/stderr slot that was changed, its previous value, and
+     * whether the stream now in the slot was opened by this redirection. */
+    FILE **slot;
+    FILE *previous;
+    bool owned;
 } redir_saved_fd_t;
 
 struct redir_save_set_t
@@ -226,17 +232,38 @@ static void save_set_destroy(struct redir_save_set_t *set)
     xfree(set);
 }
 
-static void save_set_add(struct redir_save_set_t *set, int fd, int backup)
+static redir_saved_fd_t *save_set_new_item(struct redir_save_set_t *set)
 {
     if (set->count == set->capacity)
     {
         set->capacity = set->capacity ? set->capacity * 2 : 4;
         set->items = xrealloc(set->items, set->capacity * sizeof(*set->items));
     }
-    set->items[set->count].fd = fd;
-    set->items[set->count].backup = backup;
-    set->count++;
+    redir_saved_fd_t *item = &set->items[set->count++];
+    item->fd = -1;
+    item->backup = -1;
+    item->slot = NULL;
+    item->previous = NULL;
+    item->owned = false;
+    return item;
 }
+
+static void save_set_add(struct redir_save_set_t *set, int fd, int backup)
+{
+    redir_saved_fd_t *item = save_set_new_item(set);
+    item->fd = fd;
+    item->backup = backup;
+}
+
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
+static void save_set_add_slot(struct redir_save_set_t *set, FILE **slot, bool owned)
+{
+    redir_saved_fd_t *item = save_set_new_item(set);
+    item->slot = slot;
+    item->previous = *slot;
+    item->owned = owned;
+}
+#endif
 
 #ifdef MIGA_POSIX_API
 miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs)
@@ -1346,10 +1373,13 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
     Expects_not_null(frame);
     Expects_not_null(redirs);
 
+    miga_exec_t *executor = frame->executor;
+    /* Pushed even when empty: every apply is matched by one restore/commit.
+     * Each change of a stream slot is recorded so that the matching restore
+     * undoes exactly this application (an enclosing redirection stays). */
+    struct redir_save_set_t *saves = save_set_push(executor);
     if (redirs->count == 0)
         return MIGA_EXEC_STATUS_OK;
-
-    miga_exec_t *executor = frame->executor;
 
     for (size_t i = 0; i < redirs->count; i++)
     {
@@ -1436,10 +1466,7 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
                 goto error_restore;
             }
 
-            /* Close any previous custom stream we allocated for this fd */
-            if (*target_ptr)
-                fclose(*target_ptr);
-
+            save_set_add_slot(saves, target_ptr, true);
             *target_ptr = new_stream;
             string_destroy(&fname_str);
             break;
@@ -1473,9 +1500,7 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
             }
             rewind(tmp);
 
-            if (*target_ptr)
-                fclose(*target_ptr);
-
+            save_set_add_slot(saves, target_ptr, true);
             *target_ptr = tmp;
             string_destroy(&content_str);
             break;
@@ -1522,12 +1547,10 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
 
             if (src.fd == -1)
             {
-                /* n<&- or n>&- → close */
-                if (*target_ptr)
-                {
-                    fclose(*target_ptr);
-                    *target_ptr = NULL;
-                }
+                /* n<&- or n>&- → the slot becomes empty (the builtin's stream
+                 * accessor then returns the real standard stream) */
+                save_set_add_slot(saves, target_ptr, false);
+                *target_ptr = NULL;
                 break;
             }
 
@@ -1542,8 +1565,7 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
 
             if (src_stream)
             {
-                if (*target_ptr && *target_ptr != src_stream)
-                    fclose(*target_ptr);
+                save_set_add_slot(saves, target_ptr, false);
                 *target_ptr = src_stream; /* share (close_after_use ignored - no real fd) */
             }
             else
@@ -1554,11 +1576,8 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
         }
 
         case REDIR_TARGET_CLOSE: {
-            if (*target_ptr)
-            {
-                fclose(*target_ptr);
-                *target_ptr = NULL;
-            }
+            save_set_add_slot(saves, target_ptr, false);
+            *target_ptr = NULL;
             break;
         }
 
@@ -1581,26 +1600,27 @@ error_restore:
 
 void exec_restore_redirections_iso_c(miga_frame_t *frame)
 {
-    // In ISO C mode, since we don't have a real redirection mechanism, there's nothing to restore.
-    // But for those internal functions that do use the miga_frame_t's stdin_fp,
-    // stdout_fp, and stderr_fp fields, we did provide a way to set special stdin/out/err FILE *
-    // values. This function just closes them.
-    if (frame->stdin_fp && *frame->stdin_fp)
+    if (!frame || !frame->executor)
+        return;
+    struct redir_save_set_t *saves = save_set_pop(frame->executor);
+    if (!saves)
+        return;
+
+    /* Undo in reverse order: close the streams this application opened and
+     * put the previous stream (an enclosing redirection's, or NULL) back. */
+    for (size_t k = saves->count; k-- > 0;)
     {
-        fclose(*frame->stdin_fp);
-        *frame->stdin_fp = NULL;
+        redir_saved_fd_t *item = &saves->items[k];
+        if (!item->slot)
+            continue;
+        FILE *current = *item->slot;
+        if (item->owned && current && current != item->previous)
+            fclose(current);
+        else if (current)
+            fflush(current);
+        *item->slot = item->previous;
     }
-    if (frame->stdout_fp && *frame->stdout_fp)
-    {
-        fclose(*frame->stdout_fp);
-        *frame->stdout_fp = NULL;
-    }
-    if (frame->stderr_fp && *frame->stderr_fp)
-    {
-        fclose(*frame->stderr_fp);
-        *frame->stderr_fp = NULL;
-    }
-    (void)frame;
+    save_set_destroy(saves);
 }
 #endif /* !MIGA_POSIX_API && !MIGA_UCRT_API */
 
@@ -1934,6 +1954,7 @@ exec_redirections_t *exec_redirections_create_from_ast_nodes(miga_frame_t *frame
         const token_t *ast_target = ast_redir->data.redirection.target;
         const string_t *ast_buffer = ast_redir->data.redirection.buffer;
         const string_t *ast_fd_string = ast_redir->data.redirection.fd_string;
+        (void)ast_fd_string; /* used by the descriptor-based configurations only */
 
         runtime_redir->type = ast_redir_type;
         runtime_redir->explicit_fd = ast_io_number;

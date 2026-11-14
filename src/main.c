@@ -190,6 +190,13 @@ int main(int argc, char **argv)
     // the logger?
     // log_init();
     setlocale(LC_ALL, "");
+#ifndef MIGA_POSIX_API
+    /* Without file descriptors the shell reads its input through stdio. An
+     * unbuffered stdin keeps the shell (and the read builtin) from consuming
+     * input beyond the current line, so that a later command still sees it.
+     * ISO C requires setvbuf() before any other operation on the stream. */
+    setvbuf(stdin, NULL, _IONBF, 0);
+#endif
 
     /* Convert argv to strlist_t for the new getopt API */
     strlist_t *argv_list = strlist_create_from_cstr_array((const char **)argv, argc);

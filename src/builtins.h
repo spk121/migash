@@ -57,10 +57,8 @@ int builtin_set(miga_frame_t *frame, const strlist_t *args);
 
 int builtin_unset(miga_frame_t *frame, const strlist_t *args);
 
-#ifdef MIGA_POSIX_API
 /* read [-r] var... : one line from standard input into variables */
 int builtin_read(miga_frame_t *frame, const strlist_t *args);
-#endif
 
 /* ============================================================================
  * Regular (non-special) built-ins

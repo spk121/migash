@@ -75,6 +75,20 @@ value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
 are not reset in command-substitution or pipeline children (they fork
 without a frame).
 
+read, all configurations (2026-11-14): the builtin is a portable core
+(line collection, backslash handling, IFS splitting, assignment) over a
+byte source: read(2) on descriptor 0 for POSIX, getc() on the builtin's
+standard-input stream otherwise, with stdin made unbuffered at startup in
+the non-POSIX configurations so that the shell never consumes input a
+later command should see. Exercising it in ISO mode found two ISO-only
+bugs, both fixed: the ISO redirection restore closed every redirected
+stream of the frame after any command (so the second iteration of
+`while read line; do ...; done < file` read the terminal), and `echo` and
+`printf` wrote to stdout directly instead of the frame's redirected
+stream. ISO redirections now use the same save-set mechanism as the
+POSIX ones. Still ISO-only limits: `<&-` cannot close a descriptor, and
+externals run through system() never see shell redirections.
+
 read (2026-11-14): implemented for the POSIX configuration;
 `test/sh/20_read_builtin.sh` (37 assertions checked against dash and
 bash) passes. It reads a byte at a time with read(2) so that a loop or a
