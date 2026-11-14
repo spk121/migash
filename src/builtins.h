@@ -65,6 +65,13 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args);
 int builtin_command(miga_frame_t *frame, const strlist_t *args);
 int builtin_type(miga_frame_t *frame, const strlist_t *args);
 
+/* hash [-r] [utility...] : no table to keep; operands are still looked up */
+int builtin_hash(miga_frame_t *frame, const strlist_t *args);
+#ifdef MIGA_POSIX_API
+/* ulimit [-f] [blocks] : the file size limit */
+int builtin_ulimit(miga_frame_t *frame, const strlist_t *args);
+#endif
+
 #ifdef MIGA_POSIX_API
 /* umask [-S] [mask] : get or set the file mode creation mask */
 int builtin_umask(miga_frame_t *frame, const strlist_t *args);

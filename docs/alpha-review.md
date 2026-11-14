@@ -11,9 +11,9 @@ still open.
   the shell conformance scripts really run their assertions now.
 - Core execution (B): 7-13 **fixed**; 14 **fixed** (exit status, silent
   errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
-  17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered,
-  `read`, `command` and `type` implemented in every configuration,
-  `umask` for POSIX; `hash` and `ulimit` still missing);
+  17 **fixed** (`test`/`[` implemented, `cd`/`pwd` registered, `read`,
+  `command`, `type` and `hash` implemented in every configuration,
+  `umask` and `ulimit` for POSIX);
   18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed** for
   non-interactive shells (trapped SIGINT runs the action, untrapped kills
   the shell with 130; the interactive-shell SIGINT behaviour is still
@@ -74,6 +74,18 @@ an assignment-only command (`st=$?`) reset `$?` before expanding its
 value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
 are not reset in command-substitution or pipeline children (they fork
 without a frame).
+
+hash and ulimit (2026-11-14): `test/sh/23_hash_ulimit.sh` (16
+assertions checked against dash and bash) passes. The shell searches PATH
+for every command and keeps no table of remembered locations, so `hash`
+is a no-op that still does what POSIX requires of it: operands are looked
+up and a utility that is not found is a diagnosed error (status 1),
+built-ins and functions are accepted, `-r` has nothing to forget, and
+unknown options are rejected. In an interactive shell a bare `hash` says
+on stderr that nothing is remembered. `ulimit` implements what POSIX
+defines, `-f` (the default) to report or set the file size limit in
+512-byte blocks, and is POSIX-only. With this the builtin list of item 17
+is complete.
 
 command and type (2026-11-14): `test/sh/22_command_type.sh` (26
 assertions checked against dash and bash) passes. `command name args` is

@@ -18,6 +18,7 @@
 
 #ifdef MIGA_POSIX_API
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -1976,6 +1977,174 @@ int builtin_type(miga_frame_t *frame, const strlist_t *args)
             status = 127;
     return status;
 }
+
+/* ============================================================================
+ * hash - remembered utility locations (XCU hash)
+ *
+ *   hash [utility...]
+ *   hash -r
+ *
+ * This shell searches PATH on every invocation and keeps no table of
+ * remembered locations, so the table hash reports is always empty and -r has
+ * nothing to forget. Operands are still looked up, as POSIX requires: a
+ * utility that is not found is a diagnosed error (status 1); built-ins and
+ * functions are accepted silently (POSIX says they are not reported). In an
+ * interactive shell a bare "hash" explains why nothing is listed.
+ * ============================================================================
+ */
+int builtin_hash(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    bool forget = false;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'r')
+                forget = true;
+            else
+            {
+                fprintf(stderr, "hash: -%c: invalid option\n", *p);
+                fprintf(stderr, "hash: usage: hash [-r] [utility...]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+
+    if (first >= argc)
+    {
+        /* Nothing is remembered, so there is nothing to list or to forget */
+        if (!forget && frame->executor && frame->executor->is_interactive)
+            fprintf(stderr, "hash: this shell does not remember utility locations; "
+                            "PATH is searched for every command\n");
+        return 0;
+    }
+
+    int status = 0;
+    for (int i = first; i < argc; i++)
+    {
+        const char *name = string_cstr(strlist_at(args, i));
+        string_t *detail = NULL;
+        command_kind_t kind = command_classify(frame, name, false, &detail);
+        if (detail)
+            string_destroy(&detail);
+        if (kind == CMD_KIND_NONE)
+        {
+            fprintf(stderr, "hash: %s: not found\n", name);
+            status = 1;
+        }
+    }
+    return status;
+}
+
+#ifdef MIGA_POSIX_API
+/* ============================================================================
+ * ulimit - file size limit (XCU ulimit)
+ *
+ *   ulimit [-f] [blocks]
+ *
+ * POSIX defines only -f, the maximum size of files the shell and its children
+ * may write, in 512-byte blocks; it is the default. Without a value the limit
+ * is printed ("unlimited" or the number of blocks); with a value (a number or
+ * "unlimited") both the soft and the hard limit are set. Status 1 for a
+ * value the system refuses, 2 for a usage error.
+ * ============================================================================
+ */
+int builtin_ulimit(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p != 'f')
+            {
+                fprintf(stderr, "ulimit: -%c: invalid option\n", *p);
+                fprintf(stderr, "ulimit: usage: ulimit [-f] [blocks]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+    if (first + 1 < argc)
+    {
+        fprintf(stderr, "ulimit: too many arguments\n");
+        return 2;
+    }
+
+    struct rlimit rl;
+    if (first >= argc)
+    {
+        if (getrlimit(RLIMIT_FSIZE, &rl) != 0)
+        {
+            fprintf(stderr, "ulimit: %s\n", strerror(errno));
+            return 1;
+        }
+        if (rl.rlim_cur == RLIM_INFINITY)
+            fputs("unlimited\n", out);
+        else
+            fprintf(out, "%llu\n", (unsigned long long)(rl.rlim_cur / 512));
+        return 0;
+    }
+
+    const char *value = string_cstr(strlist_at(args, first));
+    rlim_t limit;
+    if (strcmp(value, "unlimited") == 0)
+        limit = RLIM_INFINITY;
+    else
+    {
+        char *end = NULL;
+        errno = 0;
+        unsigned long long blocks = strtoull(value, &end, 10);
+        if (*value == '\0' || *end != '\0' || errno != 0 || *value == '-')
+        {
+            fprintf(stderr, "ulimit: %s: invalid number\n", value);
+            return 2;
+        }
+        limit = (rlim_t)blocks * 512;
+    }
+    rl.rlim_cur = limit;
+    rl.rlim_max = limit;
+    if (setrlimit(RLIMIT_FSIZE, &rl) != 0)
+    {
+        fprintf(stderr, "ulimit: %s\n", strerror(errno));
+        return 1;
+    }
+    return 0;
+}
+#endif /* MIGA_POSIX_API */
 
 /* ============================================================================
  * times - Print accumulated user and system times

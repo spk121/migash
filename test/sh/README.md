@@ -49,6 +49,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `20_read_builtin.sh` | the `read` utility: IFS splitting, `-r`, line continuation, status at end of file, one line per call |
 | `21_umask.sh` | the `umask` utility: octal and symbolic (`-S`) output, octal and symbolic operands, effect on created files (POSIX configuration) |
 | `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
+| `23_hash_ulimit.sh` | `hash` (statuses; the shell keeps no table) and `ulimit -f` (POSIX configuration) |
 
 ## Expected failures
 
