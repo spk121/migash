@@ -498,8 +498,9 @@ foreach(test_src ${MIGASH_UNIT_TEST_SOURCES})
 endforeach()
 
 # End-to-end shell tests: run the POSIX conformance scripts under the built shell.
-# These need a POSIX sh to drive the runner, so they are registered on UNIX only.
-if(UNIX)
+# These need a POSIX sh to drive the runner and a shell that can fork, so they
+# are registered for the POSIX configuration on UNIX only.
+if(UNIX AND API_TYPE STREQUAL "POSIX")
     add_test(NAME shell_tests
         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh

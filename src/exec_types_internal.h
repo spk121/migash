@@ -370,10 +370,16 @@ struct miga_frame_t
      * -------------------------------------------------------------------------
      */
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
-    /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
+    /* For ISO C redirection support in builtins/functions, we need to track
+     * FILE pointers. Each pointer refers to a slot: the frame's own slot
+     * below (when the frame has its own redirected streams) or the parent's
+     * slot (when the policy says to inherit the parent's redirections). */
     FILE **stdin_fp;
     FILE **stdout_fp;
     FILE **stderr_fp;
+    FILE *redirected_stdin;  /* NULL: not redirected (use stdin) */
+    FILE *redirected_stdout; /* NULL: not redirected (use stdout) */
+    FILE *redirected_stderr; /* NULL: not redirected (use stderr) */
 #endif
     int loop_depth;       /* 0 if not in loop, else depth of nested loops */
     int last_exit_status; /* $? */

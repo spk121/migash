@@ -83,6 +83,9 @@ case "$configuration" in
 esac
 
 AC_SUBST([CONFIG_DEFINE])
+dnl The shell conformance suite needs a shell that can fork and redirect
+dnl descriptors, i.e. the POSIX configuration.
+AM_CONDITIONAL([POSIX_API], [test "x$configuration" = xposix])
 
 dnl ------------------------------------------------------------------------------
 dnl - platform feature checks
