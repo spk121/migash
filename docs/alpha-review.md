@@ -20,18 +20,19 @@ still open.
 - Code health (E): 37 partly (all three build systems work and agree on
   file lists and macros; still three of them); 38-43 open.
 
-The shell conformance suite (`test/sh`) now reports 456 passing and 44
-failing assertions. Here-documents (08) pass completely as of 2026-11-14.
-The remaining failures cluster as follows and are the next targets:
+The shell conformance suite (`test/sh`) now reports 484 passing and 20
+failing assertions. Here-documents (08), positional parameters (17) and
+reserved words (12) pass completely as of 2026-11-14. The remaining
+failures cluster as follows and are the next targets:
 
 | File | Fails | What is missing |
 |------|-------|-----------------|
-| 17_positional_parameters | 17 | `${10}` and above, `shift n` edge cases, `$#` after `set --` with many words |
-| 10_word_splitting | 7 | field splitting of unquoted expansions and command substitution |
 | 16_alias_substitution | 6 | alias expansion in non-interactive mode (optional in POSIX, but the suite expects it) |
-| 12_reserved_words | 5 | `for`/`while`/`until` recognised after a preceding command on the same line |
+| 10_word_splitting | 5 | field splitting of unquoted expansions and command substitution |
 | 15_case_statement | 3 | empty branches, bracket-expression negation, field splitting of the case word |
-| 02, 03, 04, 05, 11, 14 | 1 each | multiple-space preservation in `"$(...)"`, backslash-newline in words, `"$@"` count, glob counts |
+| 02, 03, 04, 05, 11, 14 | 1 each | multiple-space preservation in `"$(...)"`, backslash-newline in words, glob counts |
+
+Item 29 (`${10}`) is **fixed**.
 
 ---
 

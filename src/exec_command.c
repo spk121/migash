@@ -336,6 +336,10 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     bool has_redirs = (redirs && ast_node_list_size(redirs) > 0);
     if (!has_words && !has_redirs)
     {
+        /* With no command name the exit status is that of the last command
+         * substitution performed, or 0. record_subst_status() stores it on
+         * the frame while the values are expanded. */
+        frame->last_exit_status = 0;
         if (assign_tokens)
         {
             for (int i = 0; i < token_list_size(assign_tokens); i++)
@@ -360,8 +364,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
         }
 
-        frame->last_exit_status = 0;
-        return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK};
+        return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK,
+                                             .has_exit_status = true,
+                                             .exit_status = frame->last_exit_status};
     }
 
     int cmd_exit_status = 0;

@@ -1797,9 +1797,8 @@ int builtin_unset(miga_frame_t *frame, const strlist_t *args)
             /* Unset variable using frame API */
             if (!frame_has_variable(frame, strlist_at(args, i)))
             {
-                fprintf(stderr, "unset: variable '%s' not found\n",
-                        string_cstr(strlist_at(args, i)));
-                err_count++;
+                /* POSIX: unsetting a variable that is not set is not an error */
+                continue;
             }
             else if (frame_variable_is_readonly(frame, strlist_at(args, i)))
             {

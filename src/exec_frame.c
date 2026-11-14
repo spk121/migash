@@ -2834,12 +2834,16 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
     log_debug("exec_frame_string_core: Tokenizer produced %d processed tokens at line %d",
               token_list_size(processed_tokens), session->line_num);
 
-    /* Debug: print all tokens */
-    for (int i = 0; i < token_list_size(processed_tokens); i++)
+    /* Debug: print all tokens (only build the strings when they will show) */
+    if (log_get_level() <= LOG_LEVEL_DEBUG)
     {
-        const token_t *t = token_list_get(processed_tokens, i);
-        log_debug("  Token %d: type=%d, text='%s'", i, token_get_type(t),
-                  string_cstr(token_to_string(t)));
+        for (int i = 0; i < token_list_size(processed_tokens); i++)
+        {
+            const token_t *t = token_list_get(processed_tokens, i);
+            string_t *ts = token_to_string(t);
+            log_debug("  Token %d: type=%d, text='%s'", i, token_get_type(t), string_cstr(ts));
+            string_destroy(&ts);
+        }
     }
 
     parser_t *parser = parser_create_with_tokens_move(&processed_tokens);

@@ -331,11 +331,45 @@ static bool is_parameter_set(miga_frame_t *frame, const string_t *name)
  * Despite looking like an accessor, this function may have side effects
  * (e.g., modifying the frame's last_exit_status or assigning variables for := modifier).
  */
+static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *parts);
+
+/**
+ * Expand the word of ${var-word}, ${var:=word}, ${var:+word}, ${var:?word}.
+ * The lexer keeps it as raw text; it undergoes tilde, parameter, command and
+ * arithmetic expansion (and quote removal) like any word, with no field
+ * splitting. Inside a double-quoted expansion the word behaves as if it were
+ * double-quoted itself.
+ */
+static string_t *expand_text_as_dquoted(miga_frame_t *frame, const string_t *body);
+
+static string_t *expand_modifier_word(miga_frame_t *frame, const part_t *part)
+{
+    if (!part->word)
+        return string_create();
+    if (part_was_double_quoted(part))
+        return expand_text_as_dquoted(frame, part->word);
+
+    token_list_t *tokens = token_list_create();
+    lex_status_t st = lex_cstr_to_tokens(string_cstr(part->word), tokens);
+    string_t *result = NULL;
+    if (st == LEX_OK && token_list_size(tokens) >= 1 &&
+        token_get_type(token_list_get(tokens, 0)) == TOKEN_WORD)
+    {
+        result = expand_parts_to_string(frame, token_get_parts_const(token_list_get(tokens, 0)));
+    }
+    token_list_destroy(&tokens);
+    if (!result)
+        result = string_create_from(part->word);
+    return result;
+}
+
 static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_t *part)
 {
     string_t *v = get_parameter_value(frame, part->param_name);
     bool is_set = (v != NULL);
     bool is_null = (v == NULL || string_length(v) == 0);
+    /* ${var:-word} tests "unset or null"; ${var-word} tests "unset" only */
+    bool missing = part->has_colon ? is_null : !is_set;
 
     switch (part->param_kind)
     {
@@ -358,39 +392,38 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
         return string_create_from_cstr("0");
 
     case PARAM_USE_DEFAULT:
-        /* ${var:-word} - use default if unset or null */
-        if (is_null)
+        /* ${var:-word} / ${var-word} - substitute the expanded word */
+        if (missing)
         {
-            /* Expand the word */
-            if (part->word)
-            {
-                return string_create_from(part->word);
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            return expand_modifier_word(frame, part);
         }
         return v;
 
     case PARAM_ASSIGN_DEFAULT:
-        /* ${var:=word} - assign default if unset or null */
-        if (is_null)
+        /* ${var:=word} / ${var=word} - assign the expanded word */
+        if (missing)
         {
-            /* Expand and assign the word */
-            if (part->word)
-            {
-                string_t *value = string_create_from(part->word);
-                set_parameter_value(frame, part->param_name, value);
-                return value;
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            string_t *value = expand_modifier_word(frame, part);
+            set_parameter_value(frame, part->param_name, value);
+            return value;
         }
         return v;
 
     case PARAM_ERROR_IF_UNSET:
-        /* ${var:?word} - error if unset or null */
-        if (is_null)
+        /* ${var:?word} / ${var?word} - error with the expanded word */
+        if (missing)
         {
-            const char *msg = part->word ? string_cstr(part->word) : "parameter null or not set";
-            log_error("Parameter expansion error: %s: %s", string_cstr(part->param_name), msg);
+            if (v)
+                string_destroy(&v);
+            string_t *msg = part->word ? expand_modifier_word(frame, part)
+                                       : string_create_from_cstr("parameter null or not set");
+            log_error("Parameter expansion error: %s: %s", string_cstr(part->param_name),
+                      string_cstr(msg));
+            string_destroy(&msg);
             if (frame)
             {
                 frame->last_exit_status = 1;
@@ -400,16 +433,15 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
         return v;
 
     case PARAM_USE_ALTERNATE:
-        /* ${var:+word} - use alternate if set and not null */
-        if (!is_null)
+        /* ${var:+word} / ${var+word} - substitute the word when present */
+        if (!missing)
         {
-            /* Expand the word */
-            if (part->word)
-            {
-                return string_create_from(part->word);
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            return expand_modifier_word(frame, part);
         }
+        if (v)
+            string_destroy(&v);
         return string_create();
 
     case PARAM_REMOVE_SMALL_SUFFIX:
@@ -560,7 +592,9 @@ string_t *expand_special_param(const miga_frame_t *frame, const string_t *name)
 
         case '@':
         case '*':
-            /* All positional parameters */
+            /* All positional parameters joined with spaces (the unquoted
+             * form, later field-split). Double-quoted "$@" and "$*" are
+             * handled by expand_parts_to_fields(). */
             if (frame && frame->positional_params)
             {
                 return positional_params_get_all_joined(frame->positional_params, ' ');
@@ -1083,6 +1117,100 @@ static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *
 }
 
 /**
+ * Expand the parts of a word into fields. Every part contributes to the
+ * current field, except a double-quoted "$@", which contributes its first
+ * positional parameter to the current field, each middle one as a field of
+ * its own, and starts the next field with the last one (POSIX 2.5.2). A word
+ * made only of "$@" with no positional parameters yields no field.
+ */
+static strlist_t *expand_parts_to_fields(miga_frame_t *frame, const part_list_t *parts,
+                                         bool *has_quoted_at)
+{
+    strlist_t *fields = strlist_create();
+    string_t *current = string_create();
+    bool emitted_anything = false;
+
+    for (int i = 0; i < part_list_size(parts); i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+
+        bool quoted_special = part->type == PART_PARAMETER && part->param_kind == PARAM_PLAIN &&
+                              part_was_double_quoted(part) && part->param_name &&
+                              string_length(part->param_name) == 1;
+        bool quoted_at = quoted_special && string_cstr(part->param_name)[0] == '@';
+        bool quoted_star = quoted_special && string_cstr(part->param_name)[0] == '*';
+        if (quoted_star)
+        {
+            /* "$*": one field, parameters joined with the first character of
+             * IFS (a space when IFS is unset, nothing when it is empty). */
+            emitted_anything = true;
+            strlist_t *all = frame && frame->positional_params
+                                 ? positional_params_get_all(frame->positional_params)
+                                 : strlist_create();
+            string_t *sep = string_create_from_cstr(" ");
+            if (frame && frame_has_variable_cstr(frame, "IFS"))
+            {
+                string_t *ifs = frame_get_variable_cstr(frame, "IFS");
+                string_clear(sep);
+                if (string_length(ifs) > 0)
+                    string_append_char(sep, string_cstr(ifs)[0]);
+                string_destroy(&ifs);
+            }
+            for (int j = 0; j < strlist_size(all); j++)
+            {
+                if (j > 0)
+                    string_append(current, sep);
+                string_append(current, strlist_at(all, j));
+            }
+            string_destroy(&sep);
+            strlist_destroy(&all);
+            continue;
+        }
+        if (quoted_at)
+        {
+            if (has_quoted_at)
+                *has_quoted_at = true;
+            strlist_t *all = frame && frame->positional_params
+                                 ? positional_params_get_all(frame->positional_params)
+                                 : strlist_create();
+            int n = strlist_size(all);
+            for (int j = 0; j < n; j++)
+            {
+                string_append(current, strlist_at(all, j));
+                if (j < n - 1)
+                {
+                    strlist_move_push_back(fields, &current);
+                    current = string_create();
+                }
+            }
+            if (n > 0)
+                emitted_anything = true;
+            strlist_destroy(&all);
+            continue;
+        }
+
+        emitted_anything = true;
+        if (part->was_single_quoted && part->type == PART_LITERAL)
+        {
+            string_append(current, part->text);
+            continue;
+        }
+        string_t *expanded = expand_part(frame, part);
+        if (expanded)
+        {
+            string_append(current, expanded);
+            string_destroy(&expanded);
+        }
+    }
+
+    if (emitted_anything)
+        strlist_move_push_back(fields, &current);
+    else
+        string_destroy(&current);
+    return fields;
+}
+
+/**
  * Remove quote characters from a string (final step of word expansion).
  * Note: This is typically handled during tokenization/parsing, but included
  * for completeness in the expansion sequence.
@@ -1120,23 +1248,28 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
         return result;
     }
 
-    /* Expand all parts */
-    string_t *expanded = expand_parts_to_string(frame, token_get_parts_const(tok));
+    /* Expand all parts. A double-quoted "$@" yields one field per positional
+     * parameter (and no field at all when there are none). */
+    bool has_quoted_at = false;
+    strlist_t *fields = expand_parts_to_fields(frame, token_get_parts_const(tok), &has_quoted_at);
 
-    /* Field splitting */
-    strlist_t *fields;
-    if (tok->needs_field_splitting)
+    /* Field splitting of the unquoted expansions. (When the word also holds a
+     * quoted "$@", its fields are kept whole.) */
+    if (tok->needs_field_splitting && !has_quoted_at)
     {
-        fields = expand_field_split(frame, expanded);
-        string_destroy(&expanded);
+        strlist_t *split = strlist_create();
+        for (int i = 0; i < strlist_size(fields); i++)
+        {
+            strlist_t *parts = expand_field_split(frame, strlist_at(fields, i));
+            for (int j = 0; j < strlist_size(parts); j++)
+                strlist_push_back(split, string_create_from(strlist_at(parts, j)));
+            strlist_destroy(&parts);
+        }
+        strlist_destroy(&fields);
+        fields = split;
 
         /* POSIX: If field splitting produced zero words (e.g., input was only
          * IFS whitespace), that's correct - don't add an empty string. */
-    }
-    else
-    {
-        fields = strlist_create();
-        strlist_move_push_back(fields, &expanded);
     }
 
     /* Pathname expansion */
@@ -1251,6 +1384,16 @@ string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quot
         /* Quoted delimiter: the body is literal */
         return string_create_from(body);
     }
+    return expand_text_as_dquoted(frame, body);
+}
+
+/**
+ * Expand raw text as the contents of a double-quoted string (used for
+ * unquoted here-document bodies and for ${var-word} words inside double
+ * quotes).
+ */
+static string_t *expand_text_as_dquoted(miga_frame_t *frame, const string_t *body)
+{
 
     /* POSIX 2.7.4: with an unquoted delimiter the body undergoes parameter
      * expansion, command substitution and arithmetic expansion, and backslash

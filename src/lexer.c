@@ -541,8 +541,7 @@ static bool try_promote_to_assignment(token_t *tok)
     if (idx < 1)
         return false;
     bool equals_at_end = (idx == string_length(first_part->text) - 1);
-    if (equals_at_end && part_list_size(parts) == 1)
-        return false;
+    /* "name=" with nothing after it is an assignment of the empty string */
 
     // OK, can promote to assignment.
     tok->type = TOKEN_ASSIGNMENT_WORD;

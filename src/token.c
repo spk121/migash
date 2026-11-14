@@ -1193,14 +1193,16 @@ static void string_append_escaped_string(string_t *str, const string_t *text)
             string_append_cstr(str, "\\\\");
             break;
         default:
-            if (c < ' ')
+            /* char may be signed: bytes of multi-byte characters are >= 0x80
+             * and must not be treated as (negative) control codes. */
+            if ((unsigned char)c < ' ')
             {
                 string_append_char(str, '<');
-                string_append_cstr(str, c0ctl[(int)c]);
+                string_append_cstr(str, c0ctl[(unsigned char)c]);
                 string_append_char(str, '>');
             }
             else
-            string_append_char(str, c);
+                string_append_char(str, c);
             break;
         }
     }
