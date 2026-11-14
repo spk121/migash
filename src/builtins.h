@@ -60,6 +60,11 @@ int builtin_unset(miga_frame_t *frame, const strlist_t *args);
 /* read [-r] var... : one line from standard input into variables */
 int builtin_read(miga_frame_t *frame, const strlist_t *args);
 
+#ifdef MIGA_POSIX_API
+/* umask [-S] [mask] : get or set the file mode creation mask */
+int builtin_umask(miga_frame_t *frame, const strlist_t *args);
+#endif
+
 /* ============================================================================
  * Regular (non-special) built-ins
  * ============================================================================

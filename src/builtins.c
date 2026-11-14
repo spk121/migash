@@ -1567,6 +1567,171 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args)
     return read_status; /* 0, or 1 at end of file */
 }
 
+#ifdef MIGA_POSIX_API
+/* ============================================================================
+ * umask - get or set the file mode creation mask (POSIX)
+ *
+ *   umask [-S] [mask]
+ *
+ * Without an operand the mask is written in octal, or with -S as the
+ * permissions it allows ("u=rwx,g=rx,o=rx"). The operand is an octal number
+ * or a symbolic mode of the chmod kind, applied to the permissions the
+ * current mask allows: clauses separated by commas, each a who list (u, g,
+ * o, a; empty means all) followed by one or more actions, where an action
+ * is =, + or - and a list of r, w, x (X is accepted as x). The new mask is
+ * the complement of the resulting permissions. Status 1 for a bad operand.
+ * ============================================================================
+ */
+static bool umask_parse_symbolic(const char *spec, mode_t current_mask, mode_t *out_mask)
+{
+    unsigned perms = (~(unsigned)current_mask) & 0777u;
+    const char *p = spec;
+    while (*p)
+    {
+        unsigned who = 0;
+        while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a')
+        {
+            if (*p == 'u') who |= 0700u;
+            else if (*p == 'g') who |= 0070u;
+            else if (*p == 'o') who |= 0007u;
+            else who |= 0777u;
+            p++;
+        }
+        if (who == 0)
+            who = 0777u;
+        if (*p != '=' && *p != '+' && *p != '-')
+            return false;
+        while (*p == '=' || *p == '+' || *p == '-')
+        {
+            char op = *p++;
+            unsigned bits = 0;
+            while (*p == 'r' || *p == 'w' || *p == 'x' || *p == 'X')
+            {
+                if (*p == 'r') bits |= 0444u;
+                else if (*p == 'w') bits |= 0222u;
+                else bits |= 0111u;
+                p++;
+            }
+            bits &= who;
+            if (op == '=')
+                perms = (perms & ~who) | bits;
+            else if (op == '+')
+                perms |= bits;
+            else
+                perms &= ~bits;
+        }
+        if (*p == ',')
+        {
+            p++;
+            if (*p == '\0')
+                return false;
+        }
+        else if (*p != '\0')
+            return false;
+    }
+    *out_mask = (mode_t)((~perms) & 0777u);
+    return true;
+}
+
+static void umask_print_symbolic(FILE *out, mode_t mask)
+{
+    unsigned perms = (~(unsigned)mask) & 0777u;
+    const char *names = "ugo";
+    for (int i = 0; i < 3; i++)
+    {
+        unsigned shift = (unsigned)(6 - 3 * i);
+        fprintf(out, "%s%c=", i ? "," : "", names[i]);
+        if (perms & (04u << shift)) fputc('r', out);
+        if (perms & (02u << shift)) fputc('w', out);
+        if (perms & (01u << shift)) fputc('x', out);
+    }
+    fputc('\n', out);
+}
+
+int builtin_umask(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    bool symbolic = false;
+    int first_operand = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first_operand = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
+        {
+            first_operand = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'S')
+                symbolic = true;
+            else
+            {
+                fprintf(stderr, "umask: -%c: invalid option\n", *p);
+                fprintf(stderr, "umask: usage: umask [-S] [mask]\n");
+                return 2;
+            }
+        }
+        first_operand = i + 1;
+    }
+
+    /* The process mask is authoritative; the frame keeps a copy for $-style
+     * bookkeeping and for subshell policies. */
+    mode_t current = umask(0);
+    umask(current);
+
+    if (first_operand >= argc)
+    {
+        if (symbolic)
+            umask_print_symbolic(out, current);
+        else
+            fprintf(out, "%04o\n", (unsigned)current);
+        return 0;
+    }
+    if (first_operand + 1 < argc)
+    {
+        fprintf(stderr, "umask: too many arguments\n");
+        return 2;
+    }
+
+    const char *spec = string_cstr(strlist_at(args, first_operand));
+    mode_t new_mask;
+    bool all_octal = *spec != '\0';
+    for (const char *p = spec; *p; p++)
+        if (*p < '0' || *p > '7')
+            all_octal = false;
+    if (all_octal)
+    {
+        unsigned long v = strtoul(spec, NULL, 8);
+        if (v > 0777)
+        {
+            fprintf(stderr, "umask: %s: octal number out of range\n", spec);
+            return 1;
+        }
+        new_mask = (mode_t)v;
+    }
+    else if (!umask_parse_symbolic(spec, current, &new_mask))
+    {
+        fprintf(stderr, "umask: %s: invalid symbolic mode\n", spec);
+        return 1;
+    }
+
+    umask(new_mask);
+    if (frame->umask)
+        *frame->umask = new_mask;
+    return 0;
+}
+#endif /* MIGA_POSIX_API */
+
 /* ============================================================================
  * times - Print accumulated user and system times
  *

@@ -12,8 +12,8 @@ still open.
 - Core execution (B): 7-13 **fixed**; 14 **fixed** (exit status, silent
   errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
   17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered,
-  `read` implemented for the POSIX configuration; `type`, `command`,
-  `umask`, `hash`, `ulimit` still missing);
+  `read` implemented in every configuration, `umask` for POSIX; `type`,
+  `command`, `hash`, `ulimit` still missing);
   18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed** for
   non-interactive shells (trapped SIGINT runs the action, untrapped kills
   the shell with 130; the interactive-shell SIGINT behaviour is still
@@ -74,6 +74,15 @@ an assignment-only command (`st=$?`) reset `$?` before expanding its
 value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
 are not reset in command-substitution or pipeline children (they fork
 without a frame).
+
+umask (2026-11-14): implemented for the POSIX configuration (ISO C has
+no file mode creation mask, so it is not registered there);
+`test/sh/21_umask.sh` (26 assertions checked against dash and bash)
+passes: octal and `-S` output, octal operands, symbolic clauses of the
+chmod kind applied to the permissions the current mask allows, the
+effect on files created by utilities and by redirections, subshell
+isolation, and the status for bad operands. `umask -S` with an operand is
+not tested: POSIX leaves its output unspecified and dash and bash differ.
 
 read, all configurations (2026-11-14): the builtin is a portable core
 (line collection, backslash handling, IFS splitting, assignment) over a
