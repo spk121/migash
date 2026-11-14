@@ -2553,6 +2553,32 @@ static bool is_redirect_token(token_type_t t)
 }
 
 /* ============================================================================
+ * Helper: take the next here-document body token.
+ *
+ * The lexer emits the TOKEN_END_OF_HEREDOC tokens (one per here-document, in
+ * the order of the << operators) after the NEWLINE that ends the command line.
+ * The parser may still be in the middle of that line ("cat <<A; cat <<B"), so
+ * the body is found by scanning forward from the current position; it is
+ * cloned for the io_here node and removed from the token stream so that the
+ * rest of the line parses undisturbed.
+ * ============================================================================
+ */
+static token_t *take_heredoc_token(parser_t *parser)
+{
+    for (int i = parser->position; i < token_list_size(parser->tokens); i++)
+    {
+        const token_t *tok = token_list_get(parser->tokens, i);
+        if (token_get_type(tok) == TOKEN_END_OF_HEREDOC)
+        {
+            token_t *copy = token_clone(tok);
+            token_list_remove(parser->tokens, i);
+            return copy;
+        }
+    }
+    return NULL;
+}
+
+/* ============================================================================
  * Helper: Match G_IO_HERE nodes with their TOKEN_END_OF_HEREDOC tokens
  *
  * This scans a G_SIMPLE_COMMAND node looking for G_IO_HERE redirections
@@ -2599,19 +2625,13 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
                     gnode_t *target = suffix_item->data.multi.c;
                     if (target && target->type == G_IO_HERE && target->data.io_here.tok == NULL)
                     {
-                        /* Skip newlines to find TOKEN_END_OF_HEREDOC */
-                        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-                            parser_advance(parser);
-
-                        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+                        target->data.io_here.tok = take_heredoc_token(parser);
+                        if (!target->data.io_here.tok)
                         {
                             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                                              string_cstr(target->data.io_here.here_end));
                             return PARSE_ERROR;
                         }
-
-                        target->data.io_here.tok = token_clone(parser_current_token(parser));
-                        parser_advance(parser);
                     }
                 }
             }
@@ -2629,19 +2649,13 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
         if (target->data.io_here.tok != NULL)
             continue; /* Already matched */
 
-        /* Skip newlines to find TOKEN_END_OF_HEREDOC */
-        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-            parser_advance(parser);
-
-        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+        target->data.io_here.tok = take_heredoc_token(parser);
+        if (!target->data.io_here.tok)
         {
             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                              string_cstr(target->data.io_here.here_end));
             return PARSE_ERROR;
         }
-
-        target->data.io_here.tok = token_clone(parser_current_token(parser));
-        parser_advance(parser);
     }
 
 
@@ -2854,22 +2868,17 @@ parse_status_t gparse_redirect_list(parser_t *parser, gnode_t **out_node)
         if (!target || target->type != G_IO_HERE)
             continue;
 
-        /* Skip any newlines to find the TOKEN_END_OF_HEREDOC */
-        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-            parser_advance(parser);
+        if (target->data.io_here.tok != NULL)
+            continue; /* Already matched */
 
-        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+        target->data.io_here.tok = take_heredoc_token(parser);
+        if (!target->data.io_here.tok)
         {
             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                              string_cstr(target->data.io_here.here_end));
             g_node_destroy(&node);
             return PARSE_ERROR;
         }
-
-        /* Clone the TOKEN_END_OF_HEREDOC and store it in the io_here node */
-        const token_t *heredoc_tok = parser_current_token(parser);
-        target->data.io_here.tok = token_clone(heredoc_tok);
-        parser_advance(parser);
     }
 
     *out_node = node;

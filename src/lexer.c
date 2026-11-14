@@ -50,6 +50,8 @@ lexer_t *lexer_create(void)
     lx->heredoc_queue.size = 0;
     lx->reading_heredoc = false;
     lx->heredoc_index = 0;
+    lx->cmd_subst_text = NULL;
+    lx->cmd_subst_depth = 0;
 
     lx->escaped = false;
     lx->operator_buffer = string_create();
@@ -72,6 +74,9 @@ void lexer_reset(lexer_t *lx)
 
     string_clear(lx->input);
     lx->pos = 0;
+    if (lx->cmd_subst_text)
+        string_destroy(&lx->cmd_subst_text);
+    lx->cmd_subst_depth = 0;
     lx->line_no = 1;
     lx->col_no = 1;
     lx->tok_start_line = 1;
@@ -194,6 +199,8 @@ void lexer_destroy(lexer_t **lx)
     // Free the delimiter strings inside each heredoc entry before freeing
     // the entries array. Previously the array was freed directly, leaking all
     // delimiter string_t allocations still in the queue.
+    if (l->cmd_subst_text)
+        string_destroy(&l->cmd_subst_text);
     if (l->heredoc_queue.entries)
     {
         lexer_empty_heredoc_queue(l);

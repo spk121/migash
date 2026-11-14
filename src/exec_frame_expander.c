@@ -22,6 +22,7 @@
 #include "exec_frame.h"
 #include "miga/exec.h"
 #include "exec_frame_expander.h"
+#include "lexer.h"
 #include "exec_types_internal.h"
 #include "glob_util.h"
 #include "logging.h"
@@ -1247,149 +1248,92 @@ string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quot
 {
     if (is_quoted)
     {
-        /* Quoted delimiter: no expansion */
+        /* Quoted delimiter: the body is literal */
         return string_create_from(body);
     }
 
-    /* Unquoted heredoc: perform parameter, command, and arithmetic expansions.
-     * No field splitting or pathname expansion.
-     *
-     * We need to scan through the text and expand $var, ${...}, $(...), $((...))
-     * but not perform field splitting or globbing.
-     */
-
-    string_t *result = string_create();
+    /* POSIX 2.7.4: with an unquoted delimiter the body undergoes parameter
+     * expansion, command substitution and arithmetic expansion, and backslash
+     * quotes only $ ` \ and newline: exactly the rules for the contents of a
+     * double-quoted string, except that the double-quote character itself is
+     * ordinary. So wrap the body in double quotes, escaping every literal
+     * double quote (a backslash before one must be kept as a backslash), lex
+     * it as one word, and expand the word's parts with no field splitting.
+     * Quotes inside $(...), $((...)) and `...` are part of that command or
+     * expression and are left alone. */
     const char *text = string_cstr(body);
     int len = string_length(body);
-
+    string_t *quoted = string_create();
+    string_append_char(quoted, '"');
+    int paren_depth = 0;   /* inside $( ... ) or $(( ... )) */
+    bool in_backquote = false;
     for (int i = 0; i < len; i++)
     {
         char c = text[i];
-
         if (c == '\\' && i + 1 < len)
         {
-            /* Backslash escapes: \$, \`, \\ */
+            /* Copy the pair unchanged, except that \" must stay a literal
+             * backslash followed by a literal quote. */
             char next = text[i + 1];
-            if (next == '$' || next == '`' || next == '\\' || next == '\n')
-            {
-                if (next != '\n')
-                {
-                    string_append_char(result, next);
-                }
-                i++; /* Skip escaped character */
-                continue;
-            }
-            /* Other backslashes are literal */
-            string_append_char(result, c);
-        }
-        else if (c == '$')
-        {
-            /* Parameter or command/arithmetic expansion */
-            if (i + 1 < len)
-            {
-                char next = text[i + 1];
-
-                if (next == '(')
-                {
-                    /* Command substitution $(...) or arithmetic $((...)) */
-                    /* This is complex - for now, log a warning and skip */
-                    log_warn("Command/arithmetic substitution in heredoc not fully implemented");
-                    string_append_char(result, c);
-                }
-                else if (next == '{')
-                {
-                    /* Parameter expansion ${...} */
-                    /* Find matching } */
-                    int j = i + 2;
-                    int brace_depth = 1;
-                    while (j < len && brace_depth > 0)
-                    {
-                        if (text[j] == '{')
-                            brace_depth++;
-                        else if (text[j] == '}')
-                            brace_depth--;
-                        j++;
-                    }
-
-                    if (brace_depth == 0)
-                    {
-                        /* Extract parameter name (simple case) */
-                        string_t *param_name = string_create();
-                        for (int k = i + 2; k < j - 1; k++)
-                        {
-                            string_append_char(param_name, text[k]);
-                        }
-
-                        string_t *value = expand_parameter(frame, param_name);
-                        if (value)
-                        {
-                            string_append(result, value);
-                            string_destroy(&value);
-                        }
-                        string_destroy(&param_name);
-
-                        i = j - 1; /* Move past the expansion */
-                        continue;
-                    }
-                    string_append_char(result, c);
-                }
-                else if (isalnum(next) || next == '_' || next == '?' || next == '$' ||
-                         next == '!' || next == '#' || next == '@' || next == '*' ||
-                         next == '-' || next == '0')
-                {
-                    /* Simple parameter: $var or $1, $?, etc. */
-                    string_t *param_name = string_create();
-                    i++; /* Move to first char of name */
-
-                    /* Special single-char parameters */
-                    if (strchr("?$!#@*-0", text[i]))
-                    {
-                        string_append_char(param_name, text[i]);
-                    }
-                    else
-                    {
-                        /* Variable name or positional param */
-                        while (i < len && (isalnum(text[i]) || text[i] == '_'))
-                        {
-                            string_append_char(param_name, text[i]);
-                            i++;
-                        }
-                        i--; /* Back up one for loop increment */
-                    }
-
-                    string_t *value = expand_parameter(frame, param_name);
-                    if (value)
-                    {
-                        string_append(result, value);
-                        string_destroy(&value);
-                    }
-                    string_destroy(&param_name);
-                }
-                else
-                {
-                    /* Literal $ */
-                    string_append_char(result, c);
-                }
-            }
+            if (next == '"' && paren_depth == 0 && !in_backquote)
+                string_append_cstr(quoted, "\\\\\\\"");
             else
             {
-                /* $ at end of string */
-                string_append_char(result, c);
+                string_append_char(quoted, c);
+                string_append_char(quoted, next);
             }
+            i++;
+            continue;
         }
-        else if (c == '`')
+        if (!in_backquote && c == '$' && i + 1 < len && text[i + 1] == '(')
         {
-            /* Backquote command substitution - deprecated but supported */
-            log_warn("Backquote command substitution in heredoc not fully implemented");
-            string_append_char(result, c);
+            paren_depth++;
+            string_append_char(quoted, c);
+            string_append_char(quoted, '(');
+            i++;
+            continue;
         }
-        else
+        if (paren_depth > 0)
         {
-            /* Regular character */
-            string_append_char(result, c);
+            if (c == '(')
+                paren_depth++;
+            else if (c == ')')
+                paren_depth--;
+            string_append_char(quoted, c);
+            continue;
         }
+        if (c == '`')
+        {
+            in_backquote = !in_backquote;
+            string_append_char(quoted, c);
+            continue;
+        }
+        if (c == '"' && !in_backquote)
+        {
+            string_append_cstr(quoted, "\\\"");
+            continue;
+        }
+        string_append_char(quoted, c);
     }
+    string_append_char(quoted, '"');
 
+    token_list_t *tokens = token_list_create();
+    lex_status_t st = lex_cstr_to_tokens(string_cstr(quoted), tokens);
+    string_destroy(&quoted);
+
+    string_t *result = NULL;
+    if (st == LEX_OK && token_list_size(tokens) >= 1 &&
+        token_get_type(token_list_get(tokens, 0)) == TOKEN_WORD)
+    {
+        result = expand_parts_to_string(frame, token_get_parts_const(token_list_get(tokens, 0)));
+    }
+    token_list_destroy(&tokens);
+
+    if (!result)
+    {
+        log_warn("expand_heredoc: could not lex here-document body; using it unexpanded");
+        result = string_create_from(body);
+    }
     return result;
 }
 

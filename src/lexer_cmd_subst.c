@@ -35,8 +35,15 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
     if (!lx->in_word)
         lexer_start_word(lx);
 
-    int start_pos = lx->pos;
-    int paren_depth = 1;
+    /* Entered right after "$(" the first time; re-entered after more input
+     * was appended when the previous call returned LEX_INCOMPLETE. The text
+     * collected so far lives in the lexer, not on this stack frame. */
+    if (lx->cmd_subst_text == NULL)
+    {
+        lx->cmd_subst_text = string_create();
+        lx->cmd_subst_depth = 1;
+    }
+    string_t *cmd_text = lx->cmd_subst_text;
 
     while (!lexer_at_end(lx))
     {
@@ -44,14 +51,13 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
 
         if (c == ')')
         {
-            if (--paren_depth == 0)
+            if (--lx->cmd_subst_depth == 0)
             {
                 lexer_advance(lx); // consume )
 
-                string_t *cmd_text =
-                    string_substring(lx->input, start_pos, lx->pos - 1);
                 part_t *part = part_create_command_subst(cmd_text);
-                string_destroy(&cmd_text);
+                string_destroy(&lx->cmd_subst_text);
+                lx->cmd_subst_depth = 0;
 
                 if (lexer_in_mode(lx, LEX_DOUBLE_QUOTE))
                     part_set_quoted(part, false, true);
@@ -67,7 +73,7 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
         }
         else if (c == '(')
         {
-            paren_depth++;
+            lx->cmd_subst_depth++;
         }
         else if (c == '\\')
         {
@@ -79,29 +85,16 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 return LEX_INCOMPLETE;
             }
 
-            lexer_advance(lx); // consume backslash
-
-            if (next == '\n')
-            {
-                // Line continuation
-                lexer_advance(lx);
-                lx->line_no++;
-                lx->col_no = 1;
-                // After line continuation, check if we're at EOF
-                if (lexer_at_end(lx))
-                {
-                    return LEX_INCOMPLETE;
-                }
-            }
-            else
-            {
-                // Escaped character - consume it
-                lexer_advance(lx);
-            }
+            // Keep the backslash and the escaped character verbatim: the
+            // substitution text is lexed again when it is run.
+            string_append_char(cmd_text, lexer_advance(lx));
+            string_append_char(cmd_text, lexer_advance(lx));
+            if (next == '\n' && lexer_at_end(lx))
+                return LEX_INCOMPLETE;
             continue;
         }
 
-        lexer_advance(lx);
+        string_append_char(cmd_text, lexer_advance(lx));
     }
 
     return LEX_INCOMPLETE;
@@ -118,11 +111,11 @@ lex_status_t lexer_process_cmd_subst_backtick(lexer_t *lx)
         lexer_start_word(lx);
     }
 
-    // Create a token list to hold the nested command tokens
-    token_list_t *nested = token_list_create();
-
-    // Buffer to accumulate raw command text
-    string_t *cmd_text = string_create();
+    // Buffer to accumulate raw command text; kept in the lexer so that it
+    // survives a LEX_INCOMPLETE return when the backquotes span lines.
+    if (lx->cmd_subst_text == NULL)
+        lx->cmd_subst_text = string_create();
+    string_t *cmd_text = lx->cmd_subst_text;
 
     // Check if we're inside double quotes (affects backslash handling)
     bool in_dquote = lexer_in_mode(lx, LEX_DOUBLE_QUOTE);
@@ -139,7 +132,7 @@ lex_status_t lexer_process_cmd_subst_backtick(lexer_t *lx)
 
             // Add command substitution part to current token
             part_t *part = part_create_command_subst(cmd_text);
-            string_destroy(&cmd_text);
+            string_destroy(&lx->cmd_subst_text);
 
             // Mark as double-quoted if inside double quotes
             if (in_dquote)
@@ -212,8 +205,6 @@ lex_status_t lexer_process_cmd_subst_backtick(lexer_t *lx)
         lexer_advance(lx);
     }
 
-    // End of input without closing backtick
-    string_destroy(&cmd_text);
-    token_list_destroy(&nested);
+    // End of input without closing backtick: keep what we have for the next line
     return LEX_INCOMPLETE;
 }

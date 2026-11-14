@@ -1650,14 +1650,12 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame
             // For now, just log or skip detailed job management
             // TODO: Implement full background job tracking
         }
-        else if (sep == CMD_EXEC_SEQUENTIAL)
+        else if (sep == CMD_EXEC_SEQUENTIAL || sep == CMD_EXEC_END)
         {
-            // Wait for completion (already done above), then proceed to next
-        }
-        else if (sep == CMD_EXEC_END)
-        {
-            // End of list: No more commands
-            break;
+            // Sequential, or no explicit separator (newline / end of a
+            // complete command): carry on with the next item, if any. The
+            // lowering gives every newline-separated command CMD_EXEC_END,
+            // so it must not end the list.
         }
         // Invalid separators are handled by the parser, so no need to check
     }

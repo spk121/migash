@@ -110,102 +110,87 @@ static bool get_heredoc_delimiter(lexer_t *lx, string_t *out_delimiter, bool *ou
         return false;
     }
 
-    char first = lexer_peek(lx);
-
-    // Case 1: delimiter is fully single-quoted: <<'EOF'
-    if (first == '\'')
-    {
-        lexer_advance(lx); // consume '
-        *out_delimiter_quoted = true;
-
-        while (!lexer_at_end(lx))
-        {
-            char c = lexer_peek(lx);
-            if (c == '\'')
-            {
-                lexer_advance(lx);
-                // Now expect delimiter end (whitespace or operator)
-                lexer_skip_whitespace(lx);
-                return true;
-            }
-            if (c == '\n')
-            {
-                lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
-                return false;
-            }
-            string_append_char(out_delimiter, c);
-            lexer_advance(lx);
-        }
-        lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
-        return false;
-    }
-
-    // Case 2: delimiter is fully double-quoted: <<"EOF"
-    if (first == '"')
-    {
-        lexer_advance(lx); // consume "
-        *out_delimiter_quoted = true;
-
-        while (!lexer_at_end(lx))
-        {
-            char c = lexer_peek(lx);
-            if (c == '"')
-            {
-                lexer_advance(lx);
-                lexer_skip_whitespace(lx);
-                return true;
-            }
-            if (c == '\n')
-            {
-                lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
-                return false;
-            }
-            // Backslash escapes are not processed in heredoc delimiters.
-            // The only processing is quote removal. And backslash/newline.
-            if (c == '\\')
-            {
-                char next = lexer_peek_ahead(lx, 1);
-                if (next == '\n')
-                {
-                    lexer_advance(lx); // skip backslash
-                    lexer_advance(lx); // skip newline
-                    continue;
-                }
-            }
-            string_append_char(out_delimiter, c);
-            lexer_advance(lx);
-        }
-        lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
-        return false;
-    }
-
-    // Case 3: unquoted delimiter (may contain backslash escapes)
+    /* POSIX 2.7.4: the delimiter is the here_end word after quote removal; if
+     * ANY part of the word is quoted ('EOF', "EOF", EO"F", \EOF) the body is
+     * taken literally. So walk the word applying quote removal, remembering
+     * whether any quoting was seen. The word ends at blank, newline or an
+     * operator character. */
     while (!lexer_at_end(lx))
     {
         char c = lexer_peek(lx);
 
-        if (c == ' ' || c == '\t' || c == '\n' || lexer_is_metachar(c) || c == '&' || c == ';')
-            break; // delimiter ends here
+        if (c == '\'')
+        {
+            *out_delimiter_quoted = true;
+            lexer_advance(lx); // opening '
+            for (;;)
+            {
+                if (lexer_at_end(lx) || lexer_peek(lx) == '\n')
+                {
+                    lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
+                    return false;
+                }
+                char q = lexer_advance(lx);
+                if (q == '\'')
+                    break;
+                string_append_char(out_delimiter, q);
+            }
+            continue;
+        }
+
+        if (c == '"')
+        {
+            *out_delimiter_quoted = true;
+            lexer_advance(lx); // opening "
+            for (;;)
+            {
+                if (lexer_at_end(lx) || lexer_peek(lx) == '\n')
+                {
+                    lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
+                    return false;
+                }
+                char q = lexer_advance(lx);
+                if (q == '"')
+                    break;
+                if (q == '\\' && !lexer_at_end(lx))
+                {
+                    char next = lexer_peek(lx);
+                    if (next == '\n')
+                    {
+                        lexer_advance(lx); // backslash-newline is removed
+                        continue;
+                    }
+                    if (next == '"' || next == '\\' || next == '$' || next == '`')
+                    {
+                        string_append_char(out_delimiter, lexer_advance(lx));
+                        continue;
+                    }
+                }
+                string_append_char(out_delimiter, q);
+            }
+            continue;
+        }
 
         if (c == '\\')
         {
             char next = lexer_peek_ahead(lx, 1);
             if (next == '\n')
             {
-                // Backslash-newline is removed
-                lexer_advance(lx);
+                lexer_advance(lx); // backslash-newline is removed
                 lexer_advance(lx);
                 continue;
             }
             if (next != '\0')
             {
-                *out_delimiter_quoted = true; // backslash makes it quoted
-                lexer_advance(lx);            // skip <backslash>
-                string_append_char(out_delimiter, next);
-                lexer_advance(lx);
+                *out_delimiter_quoted = true;
+                lexer_advance(lx); // skip the backslash
+                string_append_char(out_delimiter, lexer_advance(lx));
                 continue;
             }
         }
+
+        if (c == ' ' || c == '\t' || c == '\n' || lexer_is_metachar(c) || c == '&' || c == ';')
+            break; // delimiter ends here
 
         string_append_char(out_delimiter, c);
         lexer_advance(lx);
@@ -217,6 +202,7 @@ static bool get_heredoc_delimiter(lexer_t *lx, string_t *out_delimiter, bool *ou
         return false;
     }
 
+    lexer_skip_whitespace(lx);
     return true;
 }
 
