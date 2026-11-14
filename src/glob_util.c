@@ -2,7 +2,6 @@
 #include "config.h"
 #endif
 #ifdef MIGA_UCRT_API
-#define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include <string.h>

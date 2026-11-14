@@ -10,6 +10,9 @@
 #ifdef MIGA_POSIX_API
 #include <unistd.h>
 #endif
+#ifdef MIGA_UCRT_API
+#include <direct.h> /* _getcwd */
+#endif
 
 #include <fcntl.h>
 #include <stdio.h>

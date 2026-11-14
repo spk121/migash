@@ -9,6 +9,14 @@
 #include "miga/string_t.h"
 #include "miga/xalloc.h"
 
+/* job_store_add_process() takes a process handle on Windows; the tests do not
+ * have one, so this wrapper hides the difference. */
+#ifdef MIGA_UCRT_API
+#define add_process(store, job_id, pid, command) job_store_add_process(store, job_id, pid, 0, command)
+#else
+#define add_process(store, job_id, pid, command) job_store_add_process(store, job_id, pid, command)
+#endif
+
 // ------------------------------------------------------------
 // Creation and Destruction Tests
 // ------------------------------------------------------------
@@ -147,9 +155,9 @@ CTEST(test_job_store_add_process)
     string_t *proc2_cmd = string_create_from_cstr("grep foo");
     string_t *proc3_cmd = string_create_from_cstr("sort");
 
-    bool r1 = job_store_add_process(store, job_id, 1001, proc1_cmd);
-    bool r2 = job_store_add_process(store, job_id, 1002, proc2_cmd);
-    bool r3 = job_store_add_process(store, job_id, 1003, proc3_cmd);
+    bool r1 = add_process(store, job_id, 1001, proc1_cmd);
+    bool r2 = add_process(store, job_id, 1002, proc2_cmd);
+    bool r3 = add_process(store, job_id, 1003, proc3_cmd);
 
     CTEST_ASSERT_TRUE(ctest, r1, "first process added");
     CTEST_ASSERT_TRUE(ctest, r2, "second process added");
@@ -174,7 +182,7 @@ CTEST(test_job_store_add_process_invalid_job)
     job_store_t *store = job_store_create();
 
     string_t *proc_cmd = string_create_from_cstr("echo test");
-    bool result = job_store_add_process(store, 999, 1001, proc_cmd);
+    bool result = add_process(store, 999, 1001, proc_cmd);
 
     CTEST_ASSERT_FALSE(ctest, result, "add to non-existent job fails");
     string_destroy(&proc_cmd);
@@ -216,7 +224,7 @@ CTEST(test_job_store_find_by_pgid)
     int job_id = job_store_add(store, cmd, true);
 
     string_t *proc_cmd = string_create_from_cstr("sleep 100");
-    job_store_add_process(store, job_id, 5000, proc_cmd);
+    add_process(store, job_id, 5000, proc_cmd);
 
     job_t *found = job_store_find_by_pgid(store, 5000);
     CTEST_ASSERT_NOT_NULL(ctest, found, "job found by pgid");
@@ -356,9 +364,9 @@ CTEST(test_job_store_set_process_state)
     string_t *p2 = string_create_from_cstr("grep");
     string_t *p3 = string_create_from_cstr("sort");
 
-    job_store_add_process(store, job_id, 1001, p1);
-    job_store_add_process(store, job_id, 1002, p2);
-    job_store_add_process(store, job_id, 1003, p3);
+    add_process(store, job_id, 1001, p1);
+    add_process(store, job_id, 1002, p2);
+    add_process(store, job_id, 1003, p3);
 
     job_t *job = job_store_find(store, job_id);
     CTEST_ASSERT_EQ(ctest, job->state, JOB_RUNNING, "job is running");
@@ -511,8 +519,8 @@ CTEST(test_job_is_running)
 
     string_t *p1 = string_create_from_cstr("cat");
     string_t *p2 = string_create_from_cstr("grep");
-    job_store_add_process(store, job_id, 1001, p1);
-    job_store_add_process(store, job_id, 1002, p2);
+    add_process(store, job_id, 1001, p1);
+    add_process(store, job_id, 1002, p2);
 
     job_t *job = job_store_find(store, job_id);
     CTEST_ASSERT_TRUE(ctest, job_is_running(job), "job is running");
@@ -540,8 +548,8 @@ CTEST(test_job_is_completed)
 
     string_t *p1 = string_create_from_cstr("cat");
     string_t *p2 = string_create_from_cstr("grep");
-    job_store_add_process(store, job_id, 1001, p1);
-    job_store_add_process(store, job_id, 1002, p2);
+    add_process(store, job_id, 1001, p1);
+    add_process(store, job_id, 1002, p2);
 
     job_t *job = job_store_find(store, job_id);
     CTEST_ASSERT_FALSE(ctest, job_is_completed(job), "job not completed initially");
