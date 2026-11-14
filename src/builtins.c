@@ -1313,6 +1313,203 @@ int builtin_trap(miga_frame_t *frame, const strlist_t *args)
     return exit_status;
 }
 
+#ifdef MIGA_POSIX_API
+/* ============================================================================
+ * read - read a line from standard input into variables (POSIX)
+ *
+ *   read [-r] var...
+ *
+ * One line is read a byte at a time with read(2), so that a loop such as
+ * "while read line; do ...; done < file" or a pipeline feeding several reads
+ * consumes exactly one line per call. Without -r a backslash escapes the next
+ * character (which then cannot act as an IFS separator) and backslash-newline
+ * continues the line. The line is split with IFS: leading IFS whitespace is
+ * dropped, each variable but the last gets one field, the last gets the rest
+ * with trailing IFS whitespace removed. An empty IFS means no splitting.
+ * Status: 0, 1 at end of file (what was read is still assigned), 2 for a
+ * usage error, an invalid name or a read-only variable.
+ * ============================================================================
+ */
+static bool read_char_is_ifs(char c, const char *ifs)
+{
+    return c != '\0' && strchr(ifs, c) != NULL;
+}
+
+static bool read_char_is_ifs_white(char c, const char *ifs)
+{
+    return (c == ' ' || c == '\t' || c == '\n') && read_char_is_ifs(c, ifs);
+}
+
+int builtin_read(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+
+    int argc = strlist_size(args);
+    bool raw = false;
+    int first_name = 1;
+
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first_name = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first_name = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'r')
+                raw = true;
+            else
+            {
+                fprintf(stderr, "read: -%c: invalid option\n", *p);
+                fprintf(stderr, "read: usage: read [-r] var...\n");
+                return 2;
+            }
+        }
+        first_name = i + 1;
+    }
+
+    if (first_name >= argc)
+    {
+        fprintf(stderr, "read: usage: read [-r] var...\n");
+        return 2;
+    }
+
+    /* Collect the line. literal[k] marks a byte that a backslash protected. */
+    string_t *line = string_create();
+    string_t *literal = string_create(); /* '1' or '0' per byte of line */
+    bool eof = false;
+    int status = 0;
+
+    fflush(stdout); /* a prompt written just before read must appear first */
+    for (;;)
+    {
+        char c;
+        ssize_t n = read(STDIN_FILENO, &c, 1);
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            fprintf(stderr, "read: %s\n", strerror(errno));
+            status = 1;
+            eof = true;
+            break;
+        }
+        if (n == 0)
+        {
+            eof = true;
+            break;
+        }
+        if (!raw && c == '\\')
+        {
+            n = read(STDIN_FILENO, &c, 1);
+            while (n < 0 && errno == EINTR)
+                n = read(STDIN_FILENO, &c, 1);
+            if (n <= 0)
+            {
+                eof = true; /* a trailing backslash at end of file is dropped */
+                break;
+            }
+            if (c == '\n')
+                continue; /* line continuation */
+            string_append_char(line, c);
+            string_append_char(literal, '1');
+            continue;
+        }
+        if (c == '\n')
+            break;
+        string_append_char(line, c);
+        string_append_char(literal, '0');
+    }
+
+    /* IFS: unset means space, tab, newline; set but empty means no splitting */
+    string_t *ifs_var = frame_has_variable_cstr(frame, "IFS") ? frame_get_variable_cstr(frame, "IFS")
+                                                               : string_create_from_cstr(" \t\n");
+    const char *ifs = string_cstr(ifs_var);
+    const char *text = string_cstr(line);
+    const char *lit = string_cstr(literal);
+    int len = string_length(line);
+    int nvars = argc - first_name;
+    bool allexport = frame->opt_flags && frame->opt_flags->allexport;
+
+    int pos = 0;
+    if (*ifs)
+        while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+            pos++;
+
+    for (int k = 0; k < nvars; k++)
+    {
+        const string_t *name = strlist_at(args, first_name + k);
+        string_t *value = string_create();
+
+        if (k == nvars - 1)
+        {
+            /* the rest of the line, minus trailing IFS whitespace */
+            int end = len;
+            if (*ifs)
+                while (end > pos && lit[end - 1] == '0' && read_char_is_ifs_white(text[end - 1], ifs))
+                    end--;
+            for (int j = pos; j < end; j++)
+                string_append_char(value, text[j]);
+            pos = len;
+        }
+        else if (*ifs)
+        {
+            /* one field, then the delimiter: an IFS whitespace run, optionally
+             * followed by one non-whitespace IFS character and more whitespace */
+            while (pos < len && !(lit[pos] == '0' && read_char_is_ifs(text[pos], ifs)))
+                string_append_char(value, text[pos++]);
+            if (pos < len)
+            {
+                bool white = read_char_is_ifs_white(text[pos], ifs);
+                if (white)
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                if (pos < len && lit[pos] == '0' && read_char_is_ifs(text[pos], ifs) &&
+                    !read_char_is_ifs_white(text[pos], ifs))
+                {
+                    pos++;
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                }
+            }
+        }
+        else if (k == 0)
+        {
+            string_append_cstr(value, text);
+            pos = len;
+        }
+
+        var_store_error_t err = variable_store_add(frame->variables, name, value, allexport, false);
+        string_destroy(&value);
+        if (err == VAR_STORE_ERROR_READ_ONLY)
+        {
+            fprintf(stderr, "read: %s: is read only\n", string_cstr(name));
+            status = 2;
+        }
+        else if (err != VAR_STORE_ERROR_NONE)
+        {
+            fprintf(stderr, "read: %s: not a valid identifier\n", string_cstr(name));
+            status = 2;
+        }
+    }
+
+    string_destroy(&ifs_var);
+    string_destroy(&line);
+    string_destroy(&literal);
+    if (status == 0 && eof)
+        status = 1;
+    return status;
+}
+#endif /* MIGA_POSIX_API */
+
 /* ============================================================================
  * times - Print accumulated user and system times
  *

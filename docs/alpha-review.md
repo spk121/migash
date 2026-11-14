@@ -11,8 +11,9 @@ still open.
   the shell conformance scripts really run their assertions now.
 - Core execution (B): 7-13 **fixed**; 14 **fixed** (exit status, silent
   errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
-  17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered;
-  `read`, `type`, `command`, `umask`, `hash`, `ulimit` still missing);
+  17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered,
+  `read` implemented for the POSIX configuration; `type`, `command`,
+  `umask`, `hash`, `ulimit` still missing);
   18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed** for
   non-interactive shells (trapped SIGINT runs the action, untrapped kills
   the shell with 130; the interactive-shell SIGINT behaviour is still
@@ -73,6 +74,18 @@ an assignment-only command (`st=$?`) reset `$?` before expanding its
 value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
 are not reset in command-substitution or pipeline children (they fork
 without a frame).
+
+read (2026-11-14): implemented for the POSIX configuration;
+`test/sh/20_read_builtin.sh` (37 assertions checked against dash and
+bash) passes. It reads a byte at a time with read(2) so that a loop or a
+pipeline consumes exactly one line per call, handles backslash escapes
+and backslash-newline continuation unless `-r` is given, splits with IFS
+(remainder in the last variable, trailing IFS whitespace removed, empty
+IFS means no splitting), honours `set -a`, and returns 1 at end of file
+with what was read still assigned, 2 for a usage error, an invalid name
+or a read-only variable. Found by the test: `<&-` (and `<&n`) acted on
+standard output, because the default descriptor of input duplication was
+1; `read x <&-` therefore blocked on the terminal under ctest.
 
 Shell options (2026-11-14): `test/sh/19_set_options.sh` (57 assertions
 checked against dash and bash) passes completely. `set -e` with all the

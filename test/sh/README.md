@@ -46,6 +46,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `17_positional_parameters.sh` | Positional and special parameters |
 | `18_traps_signals.sh` | `trap`, the EXIT trap and SIGINT (POSIX 2.11); needs `TEST_SHELL` for child shells |
 | `19_set_options.sh` | `set -e -u -f -C -n -x -v -a`, `set -o`/`+o`, `$-`, and `wait` without operands; needs `TEST_SHELL` |
+| `20_read_builtin.sh` | the `read` utility: IFS splitting, `-r`, line continuation, status at end of file, one line per call |
 
 ## Expected failures
 

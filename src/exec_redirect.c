@@ -171,6 +171,7 @@ static int redirection_default_fd(const exec_redirection_t *r)
     case REDIR_FROM_BUFFER:
     case REDIR_FROM_BUFFER_STRIP:
     case REDIR_READWRITE:
+    case REDIR_FD_DUP_IN: /* <&n and <&- act on standard input */
         return 0;
     default:
         return 1;
