@@ -164,3 +164,6 @@ test_xalloc_ctest_LDADD = $(TEST_LDADD)
 # The POSIX conformance scripts run under the freshly built shell.
 TESTS = $(check_PROGRAMS) test/sh/run_tests.sh
 AM_TESTS_ENVIRONMENT = MIGASH='$(abs_top_builddir)/src/migash'; export MIGASH;
+# Run the shell runner through $(SHELL) so it need not be executable.
+TEST_EXTENSIONS = .sh
+SH_LOG_COMPILER = $(SHELL)

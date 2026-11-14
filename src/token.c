@@ -992,6 +992,7 @@ part_t *part_clone(const part_t *other)
     if (other->word != NULL)
         new_part->word = string_create_from(other->word);
     new_part->param_kind = other->param_kind;
+    new_part->has_colon = other->has_colon;
     new_part->was_single_quoted = other->was_single_quoted;
     new_part->was_double_quoted = other->was_double_quoted;
     if (other->nested != NULL)

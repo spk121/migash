@@ -1679,28 +1679,9 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, 
     /* Update LINENO for left side */
     exec_frame_update_lineno(frame, left);
 
-    // Execute left command
-    exec_frame_execute_result_t left_result;
-    switch (left->type)
-    {
-    case AST_COMMAND_LIST:
-        left_result = exec_frame_execute_compound_list(frame, left);
-        break;
-    case AST_AND_OR_LIST:
-        left_result = exec_frame_execute_and_or_list(frame, left);
-        break;
-    case AST_PIPELINE:
-        left_result = exec_frame_execute_pipeline(frame, left);
-        break;
-    case AST_SIMPLE_COMMAND:
-        left_result = exec_frame_execute_simple_command(frame, left);
-        break;
-    default:
-        exec_set_error_printf(frame->executor, "Unsupported AST node type in and_or_list: %d (%s)",
-                              left->type, ast_node_type_to_string(left->type));
-        result.status = MIGA_EXEC_STATUS_NOT_IMPL;
-        return result;
-    }
+    /* Either side may be any command: a pipeline, a simple command or a
+     * compound command (if, {, (, for, ...) with or without redirections. */
+    exec_frame_execute_result_t left_result = exec_frame_execute_dispatch(frame, left);
 
     if (left_result.status != MIGA_EXEC_STATUS_OK || left_result.flow != MIGA_FRAME_FLOW_NORMAL)
     {
@@ -1730,29 +1711,7 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, 
         /* Update LINENO for right side (only if we're going to execute it) */
         exec_frame_update_lineno(frame, right);
 
-        // Execute right command
-        exec_frame_execute_result_t right_result;
-        switch (right->type)
-        {
-        case AST_COMMAND_LIST:
-            right_result = exec_frame_execute_compound_list(frame, right);
-            break;
-        case AST_AND_OR_LIST:
-            right_result = exec_frame_execute_and_or_list(frame, right);
-            break;
-        case AST_PIPELINE:
-            right_result = exec_frame_execute_pipeline(frame, right);
-            break;
-        case AST_SIMPLE_COMMAND:
-            right_result = exec_frame_execute_simple_command(frame, right);
-            break;
-        default:
-            exec_set_error_printf(frame->executor,
-                                  "Unsupported AST node type in and_or_list: %d (%s)", right->type,
-                                  ast_node_type_to_string(right->type));
-            result.status = MIGA_EXEC_STATUS_NOT_IMPL;
-            return result;
-        }
+        exec_frame_execute_result_t right_result = exec_frame_execute_dispatch(frame, right);
 
         if (right_result.status != MIGA_EXEC_STATUS_OK)
         {
@@ -2430,11 +2389,8 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
             /* Execute the command */
             exec_frame_execute_result_t cmd_result = exec_frame_execute_dispatch(frame, cmd);
 
-            /* Exit the child with the command's exit status */
-            if (is_negated && cmd_result.has_exit_status)
-            {
-                cmd_result.exit_status = (cmd_result.exit_status == 0) ? 1 : 0;
-            }
+            /* Exit the child with the command's exit status. ("!" is applied
+             * once by the parent to the pipeline's status, not per command.) */
             _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
         }
 
@@ -2634,7 +2590,7 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, 
              * fnmatch-style matching against the case word — they are NOT
              * used for filesystem globbing.
              */
-            string_t *pattern = expand_word_nosplit(frame, pattern_token);
+            string_t *pattern = expand_word_pattern(frame, pattern_token);
             if (!pattern)
             {
                 continue;
@@ -2970,8 +2926,10 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
 
     ast_node_destroy(&ast);
 
-    if (result.status == MIGA_EXEC_STATUS_ERROR)
+    if (result.status == MIGA_EXEC_STATUS_ERROR || result.status == MIGA_EXEC_STATUS_NOT_IMPL)
     {
+        if (result.status == MIGA_EXEC_STATUS_NOT_IMPL && !exec_get_error_cstr(executor))
+            frame_set_error_printf(frame, "not implemented");
         return MIGA_EXEC_STATUS_ERROR;
     }
 

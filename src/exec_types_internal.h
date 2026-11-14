@@ -192,6 +192,12 @@ struct miga_exec_t
     int next_fd;
 #endif
 
+    /* Redirections in effect, innermost first: each exec_redirect_apply
+     * pushes the descriptors it saved, and the matching restore or commit
+     * pops them (exec_redirect.c). Nested redirections ({ cmd >a; } >b)
+     * therefore undo only their own changes. */
+    struct redir_save_set_t *redir_saves;
+
     string_t *working_directory;
 #ifdef MIGA_POSIX_API
     mode_t umask;

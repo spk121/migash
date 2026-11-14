@@ -20,16 +20,38 @@ still open.
 - Code health (E): 37 partly (all three build systems work and agree on
   file lists and macros; still three of them); 38-43 open.
 
-The shell conformance suite (`test/sh`) now reports 493 passing and 11
-failing assertions. Here-documents (08), word splitting (10), pathname
-expansion (11), reserved words (12), case statements (15) and positional
-parameters (17) pass completely as of 2026-11-14. The remaining failures
-cluster as follows and are the next targets:
+The shell conformance suite (`test/sh`) passes completely as of
+2026-11-14: 527 assertions, 0 failures, under all three build systems
+(`ctest`, `make check`, the GNUmakefile). The last round was checked
+against dash and bash first: of the 14 assertions that still failed, 7
+were wrong expectations in the tests (also failing under dash and bash)
+and were corrected; the rest were real bugs, now fixed:
 
-| File | Fails | What is missing |
-|------|-------|-----------------|
-| 16_alias_substitution | 6 | alias expansion in non-interactive mode (optional in POSIX, but the suite expects it) |
-| 02, 03, 04, 05, 14 | 1 each | multiple-space preservation in `"$(...)"`, backslash-newline in words, `#` mid-word |
+- `#` inside a word aborted the lexer (contract violation);
+- `${var:-word}` and friends treated an empty variable as set because
+  `part_clone()` dropped the `has_colon` flag;
+- backslash-escaped characters were field-split and globbed (`echo \*`);
+- tilde expansion was never performed (the lexer never produced the
+  tilde part); it is now done in the expander per XCU 2.6.1, including
+  `~user`, assignment values (`PATH=~/bin:~/x`) and `$HOME` lookup;
+- aliases never expanded in scripts: the parse session's tokenizer kept
+  a pointer to an alias store that `exec_setup_core()` had already handed
+  over to the top-level frame; reserved words at command position are now
+  also exempt from alias substitution, as in dash and bash;
+- quoted pattern characters in `case` patterns matched as wildcards;
+- `&&`/`||` with a compound command on either side ran nothing at all
+  (and reported nothing);
+- redirections after a compound command were dropped by the lowering;
+- redirections around a compound command were undone by the first
+  simple command inside it, because restore undid every saved descriptor
+  in the shared fd table rather than the ones that apply had saved
+  (`exec_redirect.c` now keeps a stack of save sets);
+- `! { ... }` and `! if ...` did not parse (the word after `!` was not at
+  command position), and `!` was applied in every pipeline child as well
+  as by the parent.
+
+Known gaps noticed but not yet addressed: `${x:-~}` does not tilde-expand
+the word (dash does); the `read` builtin is still missing (item 17).
 
 Item 29 (`${10}`) is **fixed**.
 

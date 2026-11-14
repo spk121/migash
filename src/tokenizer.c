@@ -380,6 +380,7 @@ void tokenizer_update_command_position(tokenizer_t *tok, const token_t *token)
     case TOKEN_PIPE:
     case TOKEN_AND_IF:
     case TOKEN_OR_IF:
+    case TOKEN_BANG:    /* ! { ... }, ! if ... */
     case TOKEN_LPAREN:
     case TOKEN_RPAREN:  /* After ) in function definition, { should be recognized */
     case TOKEN_DSEMI:
@@ -581,8 +582,16 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
         char *word_text = tokenizer_extract_word_text(token);
         if (word_text != NULL)
         {
+            // A reserved word at command position (if, for, while, {, ...)
+            // is recognised as such before alias substitution is considered,
+            // so an alias of that name never fires there (dash and bash
+            // agree). Inside a command prefix (x=1 if ...) it is a plain
+            // word and the alias applies.
+            bool reserved = !tok->in_cmd_prefix &&
+                            token_string_to_reserved_word(word_text) != TOKEN_WORD &&
+                            token_string_to_reserved_word(word_text) != TOKEN_IN;
             // Check if there's an alias for this word
-            if (alias_store_has_name_cstr(tok->aliases, word_text))
+            if (!reserved && alias_store_has_name_cstr(tok->aliases, word_text))
             {
                 // Check if already expanded (recursion prevention)
                 if (!tokenizer_is_alias_expanded(tok, word_text))

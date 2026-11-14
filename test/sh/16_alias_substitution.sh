@@ -68,8 +68,10 @@ unalias ll 2>/dev/null || true
 # ────────────────────────────────────────────────
 alias if='echo tricked'
 
+# 'if' is recognised as a reserved word before alias substitution is
+# considered, so the alias never fires and the if statement runs normally.
 result=$(if true; then echo ok; fi 2>/dev/null || echo "reserved")
-assert_eq "reserved" "$result" "reserved word 'if' not aliased in command position" || true
+assert_eq "ok" "$result" "reserved word 'if' not aliased in command position" || true
 
 unalias if 2>/dev/null || true
 
@@ -80,14 +82,17 @@ alias recursive='recursive --flag'
 
 # Should NOT infinitely expand — POSIX says not to replace if already processing same name
 # But we can't easily capture infinite loop safely, so we test safe case
-alias safe='echo safe'
+# "safe" expands to "safe more"; the leading "safe" is not expanded again,
+# so command search finds the function of that name.
+safe() { printf 'safe:%s\n' "$*"; }
 alias safe='safe more'
 
 result=$(safe 2>/dev/null)
-assert_eq "safe more" "$result" "alias not recursively expanded in same chain" || \
+assert_eq "safe:more" "$result" "alias not recursively expanded in same chain" || \
     printf "    (skipped)\n"
 
 unalias safe 2>/dev/null || true
+unset -f safe
 
 # ────────────────────────────────────────────────
 # 6. Alias definition affects subsequent words (trailing space chain)
@@ -106,9 +111,8 @@ unalias cmd1 cmd2 2>/dev/null || true
 # ────────────────────────────────────────────────
 alias test='echo mocked_test'
 
-result=$(test -n "$PWD" && echo yes || echo no 2>/dev/null)
-# In many shells this still uses builtin test, because aliases don't override special builtins in some contexts
-# But POSIX allows aliasing non-special builtins/utilities
+# test is a regular builtin, not a special one, so an alias may shadow it.
+result=$(test 2>/dev/null)
 assert_eq "mocked_test" "$result" "alias shadows regular command (not special builtin)" || true
 
 unalias test 2>/dev/null || true

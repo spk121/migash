@@ -1073,11 +1073,122 @@ static string_t *expand_part(miga_frame_t *frame, const part_t *part)
         return expand_arithmetic(frame, part->text);
 
     case PART_TILDE:
-        return expand_tilde(frame, part->text);
+        /* tilde_expand_parts() stored the expanded home directory here */
+        return string_create_from(part->text);
 
     default:
         return string_create();
     }
+}
+
+/* ============================================================================
+ * Tilde expansion (POSIX 2.6.1)
+ * ============================================================================
+ * A tilde-prefix is an unquoted '~' at the beginning of a word, or (in an
+ * assignment value) following an unquoted ':', together with the characters
+ * up to the first unquoted '/' (or ':' in an assignment). If every character
+ * of the prefix is literal the prefix is replaced by $HOME (plain ~) or the
+ * named user's home directory; otherwise the word is left alone. The result
+ * becomes a PART_TILDE part, which is never field-split or globbed.
+ */
+
+static string_t *tilde_home(miga_frame_t *frame, const string_t *name)
+{
+    if (string_length(name) == 0)
+    {
+        if (frame && frame_has_variable_cstr(frame, "HOME"))
+        {
+            string_t *home = frame_get_variable_cstr(frame, "HOME");
+            if (home && string_length(home) > 0)
+                return home;
+            /* HOME set but empty: "~/x" becomes "/x" like dash */
+            if (home)
+                return home;
+        }
+        const char *env = getenv("HOME");
+        if (env)
+            return string_create_from_cstr(env);
+        /* HOME unset: unspecified by POSIX; leave the tilde alone (dash) */
+        return NULL;
+    }
+    return expand_tilde(frame, name);
+}
+
+static part_list_t *tilde_expand_parts(miga_frame_t *frame, const part_list_t *parts,
+                                       bool assignment)
+{
+    int n = part_list_size(parts);
+    part_list_t *out = NULL;
+
+    for (int i = 0; i < n; i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+        bool literal = part->type == PART_LITERAL && !part->was_single_quoted &&
+                       !part->was_double_quoted && part->text;
+        if (!literal || (i > 0 && !assignment))
+        {
+            if (out)
+                part_list_append(out, part_clone(part));
+            continue;
+        }
+
+        const char *text = string_cstr(part->text);
+        int len = string_length(part->text);
+        string_t *pending = string_create(); /* literal text not yet emitted */
+        bool changed = false;
+
+        int pos = 0;
+        while (pos < len)
+        {
+            bool candidate = text[pos] == '~' &&
+                             ((pos == 0 && i == 0) || (assignment && pos > 0 && text[pos - 1] == ':'));
+            if (!candidate)
+            {
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            int end = pos + 1;
+            while (end < len && text[end] != '/' && !(assignment && text[end] == ':'))
+                end++;
+            if (end == len && i < n - 1)
+            {
+                /* The prefix runs into a quoted or expanded part: no expansion */
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            string_t *name = string_create_from_cstr_len(text + pos + 1, end - pos - 1);
+            string_t *home = tilde_home(frame, name);
+            string_destroy(&name);
+            if (!home)
+            {
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            if (!out)
+            {
+                out = part_list_create();
+                for (int k = 0; k < i; k++)
+                    part_list_append(out, part_clone(part_list_get(parts, k)));
+            }
+            if (string_length(pending) > 0)
+                part_list_append(out, part_create_literal(pending));
+            string_clear(pending);
+            part_list_append(out, part_create_tilde(home));
+            string_destroy(&home);
+            changed = true;
+            pos = end;
+        }
+
+        if (changed)
+        {
+            if (string_length(pending) > 0)
+                part_list_append(out, part_create_literal(pending));
+        }
+        else if (out)
+            part_list_append(out, part_clone(part));
+        string_destroy(&pending);
+    }
+    return out;
 }
 
 /**
@@ -1374,8 +1485,11 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
         return NULL;
     }
 
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+
     /* Check if any expansion is needed */
-    if (!tok->needs_expansion && !tok->needs_field_splitting && !tok->needs_pathname_expansion)
+    if (!tilded && !tok->needs_expansion && !tok->needs_field_splitting &&
+        !tok->needs_pathname_expansion)
     {
         /* No expansion: return literal text */
         string_t *text = token_get_all_text(tok);
@@ -1387,7 +1501,10 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
     /* Expand the parts into fields: unquoted expansion results are field-split
      * as they are appended, "$@" yields one field per parameter. */
     bool *glob_flags = NULL;
-    strlist_t *fields = expand_parts_to_fields(frame, token_get_parts_const(tok), &glob_flags);
+    strlist_t *fields = expand_parts_to_fields(frame, tilded ? tilded : token_get_parts_const(tok),
+                                               &glob_flags);
+    if (tilded)
+        part_list_destroy(&tilded);
 
     /* Pathname expansion of the fields that hold unquoted pattern characters
      * (unless set -f). A pattern that matches nothing stays as it is. */
@@ -1423,15 +1540,65 @@ string_t *expand_word_nosplit(miga_frame_t *frame, const token_t *tok)
         return NULL;
     }
 
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+
     /* If no expansion is needed at all, return the literal text */
-    if (!tok->needs_expansion)
+    if (!tilded && !tok->needs_expansion)
     {
         return token_get_all_text(tok);
     }
 
     /* Expand parts (tilde, parameter, command subst, arithmetic)
      * but skip field splitting and pathname expansion */
-    return expand_parts_to_string(frame, token_get_parts_const(tok));
+    string_t *result =
+        expand_parts_to_string(frame, tilded ? tilded : token_get_parts_const(tok));
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
+}
+
+/* Append text to a pattern with the pattern characters escaped, so that
+ * fnmatch() matches them literally. */
+static void append_pattern_literal(string_t *pattern, const string_t *text)
+{
+    for (int i = 0; i < string_length(text); i++)
+    {
+        char c = string_at(text, i);
+        if (c == '*' || c == '?' || c == '[' || c == '\\')
+            string_append_char(pattern, '\\');
+        string_append_char(pattern, c);
+    }
+}
+
+string_t *expand_word_pattern(miga_frame_t *frame, const token_t *tok)
+{
+    if (!tok || tok->type != TOKEN_WORD)
+        return NULL;
+
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+    const part_list_t *parts = tilded ? tilded : token_get_parts_const(tok);
+    string_t *result = string_create();
+    for (int i = 0; i < part_list_size(parts); i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+        bool quoted = part->was_single_quoted || part->was_double_quoted;
+
+        string_t *text;
+        if (part->was_single_quoted && part->type == PART_LITERAL)
+            text = string_create_from(part->text);
+        else
+            text = expand_part(frame, part);
+        if (!text)
+            continue;
+        if (quoted)
+            append_pattern_literal(result, text);
+        else
+            string_append(result, text);
+        string_destroy(&text);
+    }
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
 }
 
 /**
@@ -1494,7 +1661,11 @@ string_t *expand_assignment_value(miga_frame_t *frame, const token_t *tok)
 
     /* Assignment values: tilde, parameter, command, arithmetic expansion
      * but NO field splitting or pathname expansion */
-    return expand_parts_to_string(frame, tok->assignment_value);
+    part_list_t *tilded = tilde_expand_parts(frame, tok->assignment_value, true);
+    string_t *result = expand_parts_to_string(frame, tilded ? tilded : tok->assignment_value);
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
 }
 
 string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quoted)

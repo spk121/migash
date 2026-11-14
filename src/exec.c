@@ -1846,6 +1846,13 @@ variable_store_t *exec_get_variables(const miga_exec_t *executor)
 alias_store_t *exec_get_aliases(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
+    /* exec_setup_core() hands the executor's alias store to the top-level
+     * frame; after that the frames own the live store (the current frame's
+     * copy in a subshell, the shared one otherwise). */
+    if (executor->current_frame && executor->current_frame->aliases)
+        return executor->current_frame->aliases;
+    if (executor->top_frame && executor->top_frame->aliases)
+        return executor->top_frame->aliases;
     return executor->aliases;
 }
 
@@ -2110,7 +2117,7 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
                  * the lexer, accumulated tokens, and any buffered
                  * compound-command tokens in the tokenizer are flushed.
                  */
-                parse_session_hard_reset(session, executor->aliases);
+                parse_session_hard_reset(session, exec_get_aliases(executor));
             }
             else
             {
@@ -2375,7 +2382,7 @@ miga_exec_result_t exec_execute_command_string(miga_exec_t *executor, const char
 parse_session_t *exec_create_parse_session(miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return parse_session_create(executor->aliases);
+    return parse_session_create(exec_get_aliases(executor));
 }
 
 size_t exec_get_parse_session_size(void)
@@ -2393,7 +2400,7 @@ void exec_hard_reset_parse_session(parse_session_t *session, miga_exec_t *execut
 {
     Expects_not_null(session);
     if (executor)
-        parse_session_hard_reset(session, executor->aliases);
+        parse_session_hard_reset(session, exec_get_aliases(executor));
     else
         parse_session_hard_reset(session, NULL);
 }
@@ -2533,7 +2540,7 @@ miga_exec_status_t exec_execute_command_string_partial_cstr(miga_exec_t *executo
      * ------------------------------------------------------------------ */
     if (!session->tokenizer)
     {
-        session->tokenizer = tokenizer_create(executor->aliases);
+        session->tokenizer = tokenizer_create(exec_get_aliases(executor));
         if (!session->tokenizer)
         {
             exec_set_error_cstr(executor, "Failed to create tokenizer");
@@ -2773,7 +2780,7 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
             consecutive_eof = 0;
             need_continuation = false;
 
-            parse_session_hard_reset(session, executor->aliases);
+            parse_session_hard_reset(session, exec_get_aliases(executor));
 
             /* POSIX: $? = 128 + SIGINT after an interrupted command. */
             executor->last_exit_status = 128 + SIGINT;
@@ -2919,7 +2926,7 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
             fprintf(stderr, "\n");
             need_continuation = false;
 
-            parse_session_hard_reset(session, executor->aliases);
+            parse_session_hard_reset(session, exec_get_aliases(executor));
         }
 
     } /* for (;;) */

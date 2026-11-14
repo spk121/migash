@@ -543,23 +543,58 @@ static ast_node_t *lower_pipe_sequence(const gnode_t *g, bool is_negated)
  *         | function_definition
  * ============================================================================
  */
+static ast_node_t *lower_command_child(const gnode_t *child);
+
 static ast_node_t *lower_command(const gnode_t *g)
 {
     Expects_eq(g->type, G_COMMAND);
 
-    /* G_COMMAND is a wrapper node - the actual command is in data.child or data.multi.a */
-    const gnode_t *child = NULL;
-    if (g->payload_type == GNODE_PAYLOAD_CHILD)
-        child = g->data.child;
-    else if (g->payload_type == GNODE_PAYLOAD_MULTI)
-        child = g->data.multi.a;
+    /* G_COMMAND is a wrapper node. The plain form keeps the command in
+     * data.child; "compound_command redirect_list" is an inner wrapper with
+     * the command in data.multi.a and the G_REDIRECT_LIST in data.multi.b. */
+    if (g->payload_type == GNODE_PAYLOAD_MULTI)
+    {
+        const gnode_t *gcmd = g->data.multi.a;
+        const gnode_t *gredirs = g->data.multi.b;
+        if (!gcmd)
+        {
+            log_error("lower_command: G_COMMAND wrapper has no child");
+            return NULL;
+        }
 
+        ast_node_t *cmd = lower_command_child(gcmd);
+        if (!cmd)
+            return NULL;
+        if (!gredirs || !gredirs->data.list || gredirs->data.list->size == 0)
+            return cmd;
+
+        ast_node_list_t *redirs = ast_node_list_create();
+        gnode_list_t *lst = gredirs->data.list;
+        for (int i = 0; i < lst->size; i++)
+        {
+            ast_node_t *r = lower_io_redirect(lst->nodes[i]);
+            if (!r)
+            {
+                ast_node_list_destroy(&redirs);
+                ast_node_destroy(&cmd);
+                return NULL;
+            }
+            ast_node_list_append(redirs, r);
+        }
+        return ast_create_redirected_command(cmd, redirs);
+    }
+
+    const gnode_t *child = (g->payload_type == GNODE_PAYLOAD_CHILD) ? g->data.child : NULL;
     if (!child)
     {
         log_error("lower_command: G_COMMAND wrapper has no child");
         return NULL;
     }
+    return lower_command_child(child);
+}
 
+static ast_node_t *lower_command_child(const gnode_t *child)
+{
     /* Dispatch based on the actual command type */
     switch (child->type)
     {

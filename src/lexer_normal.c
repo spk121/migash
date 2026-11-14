@@ -379,7 +379,7 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
                 lexer_start_word(lx);
             }
             lexer_advance(lx);                                        // consume backslash
-            lexer_append_literal_char_to_word(lx, lexer_advance(lx)); // append next char
+            lexer_append_escaped_char_to_word(lx, lexer_advance(lx)); // append next char
             token_set_quoted(lx->current_token, true);
             continue;
         }
@@ -479,8 +479,7 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
                 }
                 continue;
             }
-            // Otherwise treat as word character
-            lexer_start_word(lx);
+            // Inside a word '#' is an ordinary character (echo a#b)
             lexer_append_literal_char_to_word(lx, lexer_advance(lx));
             continue;
         }

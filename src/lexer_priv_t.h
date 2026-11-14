@@ -238,6 +238,10 @@ bool lexer_at_end(const lexer_t *lx);
 
 void lexer_start_word(lexer_t *lx);
 void lexer_append_literal_char_to_word(lexer_t *lx, char c);
+
+/* Append a backslash-escaped character. It is stored in a quoted literal part
+ * so that it is exempt from field splitting and pathname expansion. */
+void lexer_append_escaped_char_to_word(lexer_t *lx, char c);
 void lexer_append_literal_cstr_to_word(lexer_t *lx, const char *str);
 void lexer_finalize_word(lexer_t *lx);
 void lexer_emit_token(lexer_t *lx, token_type_t type);

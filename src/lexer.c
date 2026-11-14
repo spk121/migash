@@ -491,6 +491,31 @@ void lexer_append_literal_char_to_word(lexer_t *lx, char c)
     }
 }
 
+void lexer_append_escaped_char_to_word(lexer_t *lx, char c)
+{
+    Expects_not_null(lx);
+    Expects_not_null(lx->current_token);
+
+    int count = token_part_count(lx->current_token);
+    if (count > 0)
+    {
+        part_t *last = token_get_part(lx->current_token, count - 1);
+        if (part_get_type(last) == PART_LITERAL && part_was_double_quoted(last) &&
+            !part_was_single_quoted(last))
+        {
+            token_append_char_to_last_literal_part(lx->current_token, c);
+            return;
+        }
+    }
+
+    char buf[2] = {c, '\0'};
+    string_t *s = string_create_from_cstr(buf);
+    part_t *part = part_create_literal(s);
+    part_set_quoted(part, false, true); // quoted: no splitting, no globbing
+    token_add_part(lx->current_token, part);
+    string_destroy(&s);
+}
+
 void lexer_append_literal_cstr_to_word(lexer_t *lx, const char *str)
 {
     Expects_not_null(lx);
