@@ -221,9 +221,19 @@ command's, negated for `! pipeline`.
    `frame`. `set -e` is checked against `executor->opt` by the REPL while the
    builtin writes `frame->opt_flags`; this is a known inconsistency
    (`docs/alpha-review.md`, item 38).
-4. **Traps are not executed yet.** `trap_handler()` only records the signal;
-   `execute_trap_action()` is a stub, and the `trap_pending[]` loop in the
-   REPL is the intended place to run trap actions between commands.
+4. **Traps.** The signal handler (`trap_store.c`) only sets
+   `executor->trap_pending[signo]`. `exec_run_pending_traps()` runs the
+   pending actions in an `EXEC_FRAME_TRAP` frame under the current frame;
+   it is called after every simple command, so an action runs after the
+   command during which the signal arrived and before the next one, and
+   between REPL lines. `$?` is restored after the action unless it called
+   `exit`, in which case the simple command's result carries `TOP` and the
+   exit status. `exec_run_exit_trap()` runs the EXIT trap once (it takes
+   the action out of the store first): at the end of the shell's input, in
+   `exit`, and in `exec_frame_pop()` for frames whose policy has
+   `exit_trap_runs` (top level, subshells, background jobs). Subshells
+   reset non-ignored traps, including EXIT, when their frame is created;
+   signals ignored on entry are recorded and cannot be trapped.
 5. **Arena memory.** Everything allocated with `xmalloc`/`xstrdup` is owned by
    the arena and must be released with `xfree`; mixing `free()` in (as `cd`
    once did) is a double free at `miga_arena_end()`.

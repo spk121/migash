@@ -381,8 +381,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     {
         /* With no command name the exit status is that of the last command
          * substitution performed, or 0. record_subst_status() stores it on
-         * the frame while the values are expanded. */
-        frame->last_exit_status = 0;
+         * the frame while the values are expanded and marks it valid; until
+         * then $? in the values must still see the previous status. */
+        frame->subst_status_valid = false;
         if (assign_tokens)
         {
             for (int i = 0; i < token_list_size(assign_tokens); i++)
@@ -407,9 +408,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
         }
 
+        int assign_status = frame->subst_status_valid ? frame->last_exit_status : 0;
+        frame->subst_status_valid = false;
         return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK,
                                              .has_exit_status = true,
-                                             .exit_status = frame->last_exit_status};
+                                             .exit_status = assign_status};
     }
 
     int cmd_exit_status = 0;

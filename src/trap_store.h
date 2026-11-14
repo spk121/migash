@@ -5,6 +5,7 @@
 #ifndef TRAP_STORE_H
 #define TRAP_STORE_H
 
+#include <signal.h>
 #include "sig_act.h"
 #include "miga/string_t.h"
 
@@ -26,7 +27,8 @@ typedef struct trap_action_t
     int signal_number; // Signal number (SIGINT, SIGTERM, etc.)
     bool is_ignored;   // true if trap is set to ignore (trap '' SIGNAL)
     bool is_default;   // true if trap is set to default (trap - SIGNAL)
-    char padding[2];
+    bool ignored_on_entry; // SIG_IGN when the shell started: cannot be trapped or reset
+    char padding[1];
 } trap_action_t;
 
 typedef struct trap_store_t
@@ -142,8 +144,19 @@ void trap_store_for_each_set_trap(const trap_store_t *store,
                                                     void *context),
                                    void *context);
 
-// FIXME: The trap store shouldn't run traps. The frame executor should run traps.
-// Using void * for frame to avoid circular dependency between trap_store.h and exec_frame.h
-void trap_store_run_exit_trap(const trap_store_t *store, void *frame);
+/* The signal handler only records that a trapped signal arrived: it sets
+ * flags[signo] in the array registered here (the executor's trap_pending[]).
+ * The shell runs the trap actions between commands (exec_run_pending_traps). */
+void trap_store_set_pending_flags(volatile sig_atomic_t *flags, int count);
+bool trap_store_any_pending(void);
+void trap_store_clear_any_pending(void);
+
+/* Record the signals that were ignored when the shell started (POSIX: a
+ * non-interactive shell cannot trap or reset them). POSIX only. */
+void trap_store_record_ignored_on_entry(trap_store_t *store);
+
+/* Take the EXIT action out of the store (NULL if none or empty). The caller
+ * owns the returned string. Taking it guarantees the EXIT trap runs once. */
+string_t *trap_store_take_exit_action(trap_store_t *store);
 
 #endif // TRAP_STORE_H

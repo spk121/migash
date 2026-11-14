@@ -695,6 +695,11 @@ miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr)
     miga_frame_t *frame = *frame_ptr;
     Expects_not_null(frame);
 
+    /* Frames that end a shell execution environment (top level, subshells,
+     * background jobs) run their EXIT trap, while the frame is still current. */
+    if (frame->policy->traps.exit_trap_runs && frame->traps && frame->traps->exit_trap_set)
+        exec_run_exit_trap(frame->executor, frame);
+
     miga_frame_t *parent = frame->parent;
     if (parent)
     {
@@ -709,13 +714,6 @@ miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr)
     }
 
     const exec_frame_policy_t *policy = frame->policy;
-
-    /* Run EXIT trap if applicable */
-    if (policy->traps.exit_trap_runs)
-    {
-        if (frame->traps && frame->traps->exit_trap_set)
-            trap_store_run_exit_trap(frame->traps, (void *) frame);
-    }
 
     /* Propagate exit status to parent if applicable */
     if (policy->exit.affects_parent_status && parent)
@@ -1772,6 +1770,18 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(miga_frame_t *fram
     /* Reset pending flow for next command */
     frame->pending_control_flow = MIGA_FRAME_FLOW_NORMAL;
     frame->pending_flow_depth = 0;
+
+    /* A trapped signal that arrived during the command runs its action now,
+     * before the next command (XCU 2.11). An exit inside the action unwinds. */
+    if (trap_store_any_pending() && exec_run_pending_traps(frame->executor))
+    {
+        /* exit inside the action: unwind, and carry its status, not the
+         * command's, so that the enclosing list does not overwrite it. */
+        if (result.flow == MIGA_FRAME_FLOW_NORMAL)
+            result.flow = MIGA_FRAME_FLOW_TOP;
+        result.has_exit_status = true;
+        result.exit_status = frame->executor->last_exit_status;
+    }
 
     return result;
 }

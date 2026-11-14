@@ -1132,6 +1132,12 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
             log_debug("RC file loading failed.");
         return ret;
     }
+
+    /* Traps: the signal handler records pending signals in trap_pending[];
+     * signals ignored when the shell started cannot be trapped. */
+    trap_store_set_pending_flags(e->trap_pending, NSIG);
+    if (e->top_frame && e->top_frame->traps)
+        trap_store_record_ignored_on_entry(e->top_frame->traps);
     else
         log_debug("Skipped loading RC files");
 
@@ -2058,46 +2064,10 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         exec_reap_background_jobs(executor, interactive);
 
         /* ---- 7. Process pending traps ---- */
-        for (int signo = 1; signo < NSIG; signo++)
+        if (exec_run_pending_traps(executor))
         {
-            if (!executor->trap_pending[signo])
-                continue;
-
-            executor->trap_pending[signo] = 0;
-
-            const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-            if (!trap_action || !trap_action->action)
-                continue;
-
-            /* POSIX: $? is preserved across trap execution */
-            int saved_exit_status = executor->last_exit_status;
-
-            miga_frame_t *trap_frame =
-                exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-            miga_exec_status_t trap_result =
-                frame_execute_string(trap_frame, trap_action->action);
-
-            exec_frame_pop(&executor->current_frame);
-
-            executor->last_exit_status = saved_exit_status;
-
-            if (trap_result == MIGA_EXEC_STATUS_EXIT)
-            {
-                final_result = MIGA_EXEC_STATUS_EXIT;
-                goto done;
-            }
-
-            if (trap_result == MIGA_EXEC_STATUS_ERROR && interactive)
-            {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
-                            err);
-                    exec_clear_error(executor);
-                }
-            }
+            final_result = MIGA_EXEC_STATUS_EXIT;
+            goto done;
         }
 
         /* ---- 8. SIGINT handling ---- */
@@ -2133,7 +2103,12 @@ done:
 
 miga_exec_status_t exec_execute_stream(miga_exec_t *executor, FILE *fp)
 {
-    return exec_execute_stream_repl(executor, fp, executor->is_interactive);
+    miga_exec_status_t status = exec_execute_stream_repl(executor, fp, executor->is_interactive);
+    /* End of the shell's input: run the EXIT trap (once). An exit inside it
+     * has already set executor->last_exit_status. */
+    if (executor->top_frame)
+        exec_run_exit_trap(executor, executor->top_frame);
+    return status;
 }
 
 /* For non-interactive execution of a named script */
@@ -2229,39 +2204,8 @@ miga_exec_status_t exec_execute_stream_once(miga_exec_t *executor, FILE *fp)
     if (status == MIGA_EXEC_STATUS_OK)
     {
         /* Process any pending trap handlers */
-        for (int signo = 1; signo < NSIG; signo++)
-        {
-            if (executor->trap_pending[signo])
-            {
-                executor->trap_pending[signo] = 0;
-
-                /* Get trap action from current trap store */
-                const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-                if (!trap_action || !trap_action->action)
-                    continue;
-
-                /* Save exit status - POSIX says $? should be preserved across trap execution */
-                int saved_exit_status = executor->last_exit_status;
-
-                /* Push EXEC_FRAME_TRAP and execute the trap action string */
-                miga_frame_t *trap_frame =
-                    exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-                miga_exec_status_t trap_result =
-                    frame_execute_string(trap_frame, trap_action->action);
-
-                exec_frame_pop(&executor->current_frame);
-
-                /* Restore exit status */
-                executor->last_exit_status = saved_exit_status;
-
-                if (trap_result == MIGA_EXEC_STATUS_ERROR)
-                {
-                    status = MIGA_EXEC_STATUS_ERROR;
-                    break;
-                }
-            }
-        }
+        if (exec_run_pending_traps(executor))
+            status = MIGA_EXEC_STATUS_EXIT;
     }
 
     return status;
@@ -2315,6 +2259,12 @@ miga_exec_result_t exec_execute_command_string(miga_exec_t *executor, const char
      * Feed the entire command string to the core execution engine.
      * ------------------------------------------------------------------ */
     miga_exec_status_t str_status = exec_frame_string_core(frame, command, session);
+
+    /* The -c string is the shell's whole input: run the EXIT trap (once). */
+    if (executor->top_frame &&
+        (str_status == MIGA_EXEC_STATUS_OK || str_status == MIGA_EXEC_STATUS_EMPTY ||
+         str_status == MIGA_EXEC_STATUS_EXIT))
+        exec_run_exit_trap(executor, executor->top_frame);
 
     switch (str_status)
     {
@@ -2868,46 +2818,10 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
         exec_reap_background_jobs(executor, true);
 
         /* ---- 9. Process pending traps ---- */
-        for (int signo = 1; signo < NSIG; signo++)
+        if (exec_run_pending_traps(executor))
         {
-            if (!executor->trap_pending[signo])
-                continue;
-
-            executor->trap_pending[signo] = 0;
-
-            const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-            if (!trap_action || !trap_action->action)
-                continue;
-
-            /* POSIX: $? is preserved across trap execution. */
-            int saved_exit_status = executor->last_exit_status;
-
-            miga_frame_t *trap_frame =
-                exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-            miga_exec_result_t trap_result =
-                exec_execute_command_string(executor, string_cstr(trap_action->action));
-
-            exec_frame_pop(&executor->current_frame);
-
-            executor->last_exit_status = saved_exit_status;
-
-            if (trap_result.status == MIGA_EXEC_STATUS_EXIT)
-            {
-                final_result = MIGA_EXEC_STATUS_EXIT;
-                goto done;
-            }
-
-            if (trap_result.status == MIGA_EXEC_STATUS_ERROR)
-            {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
-                            err);
-                    exec_clear_error(executor);
-                }
-            }
+            final_result = MIGA_EXEC_STATUS_EXIT;
+            goto done;
         }
 
         /* ---- 10. SIGINT received outside the line editor ----
@@ -2952,6 +2866,102 @@ void exec_set_exit_status(miga_exec_t *executor, int status)
 {
     Expects_not_null(executor);
     executor->last_exit_status = status;
+}
+
+/* ============================================================================
+ * Traps
+ * ============================================================================
+ * The signal handler (trap_store.c) only sets executor->trap_pending[signo].
+ * exec_run_pending_traps() is called after every simple command, between the
+ * items of a list and between the lines of the REPL; it runs each pending
+ * action in an EXEC_FRAME_TRAP frame under the current frame. The action
+ * string is parsed and executed like an argument of eval; $? is preserved
+ * across it (XCU 2.11), unless the action calls exit.
+ */
+
+static void run_trap_action(miga_exec_t *executor, const string_t *action)
+{
+    miga_frame_t *current = executor->current_frame;
+    int saved_status = current->last_exit_status;
+    int saved_exec_status = executor->last_exit_status;
+
+    miga_frame_t *trap_frame = exec_frame_push(current, EXEC_FRAME_TRAP, executor, NULL);
+    miga_exec_status_t status = frame_execute_string(trap_frame, action);
+    exec_frame_pop(&trap_frame);
+
+    if (status == MIGA_EXEC_STATUS_ERROR)
+    {
+        const char *err = exec_get_error_cstr(executor);
+        if (err && err[0])
+        {
+            fprintf(stderr, "%s: trap: %s\n", string_cstr(executor->shell_name), err);
+            exec_clear_error(executor);
+        }
+    }
+
+    if (!executor->exit_requested)
+    {
+        current->last_exit_status = saved_status;
+        executor->last_exit_status = saved_exec_status;
+    }
+}
+
+bool exec_run_pending_traps(miga_exec_t *executor)
+{
+    Expects_not_null(executor);
+    if (!executor->current_frame || !trap_store_any_pending())
+        return false;
+
+    trap_store_clear_any_pending();
+    for (int signo = 1; signo < NSIG; signo++)
+    {
+        if (!executor->trap_pending[signo])
+            continue;
+        executor->trap_pending[signo] = 0;
+
+        bool ignored = false;
+        const string_t *action = frame_get_trap(executor->current_frame, signo, &ignored);
+        if (!action || ignored || string_length(action) == 0)
+            continue;
+
+        /* The store may change while the action runs (trap - SIG inside the
+         * action): work on a copy. */
+        string_t *copy = string_create_from(action);
+        run_trap_action(executor, copy);
+        string_destroy(&copy);
+
+        if (executor->exit_requested)
+            return true;
+    }
+    return executor->exit_requested;
+}
+
+void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame)
+{
+    Expects_not_null(executor);
+    Expects_not_null(frame);
+    if (!frame->traps)
+        return;
+
+    /* Taking the action out of the store makes the trap run exactly once,
+     * whatever the action does (including exit). */
+    string_t *action = trap_store_take_exit_action(frame->traps);
+    if (!action)
+        return;
+
+    /* The EXIT trap runs in the frame that is exiting, so that $? is that
+     * frame's exit status. An exit inside the action replaces that status. */
+    miga_frame_t *saved_current = executor->current_frame;
+    executor->current_frame = frame;
+    bool was_exit_requested = executor->exit_requested;
+    executor->exit_requested = false;
+    run_trap_action(executor, action);
+    string_destroy(&action);
+    if (executor->exit_requested)
+        frame->last_exit_status = executor->last_exit_status;
+    executor->exit_requested = was_exit_requested || executor->exit_requested;
+    if (executor->current_frame == frame)
+        executor->current_frame = saved_current;
 }
 
 void exec_request_exit(miga_exec_t *executor, int status)

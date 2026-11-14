@@ -396,6 +396,7 @@ struct miga_frame_t
 
     /* Trap handler state */
     bool in_trap_handler; /* Prevents recursive trap handling */
+    bool subst_status_valid; /* a command substitution ran since the flag was cleared */
 };
 
 /* ============================================================================

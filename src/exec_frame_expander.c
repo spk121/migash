@@ -104,6 +104,7 @@ static void record_subst_status(miga_frame_t *frame, int raw_status)
 #endif
 
     frame->last_exit_status = status;
+    frame->subst_status_valid = true;
 }
 
 /**

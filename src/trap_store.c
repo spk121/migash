@@ -235,74 +235,70 @@ sig_act_store_t *trap_store_get_sig_act_store(void)
 
 int execute_trap_action(const trap_action_t *trap)
 {
-    if (!trap || !trap->action)
-        return -1;
-    // Here we would normally execute the command string in the shell context.
-    // For this example, we'll just print it to indicate execution.
-    printf("Executing trap action for signal %d: %s\n",
-           trap->signal_number, string_cstr(trap->action));
-    // In a real shell, we would execute the command and return its exit status.
-    return 0; // Indicate success
+    /* Trap actions are run by the executor (exec_run_pending_traps), never
+     * from the signal handler. Kept for the trap_controller API. */
+    (void)trap;
+    return 0;
+}
+
+/* ----------------------------------------------------------------------------
+ * Pending-signal flags. The only thing a signal handler may do is set a flag
+ * (sig_atomic_t stores are async-signal-safe); the shell checks the flags
+ * between commands and runs the trap actions then (XCU 2.11: "the trap
+ * associated with that signal shall not be executed until after the
+ * foreground command has completed").
+ * ------------------------------------------------------------------------- */
+static volatile sig_atomic_t *g_pending_flags = NULL;
+static int g_pending_count = 0;
+static volatile sig_atomic_t g_any_pending = 0;
+
+void trap_store_set_pending_flags(volatile sig_atomic_t *flags, int count)
+{
+    g_pending_flags = flags;
+    g_pending_count = count;
+}
+
+bool trap_store_any_pending(void)
+{
+    return g_any_pending != 0;
+}
+
+void trap_store_clear_any_pending(void)
+{
+    g_any_pending = 0;
+}
+
+static void note_pending(int signal_number)
+{
+    if (g_pending_flags && signal_number > 0 && signal_number < g_pending_count)
+    {
+        g_pending_flags[signal_number] = 1;
+        g_any_pending = 1;
+    }
 }
 
 #ifdef TRAP_USE_POSIX_SIGNALS
-    // POSIX uses a sigaction handler
 void trap_handler(int signal, siginfo_t *info, void *context)
 {
-    /* This handler initializes the execution of a shell command string
-     * based on the received signal and context information.*/
-    trap_store_t *trap_store = trap_store_get_current();
-    if (!trap_store)
-        return;
-
-    // Get the trap action for the received signal
-    const trap_action_t *trap = trap_store_get(trap_store, signal);
-    if (!trap)
-        return;
-
-    // Execute the trap action
-    execute_trap_action(trap);
+    (void)info;
+    (void)context;
+    note_pending(signal);
 }
 #elifdef TRAP_USE_UCRT_SIGNALS
-int trap_handler(int signal, int fpe_code)
+int trap_handler(int signo, int fpe_code)
 {
-    /* This handler initializes the execution of a shell command string
-     * based on the received signal. The fpe_code parameter distinguishes
-     * different FPE exception types (FPE_INTDIV, FPE_FLTDIV, etc.) on UCRT,
-     * but since shell arithmetic is performed on 'long' integers (not
-     * floating-point), FPE exceptions should be rare or impossible.
-     * We treat all FPE exceptions the same: lookup and execute the single
-     * trap action set for SIGFPE. */
-    (void)fpe_code; // Suppress unused parameter warning
-
-    trap_store_t *trap_store = trap_store_get_current();
-    if (!trap_store)
-        return -1;
-
-    // Get the trap action for the received signal (handles all FPE types)
-    const trap_action_t *trap = trap_store_get(trap_store, signal);
-    if (!trap)
-        return -1;
-
-    // Execute the trap action
-    return execute_trap_action(trap);
+    (void)fpe_code;
+    note_pending(signo);
+    /* signal() handlers are one-shot on UCRT: re-arm */
+    signal(signo, (void (*)(int))trap_handler);
+    return 0;
 }
 #else
-    // ISO C signal support
-void trap_handler(int signal)
+void trap_handler(int signo)
 {
-    /* This handler initializes the execution of a shell command string
-     * based on the received signal.*/
-    trap_store_t *trap_store = trap_store_get_current();
-    if (!trap_store)
-        return;
-
-    // Get the trap action for the received signal
-    const trap_action_t *trap = trap_store_get(trap_store, signal);
-    if (!trap)
-        return;
-    // Execute the trap action
-    execute_trap_action(trap);
+    note_pending(signo);
+    /* ISO C does not say whether the disposition is reset: re-arm */
+    signal(signo, trap_handler);
 }
 #endif
 
@@ -349,6 +345,11 @@ bool trap_store_set(trap_store_t *store, int signal_number, string_t *action, bo
 
     trap_action_t *trap = &store->traps[signal_number];
 
+    /* POSIX: signals that were ignored on entry to a non-interactive shell
+     * cannot be trapped or reset. Accept the command, change nothing. */
+    if (trap->ignored_on_entry)
+        return true;
+
     // Free old action if it exists
     if (trap->action)
         string_destroy(&trap->action);
@@ -385,7 +386,7 @@ bool trap_store_set(trap_store_t *store, int signal_number, string_t *action, bo
             if (sig_act_store)
             {
                 sa.sa_sigaction = trap_handler;
-                sa.sa_flags = SA_SIGINFO;
+                sa.sa_flags = SA_SIGINFO | SA_RESTART;
                 sigemptyset(&sa.sa_mask);
                 if (sig_act_store_set_and_save(sig_act_store, signal_number, &sa) == -1)
                     return false; // sig_act_store_set_and_save failed
@@ -394,7 +395,7 @@ bool trap_store_set(trap_store_t *store, int signal_number, string_t *action, bo
             {
                 // Fallback: just use sigaction directly
                 sa.sa_sigaction = trap_handler;
-                sa.sa_flags = SA_SIGINFO;
+                sa.sa_flags = SA_SIGINFO | SA_RESTART;
                 sigemptyset(&sa.sa_mask);
                 if (sigaction(signal_number, &sa, NULL) == -1)
                     return false; // sigaction failed
@@ -441,17 +442,20 @@ bool trap_store_set_exit(trap_store_t *store, string_t *action, bool is_ignored,
 
     if (store->exit_action)
         string_destroy(&store->exit_action);
+    store->exit_action = NULL;
 
+    if (is_default)
+    {
+        /* trap - EXIT: no EXIT trap */
+        store->exit_trap_set = false;
+        return true;
+    }
+
+    /* trap '' EXIT sets an empty action: nothing runs at exit */
     store->exit_trap_set = true;
-    store->exit_action = action ? string_create_from(action) : NULL;
-
-    // Note: EXIT trap doesn't use is_ignored/is_default the same way
-    // as signal traps, but we could extend the struct to track this if needed.
-    // EXIT traps don't install OS signal handlers, so this always succeeds.
-    (void)is_ignored;
-    (void)is_default;
-
-    return true; // EXIT trap setup always succeeds (no OS calls needed)
+    store->exit_action = (action && !is_ignored) ? string_create_from(action)
+                                                 : string_create_from_cstr("");
+    return true;
 }
 
 const trap_action_t *trap_store_get(const trap_store_t *store, int signal_number)
@@ -473,8 +477,7 @@ const string_t *trap_store_get_exit(const trap_store_t *store)
 {
     Expects_not_null(store);
     if (!store->exit_trap_set)
-        return string_create_from_cstr("");
-
+        return NULL;
     return store->exit_action;
 }
 
@@ -865,42 +868,22 @@ const char *trap_signal_number_to_name(int signo)
 void trap_store_reset_non_ignored(trap_store_t* store)
 {
     Expects_not_null(store);
-    for (size_t i = 0; i < store->capacity; i++)
+    /* XCU 2.12: on entering a subshell, traps that are not being ignored are
+     * set to the default actions. That includes the EXIT trap. */
+    for (size_t i = 1; i < store->capacity; i++)
     {
         trap_action_t* trap = &store->traps[i];
-        if (!trap->is_ignored)
-        {
-            // Reset to default
-            if (trap->action)
-                string_destroy(&trap->action);
-            trap->action = NULL;
-            trap->is_default = true;
-
-            // TODO: where to reset the actual signal handler to SIG_DFL?
-#ifdef TRAP_USE_POSIX_SIGNALS
-            sigaction(trap->signal_number, NULL, NULL);
-#elifdef TRAP_USE_UCRT_SIGNALS
-            if (trap->signal_number == SIGABRT ||
-                trap->signal_number == SIGFPE ||
-                trap->signal_number == SIGILL ||
-                trap->signal_number == SIGINT ||
-                trap->signal_number == SIGSEGV || trap->signal_number == SIGTERM)
-            {
-                signal(trap->signal_number, SIG_DFL);
-            }
-#else
-            // ISO C signal handling
-            if (trap->signal_number == SIGABRT ||
-                trap->signal_number == SIGFPE ||
-                trap->signal_number == SIGILL ||
-                trap->signal_number == SIGINT ||
-                trap->signal_number == SIGSEGV || trap->signal_number == SIGTERM)
-            {
-                signal(trap->signal_number, SIG_DFL);
-            }
-#endif
-        }
+        if (trap->is_ignored)
+            continue;
+        bool had_handler = trap->action != NULL;
+        if (trap->action)
+            string_destroy(&trap->action);
+        trap->action = NULL;
+        trap->is_default = true;
+        if (had_handler)
+            signal((int)i, SIG_DFL);
     }
+    trap_store_clear_exit(store);
 }
 
 void trap_store_for_each_set_trap(const trap_store_t *store,
@@ -950,15 +933,39 @@ void trap_store_for_each_set_trap(const trap_store_t *store,
     }
 }
 
-void trap_store_run_exit_trap(const trap_store_t* store, void* fram)
+string_t *trap_store_take_exit_action(trap_store_t *store)
 {
     Expects_not_null(store);
-    Expects_not_null(fram);
-    Expects_eq(store->exit_trap_set, true);
-    Expects_not_null(store->exit_action);
-    // miga_frame_t* exec_frame = (miga_frame_t*)fram;
+    if (!store->exit_trap_set)
+        return NULL;
+    string_t *action = store->exit_action;
+    store->exit_action = NULL;
+    store->exit_trap_set = false;
+    if (action && string_length(action) == 0)
+    {
+        string_destroy(&action);
+        return NULL;
+    }
+    return action;
+}
 
-    // Execute the EXIT trap action
-    printf("Executing EXIT trap action: %s\n", string_cstr(store->exit_action));
-    // In a real shell, we would execute the command and handle its exit status.
+void trap_store_record_ignored_on_entry(trap_store_t *store)
+{
+    Expects_not_null(store);
+#ifdef TRAP_USE_POSIX_SIGNALS
+    for (size_t i = 1; i < store->capacity; i++)
+    {
+        struct sigaction sa;
+        if (sigaction((int)i, NULL, &sa) != 0)
+            continue;
+        if (sa.sa_handler == SIG_IGN)
+        {
+            trap_action_t *trap = &store->traps[i];
+            trap->signal_number = (int)i;
+            trap->is_ignored = true;
+            trap->is_default = false;
+            trap->ignored_on_entry = true;
+        }
+    }
+#endif
 }

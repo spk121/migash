@@ -585,8 +585,12 @@ int builtin_exit(miga_frame_t *frame, const strlist_t *args)
         return 1;
     }
 
-    // Run EXIT trap if set
+    // Run the EXIT trap, if set. $? inside it is the exit status; an exit
+    // inside the trap action replaces that status.
+    frame->last_exit_status = exit_status;
     frame_run_exit_traps(frame);
+    if (frame->executor && frame->executor->exit_requested)
+        exit_status = frame->executor->last_exit_status;
 
     // Reap background jobs
     if (frame->executor)

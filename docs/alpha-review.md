@@ -13,8 +13,11 @@ still open.
   errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
   17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered;
   `read`, `type`, `command`, `umask`, `hash`, `ulimit` still missing);
-  18 **fixed**; 19 **fixed**; 20-22 **open** (traps, SIGINT, interactive
-  prompts) except the banner, which is now interactive-only.
+  18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed** for
+  non-interactive shells (trapped SIGINT runs the action, untrapped kills
+  the shell with 130; the interactive-shell SIGINT behaviour is still
+  open); 22 **open** (interactive prompts) except the banner, which is
+  now interactive-only.
 - Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
 - Conformance (D): 27 **fixed**; 28-36 open.
 - Code health (E): 37 partly (all three build systems work and agree on
@@ -55,15 +58,20 @@ the word (dash does); the `read` builtin is still missing (item 17);
 `wait` with no operands returns at once instead of waiting for the
 background jobs (`wait $!` works).
 
-Traps (2026-11-14): `test/sh/18_traps_signals.sh` specifies the trap
-and SIGINT behaviour to implement (33 assertions, checked against dash
-and bash: trap actions and when they run, `$?` around them, expansion
-time, listing, reset and ignore, inheritance of ignored signals, the EXIT
-trap and its exit status, SIGINT with and without a trap). migash fails 19
-of them today and aborts on `trap - EXIT` followed by an EXIT trap run
-(`trap_store_run_exit_trap: store->exit_action is NULL`); the file is in
-`test/sh/expected_failures.txt`, which the runner reports as XFAIL
-instead of failing CI, until items 20-21 are done.
+Traps (2026-11-14): implemented; `test/sh/18_traps_signals.sh` (33
+assertions checked against dash and bash) passes completely and is no
+longer in `expected_failures.txt`. The signal handler only sets a pending
+flag; the executor runs the action after the current simple command
+(XCU 2.11) in a TRAP frame, preserving `$?`; `exit` inside an action
+unwinds with the action's status. The EXIT trap runs once, at the end of
+the input, on `exit`, and when a subshell or background job ends, with
+`$?` set to the exit status and `exit` inside it replacing that status.
+Subshells reset non-ignored traps (EXIT included); signals ignored on
+entry cannot be trapped; `trap - EXIT` no longer aborts. Along the way:
+an assignment-only command (`st=$?`) reset `$?` before expanding its
+value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
+are not reset in command-substitution or pipeline children (they fork
+without a frame).
 
 Lowering (2026-11-14): `src/lowering_rules.md` was rewritten to describe
 `lower.c` as it is. While checking it, one rule turned out to be wrong in
