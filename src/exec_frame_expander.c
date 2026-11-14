@@ -1116,98 +1116,234 @@ static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *
     return result;
 }
 
+/* ============================================================================
+ * Field builder: word expansion into fields (POSIX 2.6.5 / 2.6.6)
+ * ============================================================================
+ * A word's parts are appended to a field in progress. The result of an
+ * UNQUOTED parameter expansion, command substitution or arithmetic expansion
+ * is field-split with IFS as it is appended: its first piece completes the
+ * field in progress, the following pieces become fields of their own, and its
+ * last piece starts the next field. Quoted text and tilde results are never
+ * split. Each field remembers whether it received unquoted pattern characters
+ * (* ? [), because only those fields undergo pathname expansion.
+ */
+
+typedef struct
+{
+    strlist_t *fields;
+    bool *glob;        /* per field: contains unquoted * ? [ */
+    int glob_cap;
+    string_t *current; /* field in progress */
+    bool has_content;  /* current must be emitted even if empty ("" or quoted) */
+    bool current_glob;
+} field_builder_t;
+
+static void fb_init(field_builder_t *fb)
+{
+    fb->fields = strlist_create();
+    fb->glob = NULL;
+    fb->glob_cap = 0;
+    fb->current = string_create();
+    fb->has_content = false;
+    fb->current_glob = false;
+}
+
+static void fb_push_current(field_builder_t *fb)
+{
+    int n = strlist_size(fb->fields);
+    if (n >= fb->glob_cap)
+    {
+        fb->glob_cap = fb->glob_cap ? fb->glob_cap * 2 : 8;
+        fb->glob = xrealloc(fb->glob, (size_t)fb->glob_cap * sizeof(bool));
+    }
+    fb->glob[n] = fb->current_glob;
+    strlist_move_push_back(fb->fields, &fb->current);
+    fb->current = string_create();
+    fb->has_content = false;
+    fb->current_glob = false;
+}
+
+static bool is_glob_char(char c)
+{
+    return c == '*' || c == '?' || c == '[';
+}
+
+/* Quoted text, or an expansion result that must not be split or globbed. */
+static void fb_append_quoted(field_builder_t *fb, const string_t *text)
+{
+    string_append(fb->current, text);
+    fb->has_content = true;
+}
+
+/* Unquoted literal text: not split (it is not an expansion result), but
+ * pattern characters in it make the field a candidate for globbing. */
+static void fb_append_literal(field_builder_t *fb, const string_t *text)
+{
+    for (int i = 0; i < string_length(text); i++)
+        if (is_glob_char(string_at(text, i)))
+            fb->current_glob = true;
+    string_append(fb->current, text);
+    fb->has_content = true;
+}
+
+static bool ifs_contains(const string_t *ifs, char c)
+{
+    const char *p = string_cstr(ifs);
+    for (int i = 0; i < string_length(ifs); i++)
+        if (p[i] == c)
+            return true;
+    return false;
+}
+
+/* The result of an unquoted expansion: split with IFS while appending. */
+static void fb_append_unquoted_expansion(field_builder_t *fb, const string_t *text,
+                                         const string_t *ifs)
+{
+    const char *t = string_cstr(text);
+    int n = string_length(text);
+    int i = 0;
+
+    while (i < n)
+    {
+        char c = t[i];
+        bool is_ifs = string_length(ifs) > 0 && ifs_contains(ifs, c);
+
+        if (is_ifs && is_ifs_whitespace(c))
+        {
+            /* A run of IFS whitespace: skip it. It delimits the field in
+             * progress (if there is one), and whitespace next to a
+             * non-whitespace delimiter belongs to that delimiter. */
+            while (i < n && ifs_contains(ifs, t[i]) && is_ifs_whitespace(t[i]))
+                i++;
+            if (i < n && ifs_contains(ifs, t[i]))
+                continue; /* let the non-whitespace delimiter terminate it */
+            if (fb->has_content)
+                fb_push_current(fb);
+            continue;
+        }
+
+        if (is_ifs)
+        {
+            /* Non-whitespace delimiter: ends the field in progress, even if
+             * it is empty ("a::b" gives a, empty, b), then eats trailing
+             * IFS whitespace. A delimiter at the very end produces no extra
+             * field because the empty field it starts has no content. */
+            i++;
+            fb_push_current(fb);
+            while (i < n && ifs_contains(ifs, t[i]) && is_ifs_whitespace(t[i]))
+                i++;
+            continue;
+        }
+
+        if (is_glob_char(c))
+            fb->current_glob = true;
+        string_append_char(fb->current, c);
+        fb->has_content = true;
+        i++;
+    }
+}
+
 /**
- * Expand the parts of a word into fields. Every part contributes to the
- * current field, except a double-quoted "$@", which contributes its first
- * positional parameter to the current field, each middle one as a field of
- * its own, and starts the next field with the last one (POSIX 2.5.2). A word
- * made only of "$@" with no positional parameters yields no field.
+ * Expand the parts of a word into fields. Returns the fields; *out_glob (if
+ * given) receives a per-field array (owned by the caller, freed with xfree)
+ * telling which fields are candidates for pathname expansion.
  */
 static strlist_t *expand_parts_to_fields(miga_frame_t *frame, const part_list_t *parts,
-                                         bool *has_quoted_at)
+                                         bool **out_glob)
 {
-    strlist_t *fields = strlist_create();
-    string_t *current = string_create();
-    bool emitted_anything = false;
+    field_builder_t fb;
+    fb_init(&fb);
+    string_t *ifs = get_ifs(frame);
 
     for (int i = 0; i < part_list_size(parts); i++)
     {
         const part_t *part = part_list_get(parts, i);
+        bool quoted = part->was_single_quoted || part->was_double_quoted;
 
         bool quoted_special = part->type == PART_PARAMETER && part->param_kind == PARAM_PLAIN &&
-                              part_was_double_quoted(part) && part->param_name &&
+                              part->was_double_quoted && part->param_name &&
                               string_length(part->param_name) == 1;
         bool quoted_at = quoted_special && string_cstr(part->param_name)[0] == '@';
         bool quoted_star = quoted_special && string_cstr(part->param_name)[0] == '*';
+
         if (quoted_star)
         {
             /* "$*": one field, parameters joined with the first character of
              * IFS (a space when IFS is unset, nothing when it is empty). */
-            emitted_anything = true;
             strlist_t *all = frame && frame->positional_params
                                  ? positional_params_get_all(frame->positional_params)
                                  : strlist_create();
             string_t *sep = string_create_from_cstr(" ");
             if (frame && frame_has_variable_cstr(frame, "IFS"))
             {
-                string_t *ifs = frame_get_variable_cstr(frame, "IFS");
+                string_t *ifs_var = frame_get_variable_cstr(frame, "IFS");
                 string_clear(sep);
-                if (string_length(ifs) > 0)
-                    string_append_char(sep, string_cstr(ifs)[0]);
-                string_destroy(&ifs);
+                if (string_length(ifs_var) > 0)
+                    string_append_char(sep, string_cstr(ifs_var)[0]);
+                string_destroy(&ifs_var);
             }
+            string_t *joined = string_create();
             for (int j = 0; j < strlist_size(all); j++)
             {
                 if (j > 0)
-                    string_append(current, sep);
-                string_append(current, strlist_at(all, j));
+                    string_append(joined, sep);
+                string_append(joined, strlist_at(all, j));
             }
+            fb_append_quoted(&fb, joined);
+            string_destroy(&joined);
             string_destroy(&sep);
             strlist_destroy(&all);
             continue;
         }
+
         if (quoted_at)
         {
-            if (has_quoted_at)
-                *has_quoted_at = true;
+            /* "$@": one field per parameter; none at all when there are no
+             * parameters and nothing else in the word. */
             strlist_t *all = frame && frame->positional_params
                                  ? positional_params_get_all(frame->positional_params)
                                  : strlist_create();
             int n = strlist_size(all);
             for (int j = 0; j < n; j++)
             {
-                string_append(current, strlist_at(all, j));
+                fb_append_quoted(&fb, strlist_at(all, j));
                 if (j < n - 1)
-                {
-                    strlist_move_push_back(fields, &current);
-                    current = string_create();
-                }
+                    fb_push_current(&fb);
             }
-            if (n > 0)
-                emitted_anything = true;
             strlist_destroy(&all);
             continue;
         }
 
-        emitted_anything = true;
-        if (part->was_single_quoted && part->type == PART_LITERAL)
+        if (part->type == PART_LITERAL)
         {
-            string_append(current, part->text);
+            if (quoted)
+                fb_append_quoted(&fb, part->text);
+            else
+                fb_append_literal(&fb, part->text);
             continue;
         }
+
         string_t *expanded = expand_part(frame, part);
-        if (expanded)
-        {
-            string_append(current, expanded);
-            string_destroy(&expanded);
-        }
+        if (!expanded)
+            continue;
+        if (quoted || part->type == PART_TILDE)
+            fb_append_quoted(&fb, expanded);
+        else
+            fb_append_unquoted_expansion(&fb, expanded, ifs);
+        string_destroy(&expanded);
     }
 
-    if (emitted_anything)
-        strlist_move_push_back(fields, &current);
+    if (fb.has_content)
+        fb_push_current(&fb);
     else
-        string_destroy(&current);
-    return fields;
+        string_destroy(&fb.current);
+
+    string_destroy(&ifs);
+    if (out_glob)
+        *out_glob = fb.glob;
+    else
+        xfree(fb.glob);
+    return fb.fields;
 }
 
 /**
@@ -1248,50 +1384,34 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
         return result;
     }
 
-    /* Expand all parts. A double-quoted "$@" yields one field per positional
-     * parameter (and no field at all when there are none). */
-    bool has_quoted_at = false;
-    strlist_t *fields = expand_parts_to_fields(frame, token_get_parts_const(tok), &has_quoted_at);
+    /* Expand the parts into fields: unquoted expansion results are field-split
+     * as they are appended, "$@" yields one field per parameter. */
+    bool *glob_flags = NULL;
+    strlist_t *fields = expand_parts_to_fields(frame, token_get_parts_const(tok), &glob_flags);
 
-    /* Field splitting of the unquoted expansions. (When the word also holds a
-     * quoted "$@", its fields are kept whole.) */
-    if (tok->needs_field_splitting && !has_quoted_at)
-    {
-        strlist_t *split = strlist_create();
-        for (int i = 0; i < strlist_size(fields); i++)
-        {
-            strlist_t *parts = expand_field_split(frame, strlist_at(fields, i));
-            for (int j = 0; j < strlist_size(parts); j++)
-                strlist_push_back(split, string_create_from(strlist_at(parts, j)));
-            strlist_destroy(&parts);
-        }
-        strlist_destroy(&fields);
-        fields = split;
-
-        /* POSIX: If field splitting produced zero words (e.g., input was only
-         * IFS whitespace), that's correct - don't add an empty string. */
-    }
-
-    /* Pathname expansion */
-    if (tok->needs_pathname_expansion)
+    /* Pathname expansion of the fields that hold unquoted pattern characters
+     * (unless set -f). A pattern that matches nothing stays as it is. */
+    bool noglob = frame && frame->opt_flags && frame->opt_flags->noglob;
+    if (!noglob && glob_flags)
     {
         strlist_t *globs = strlist_create();
-
         for (int i = 0; i < strlist_size(fields); i++)
         {
-            const string_t *pattern = strlist_at(fields, i);
-            strlist_t *matches = expand_pathname(frame, pattern);
-
-            for (int j = 0; j < strlist_size(matches); j++)
+            const string_t *field = strlist_at(fields, i);
+            if (!glob_flags[i])
             {
-                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
+                strlist_push_back(globs, string_create_from(field));
+                continue;
             }
+            strlist_t *matches = expand_pathname(frame, field);
+            for (int j = 0; j < strlist_size(matches); j++)
+                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
             strlist_destroy(&matches);
         }
-
         strlist_destroy(&fields);
-        return globs;
+        fields = globs;
     }
+    xfree(glob_flags);
 
     return fields;
 }

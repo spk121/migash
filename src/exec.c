@@ -1115,6 +1115,11 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
 
         exec_frame_create_top_level(e);
         log_debug("Top-level frame created and initialized.");
+
+        /* POSIX 2.5.3: the shell sets IFS to <space><tab><newline> when it
+         * is invoked, whatever the environment holds; it is not exported. */
+        if (e->top_frame && e->top_frame->variables)
+            variable_store_add_cstr(e->top_frame->variables, "IFS", " \t\n", false, false);
     }
 
     /* Source RC files */
