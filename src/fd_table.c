@@ -233,8 +233,7 @@ string_t *fd_table_generate_heredoc_name(int target_fd)
 
 bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *path)
 {
-    Expects_not_null(table);
-    Expects_not_null(path);
+    return_val_if_null(table, false);
 
     /* Check if entry already exists */
     int idx = find_entry_index(table, fd);
@@ -243,15 +242,10 @@ bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *p
         /* Update existing entry */
         fd_entry_t *entry = &table->entries[idx];
 
-        /* Clear old path if present */
+        /* Replace the path (which is optional) */
         if (entry->path != NULL)
-        {
-            string_set(entry->path, path);
-        }
-        else
-        {
-            entry->path = string_create_from(path);
-        }
+            string_destroy(&entry->path);
+        entry->path = path ? string_create_from(path) : NULL;
 
         entry->flags = flags;
         entry->is_open = true;
@@ -263,7 +257,8 @@ bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *p
          * the original-fd mapping, leaving the redirected descriptor live
          * forever (Bug 1). */
         char flags_buf[64];
-        log_debug("fd_table_add: fd=%d path='%s' updated flags=%s", fd, string_cstr(path),
+        log_debug("fd_table_add: fd=%d path='%s' updated flags=%s", fd,
+                  path ? string_cstr(path) : "",
                   fd_flags_to_string(flags, flags_buf, sizeof(flags_buf)));
         return true;
     }
@@ -276,7 +271,7 @@ bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *p
     entry->fd = fd;
     entry->original_fd = -1;
     entry->flags = flags;
-    entry->path = string_create_from(path);
+    entry->path = path ? string_create_from(path) : NULL;
     entry->is_open = true;
 
     table->count++;
@@ -287,14 +282,14 @@ bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *p
         table->highest_fd = fd;
     }
     char flags_buf2[64];
-    log_debug("fd_table_add: fd=%d path='%s' new entry flags=%s", fd, string_cstr(path),
+    log_debug("fd_table_add: fd=%d path='%s' new entry flags=%s", fd, path ? string_cstr(path) : "",
               fd_flags_to_string(flags, flags_buf2, sizeof(flags_buf2)));
     return true;
 }
 
 bool fd_table_mark_saved(fd_table_t *table, int saved_fd, int original_fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     /* Check if entry exists */
     int idx = find_entry_index(table, saved_fd);
@@ -333,7 +328,7 @@ bool fd_table_mark_saved(fd_table_t *table, int saved_fd, int original_fd)
 
 bool fd_table_mark_closed(fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -348,7 +343,7 @@ bool fd_table_mark_closed(fd_table_t *table, int fd)
 
 bool fd_table_mark_open(fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
     int idx = find_entry_index(table, fd);
     if (idx < 0)
         return false;
@@ -359,7 +354,7 @@ bool fd_table_mark_open(fd_table_t *table, int fd)
 
 bool fd_table_remove(fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -369,7 +364,7 @@ bool fd_table_remove(fd_table_t *table, int fd)
     }
 
     log_debug("fd_table_remove: fd=%d path='%s' removing entry", fd,
-              string_cstr(table->entries[idx].path));
+              table->entries[idx].path ? string_cstr(table->entries[idx].path) : "");
 
     /* Clear entry resources */
     clear_entry(&table->entries[idx]);
@@ -410,7 +405,7 @@ bool fd_table_remove(fd_table_t *table, int fd)
 
 fd_entry_t *fd_table_find(fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, NULL);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -423,7 +418,7 @@ fd_entry_t *fd_table_find(fd_table_t *table, int fd)
 
 bool fd_table_is_open(const fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -436,7 +431,7 @@ bool fd_table_is_open(const fd_table_t *table, int fd)
 
 fd_flags_t fd_table_get_flags(const fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, FD_IS_DEFAULT);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -449,7 +444,7 @@ fd_flags_t fd_table_get_flags(const fd_table_t *table, int fd)
 
 bool fd_table_has_flag(const fd_table_t *table, int fd, fd_flags_t flag)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -462,7 +457,7 @@ bool fd_table_has_flag(const fd_table_t *table, int fd, fd_flags_t flag)
 
 int fd_table_get_original(const fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, -1);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -475,7 +470,7 @@ int fd_table_get_original(const fd_table_t *table, int fd)
 
 const string_t *fd_table_get_path(const fd_table_t *table, int fd)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, NULL);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -494,7 +489,7 @@ const string_t *fd_table_get_path(const fd_table_t *table, int fd)
 
 bool fd_table_set_flag(fd_table_t *table, int fd, fd_flags_t flag)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -512,7 +507,7 @@ bool fd_table_set_flag(fd_table_t *table, int fd, fd_flags_t flag)
 
 bool fd_table_clear_flag(fd_table_t *table, int fd, fd_flags_t flag)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, false);
 
     int idx = find_entry_index(table, fd);
     if (idx < 0)
@@ -536,7 +531,12 @@ bool fd_table_clear_flag(fd_table_t *table, int fd, fd_flags_t flag)
 
 int *fd_table_get_fds_with_flag(const fd_table_t *table, fd_flags_t flag, size_t *out_count)
 {
-    Expects_not_null(table);
+    if (!table)
+    {
+        if (out_count)
+            *out_count = 0;
+        return NULL;
+    }
     Expects_not_null(out_count);
 
     /* First pass: count matching entries */
@@ -592,13 +592,13 @@ int fd_table_get_original_fd(const fd_table_t *table, int saved_fd)
 
 size_t fd_table_count(const fd_table_t *table)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, 0);
     return table->count;
 }
 
 int fd_table_get_highest_fd(const fd_table_t *table)
 {
-    Expects_not_null(table);
+    return_val_if_null(table, -1);
 
     return table->highest_fd;
 }

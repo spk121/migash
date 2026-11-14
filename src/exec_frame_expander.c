@@ -13,13 +13,16 @@
 #endif
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "arithmetic.h"
 #include "exec_frame.h"
+#include "miga/exec.h"
 #include "exec_frame_expander.h"
+#include "lexer.h"
 #include "exec_types_internal.h"
 #include "glob_util.h"
 #include "logging.h"
@@ -328,11 +331,45 @@ static bool is_parameter_set(miga_frame_t *frame, const string_t *name)
  * Despite looking like an accessor, this function may have side effects
  * (e.g., modifying the frame's last_exit_status or assigning variables for := modifier).
  */
+static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *parts);
+
+/**
+ * Expand the word of ${var-word}, ${var:=word}, ${var:+word}, ${var:?word}.
+ * The lexer keeps it as raw text; it undergoes tilde, parameter, command and
+ * arithmetic expansion (and quote removal) like any word, with no field
+ * splitting. Inside a double-quoted expansion the word behaves as if it were
+ * double-quoted itself.
+ */
+static string_t *expand_text_as_dquoted(miga_frame_t *frame, const string_t *body);
+
+static string_t *expand_modifier_word(miga_frame_t *frame, const part_t *part)
+{
+    if (!part->word)
+        return string_create();
+    if (part_was_double_quoted(part))
+        return expand_text_as_dquoted(frame, part->word);
+
+    token_list_t *tokens = token_list_create();
+    lex_status_t st = lex_cstr_to_tokens(string_cstr(part->word), tokens);
+    string_t *result = NULL;
+    if (st == LEX_OK && token_list_size(tokens) >= 1 &&
+        token_get_type(token_list_get(tokens, 0)) == TOKEN_WORD)
+    {
+        result = expand_parts_to_string(frame, token_get_parts_const(token_list_get(tokens, 0)));
+    }
+    token_list_destroy(&tokens);
+    if (!result)
+        result = string_create_from(part->word);
+    return result;
+}
+
 static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_t *part)
 {
     string_t *v = get_parameter_value(frame, part->param_name);
     bool is_set = (v != NULL);
     bool is_null = (v == NULL || string_length(v) == 0);
+    /* ${var:-word} tests "unset or null"; ${var-word} tests "unset" only */
+    bool missing = part->has_colon ? is_null : !is_set;
 
     switch (part->param_kind)
     {
@@ -355,39 +392,38 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
         return string_create_from_cstr("0");
 
     case PARAM_USE_DEFAULT:
-        /* ${var:-word} - use default if unset or null */
-        if (is_null)
+        /* ${var:-word} / ${var-word} - substitute the expanded word */
+        if (missing)
         {
-            /* Expand the word */
-            if (part->word)
-            {
-                return string_create_from(part->word);
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            return expand_modifier_word(frame, part);
         }
         return v;
 
     case PARAM_ASSIGN_DEFAULT:
-        /* ${var:=word} - assign default if unset or null */
-        if (is_null)
+        /* ${var:=word} / ${var=word} - assign the expanded word */
+        if (missing)
         {
-            /* Expand and assign the word */
-            if (part->word)
-            {
-                string_t *value = string_create_from(part->word);
-                set_parameter_value(frame, part->param_name, value);
-                return value;
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            string_t *value = expand_modifier_word(frame, part);
+            set_parameter_value(frame, part->param_name, value);
+            return value;
         }
         return v;
 
     case PARAM_ERROR_IF_UNSET:
-        /* ${var:?word} - error if unset or null */
-        if (is_null)
+        /* ${var:?word} / ${var?word} - error with the expanded word */
+        if (missing)
         {
-            const char *msg = part->word ? string_cstr(part->word) : "parameter null or not set";
-            log_error("Parameter expansion error: %s: %s", string_cstr(part->param_name), msg);
+            if (v)
+                string_destroy(&v);
+            string_t *msg = part->word ? expand_modifier_word(frame, part)
+                                       : string_create_from_cstr("parameter null or not set");
+            log_error("Parameter expansion error: %s: %s", string_cstr(part->param_name),
+                      string_cstr(msg));
+            string_destroy(&msg);
             if (frame)
             {
                 frame->last_exit_status = 1;
@@ -397,16 +433,15 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
         return v;
 
     case PARAM_USE_ALTERNATE:
-        /* ${var:+word} - use alternate if set and not null */
-        if (!is_null)
+        /* ${var:+word} / ${var+word} - substitute the word when present */
+        if (!missing)
         {
-            /* Expand the word */
-            if (part->word)
-            {
-                return string_create_from(part->word);
-            }
-            return string_create();
+            if (v)
+                string_destroy(&v);
+            return expand_modifier_word(frame, part);
         }
+        if (v)
+            string_destroy(&v);
         return string_create();
 
     case PARAM_REMOVE_SMALL_SUFFIX:
@@ -557,7 +592,9 @@ string_t *expand_special_param(const miga_frame_t *frame, const string_t *name)
 
         case '@':
         case '*':
-            /* All positional parameters */
+            /* All positional parameters joined with spaces (the unquoted
+             * form, later field-split). Double-quoted "$@" and "$*" are
+             * handled by expand_parts_to_fields(). */
             if (frame && frame->positional_params)
             {
                 return positional_params_get_all_joined(frame->positional_params, ' ');
@@ -653,24 +690,85 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
         return string_create();
     }
 
-    FILE *pipe = popen(cmd, "r");
-    if (pipe == NULL)
+    /* POSIX 2.6.3: the command is executed in a subshell environment. Fork,
+     * run it through this shell's own executor in the child with stdout
+     * connected to a pipe, and collect the output in the parent. Running it
+     * in-process (rather than popen(3), which uses /bin/sh) keeps shell
+     * functions, aliases, unexported variables and builtins visible. */
+    int fds[2];
+    if (pipe(fds) == -1)
     {
-        log_error("expand_command_subst: popen failed for '%s'", cmd);
-        record_subst_status(frame, 1);
+        log_error("expand_command_subst: pipe failed: %s", strerror(errno));
+        record_subst_status(frame, 1 << 8);
         return string_create();
     }
 
-    string_t *output = string_create();
-    char buffer[256];
+    fflush(stdout);
+    fflush(stderr);
 
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL)
+    pid_t pid = fork();
+    if (pid < 0)
     {
-        string_append_cstr(output, buffer);
+        log_error("expand_command_subst: fork failed: %s", strerror(errno));
+        close(fds[0]);
+        close(fds[1]);
+        record_subst_status(frame, 1 << 8);
+        return string_create();
     }
 
-    int exit_code = pclose(pipe);
-    record_subst_status(frame, exit_code);
+    if (pid == 0)
+    {
+        /* Child: stdout goes to the pipe. */
+        close(fds[0]);
+        if (fds[1] != STDOUT_FILENO)
+        {
+            dup2(fds[1], STDOUT_FILENO);
+            close(fds[1]);
+        }
+
+        miga_exec_t *executor = frame->executor;
+        parse_session_t *session = exec_create_parse_session(executor);
+        miga_exec_status_t st = MIGA_EXEC_STATUS_ERROR;
+        if (session)
+            st = exec_frame_string_core(frame, cmd, session);
+
+        int code = executor->last_exit_status & 0xff;
+        if (st == MIGA_EXEC_STATUS_INCOMPLETE)
+            code = 2; /* syntax error: unterminated input */
+        else if (st != MIGA_EXEC_STATUS_OK && st != MIGA_EXEC_STATUS_EXIT &&
+                 st != MIGA_EXEC_STATUS_EMPTY && code == 0)
+            code = 1;
+
+        fflush(stdout);
+        fflush(stderr);
+        _exit(code);
+    }
+
+    /* Parent: read everything the child writes. */
+    close(fds[1]);
+    string_t *output = string_create();
+    char buffer[4096];
+    for (;;)
+    {
+        ssize_t n = read(fds[0], buffer, sizeof(buffer));
+        if (n > 0)
+        {
+            string_append_data(output, buffer, (int)n);
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        break;
+    }
+    close(fds[0]);
+
+    int wstatus = 0;
+    pid_t waited;
+    do
+    {
+        waited = waitpid(pid, &wstatus, 0);
+    } while (waited < 0 && errno == EINTR);
+    record_subst_status(frame, waited < 0 ? (1 << 8) : wstatus);
 
     /* Strip trailing newlines per POSIX */
     strip_trailing_newlines(output);
@@ -948,7 +1046,11 @@ static string_t *expand_part(miga_frame_t *frame, const part_t *part)
         return expand_parameter_with_modifier(frame, part);
 
     case PART_COMMAND_SUBST: {
-        /* Convert nested tokens to command string */
+        /* The lexer stores the raw command text in part->text. (Older code
+         * produced nested tokens instead; join them if that is all we have.) */
+        if (part->text && string_length(part->text) > 0)
+            return expand_command_subst(frame, part->text);
+
         string_t *cmd = string_create();
         int len = part->nested ? token_list_size(part->nested) : 0;
         for (int i = 0; i < len; i++)
@@ -971,11 +1073,122 @@ static string_t *expand_part(miga_frame_t *frame, const part_t *part)
         return expand_arithmetic(frame, part->text);
 
     case PART_TILDE:
-        return expand_tilde(frame, part->text);
+        /* tilde_expand_parts() stored the expanded home directory here */
+        return string_create_from(part->text);
 
     default:
         return string_create();
     }
+}
+
+/* ============================================================================
+ * Tilde expansion (POSIX 2.6.1)
+ * ============================================================================
+ * A tilde-prefix is an unquoted '~' at the beginning of a word, or (in an
+ * assignment value) following an unquoted ':', together with the characters
+ * up to the first unquoted '/' (or ':' in an assignment). If every character
+ * of the prefix is literal the prefix is replaced by $HOME (plain ~) or the
+ * named user's home directory; otherwise the word is left alone. The result
+ * becomes a PART_TILDE part, which is never field-split or globbed.
+ */
+
+static string_t *tilde_home(miga_frame_t *frame, const string_t *name)
+{
+    if (string_length(name) == 0)
+    {
+        if (frame && frame_has_variable_cstr(frame, "HOME"))
+        {
+            string_t *home = frame_get_variable_cstr(frame, "HOME");
+            if (home && string_length(home) > 0)
+                return home;
+            /* HOME set but empty: "~/x" becomes "/x" like dash */
+            if (home)
+                return home;
+        }
+        const char *env = getenv("HOME");
+        if (env)
+            return string_create_from_cstr(env);
+        /* HOME unset: unspecified by POSIX; leave the tilde alone (dash) */
+        return NULL;
+    }
+    return expand_tilde(frame, name);
+}
+
+static part_list_t *tilde_expand_parts(miga_frame_t *frame, const part_list_t *parts,
+                                       bool assignment)
+{
+    int n = part_list_size(parts);
+    part_list_t *out = NULL;
+
+    for (int i = 0; i < n; i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+        bool literal = part->type == PART_LITERAL && !part->was_single_quoted &&
+                       !part->was_double_quoted && part->text;
+        if (!literal || (i > 0 && !assignment))
+        {
+            if (out)
+                part_list_append(out, part_clone(part));
+            continue;
+        }
+
+        const char *text = string_cstr(part->text);
+        int len = string_length(part->text);
+        string_t *pending = string_create(); /* literal text not yet emitted */
+        bool changed = false;
+
+        int pos = 0;
+        while (pos < len)
+        {
+            bool candidate = text[pos] == '~' &&
+                             ((pos == 0 && i == 0) || (assignment && pos > 0 && text[pos - 1] == ':'));
+            if (!candidate)
+            {
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            int end = pos + 1;
+            while (end < len && text[end] != '/' && !(assignment && text[end] == ':'))
+                end++;
+            if (end == len && i < n - 1)
+            {
+                /* The prefix runs into a quoted or expanded part: no expansion */
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            string_t *name = string_create_from_cstr_len(text + pos + 1, end - pos - 1);
+            string_t *home = tilde_home(frame, name);
+            string_destroy(&name);
+            if (!home)
+            {
+                string_append_char(pending, text[pos++]);
+                continue;
+            }
+            if (!out)
+            {
+                out = part_list_create();
+                for (int k = 0; k < i; k++)
+                    part_list_append(out, part_clone(part_list_get(parts, k)));
+            }
+            if (string_length(pending) > 0)
+                part_list_append(out, part_create_literal(pending));
+            string_clear(pending);
+            part_list_append(out, part_create_tilde(home));
+            string_destroy(&home);
+            changed = true;
+            pos = end;
+        }
+
+        if (changed)
+        {
+            if (string_length(pending) > 0)
+                part_list_append(out, part_create_literal(pending));
+        }
+        else if (out)
+            part_list_append(out, part_clone(part));
+        string_destroy(&pending);
+    }
+    return out;
 }
 
 /**
@@ -1014,6 +1227,236 @@ static string_t *expand_parts_to_string(miga_frame_t *frame, const part_list_t *
     return result;
 }
 
+/* ============================================================================
+ * Field builder: word expansion into fields (POSIX 2.6.5 / 2.6.6)
+ * ============================================================================
+ * A word's parts are appended to a field in progress. The result of an
+ * UNQUOTED parameter expansion, command substitution or arithmetic expansion
+ * is field-split with IFS as it is appended: its first piece completes the
+ * field in progress, the following pieces become fields of their own, and its
+ * last piece starts the next field. Quoted text and tilde results are never
+ * split. Each field remembers whether it received unquoted pattern characters
+ * (* ? [), because only those fields undergo pathname expansion.
+ */
+
+typedef struct
+{
+    strlist_t *fields;
+    bool *glob;        /* per field: contains unquoted * ? [ */
+    int glob_cap;
+    string_t *current; /* field in progress */
+    bool has_content;  /* current must be emitted even if empty ("" or quoted) */
+    bool current_glob;
+} field_builder_t;
+
+static void fb_init(field_builder_t *fb)
+{
+    fb->fields = strlist_create();
+    fb->glob = NULL;
+    fb->glob_cap = 0;
+    fb->current = string_create();
+    fb->has_content = false;
+    fb->current_glob = false;
+}
+
+static void fb_push_current(field_builder_t *fb)
+{
+    int n = strlist_size(fb->fields);
+    if (n >= fb->glob_cap)
+    {
+        fb->glob_cap = fb->glob_cap ? fb->glob_cap * 2 : 8;
+        fb->glob = xrealloc(fb->glob, (size_t)fb->glob_cap * sizeof(bool));
+    }
+    fb->glob[n] = fb->current_glob;
+    strlist_move_push_back(fb->fields, &fb->current);
+    fb->current = string_create();
+    fb->has_content = false;
+    fb->current_glob = false;
+}
+
+static bool is_glob_char(char c)
+{
+    return c == '*' || c == '?' || c == '[';
+}
+
+/* Quoted text, or an expansion result that must not be split or globbed. */
+static void fb_append_quoted(field_builder_t *fb, const string_t *text)
+{
+    string_append(fb->current, text);
+    fb->has_content = true;
+}
+
+/* Unquoted literal text: not split (it is not an expansion result), but
+ * pattern characters in it make the field a candidate for globbing. */
+static void fb_append_literal(field_builder_t *fb, const string_t *text)
+{
+    for (int i = 0; i < string_length(text); i++)
+        if (is_glob_char(string_at(text, i)))
+            fb->current_glob = true;
+    string_append(fb->current, text);
+    fb->has_content = true;
+}
+
+static bool ifs_contains(const string_t *ifs, char c)
+{
+    const char *p = string_cstr(ifs);
+    for (int i = 0; i < string_length(ifs); i++)
+        if (p[i] == c)
+            return true;
+    return false;
+}
+
+/* The result of an unquoted expansion: split with IFS while appending. */
+static void fb_append_unquoted_expansion(field_builder_t *fb, const string_t *text,
+                                         const string_t *ifs)
+{
+    const char *t = string_cstr(text);
+    int n = string_length(text);
+    int i = 0;
+
+    while (i < n)
+    {
+        char c = t[i];
+        bool is_ifs = string_length(ifs) > 0 && ifs_contains(ifs, c);
+
+        if (is_ifs && is_ifs_whitespace(c))
+        {
+            /* A run of IFS whitespace: skip it. It delimits the field in
+             * progress (if there is one), and whitespace next to a
+             * non-whitespace delimiter belongs to that delimiter. */
+            while (i < n && ifs_contains(ifs, t[i]) && is_ifs_whitespace(t[i]))
+                i++;
+            if (i < n && ifs_contains(ifs, t[i]))
+                continue; /* let the non-whitespace delimiter terminate it */
+            if (fb->has_content)
+                fb_push_current(fb);
+            continue;
+        }
+
+        if (is_ifs)
+        {
+            /* Non-whitespace delimiter: ends the field in progress, even if
+             * it is empty ("a::b" gives a, empty, b), then eats trailing
+             * IFS whitespace. A delimiter at the very end produces no extra
+             * field because the empty field it starts has no content. */
+            i++;
+            fb_push_current(fb);
+            while (i < n && ifs_contains(ifs, t[i]) && is_ifs_whitespace(t[i]))
+                i++;
+            continue;
+        }
+
+        if (is_glob_char(c))
+            fb->current_glob = true;
+        string_append_char(fb->current, c);
+        fb->has_content = true;
+        i++;
+    }
+}
+
+/**
+ * Expand the parts of a word into fields. Returns the fields; *out_glob (if
+ * given) receives a per-field array (owned by the caller, freed with xfree)
+ * telling which fields are candidates for pathname expansion.
+ */
+static strlist_t *expand_parts_to_fields(miga_frame_t *frame, const part_list_t *parts,
+                                         bool **out_glob)
+{
+    field_builder_t fb;
+    fb_init(&fb);
+    string_t *ifs = get_ifs(frame);
+
+    for (int i = 0; i < part_list_size(parts); i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+        bool quoted = part->was_single_quoted || part->was_double_quoted;
+
+        bool quoted_special = part->type == PART_PARAMETER && part->param_kind == PARAM_PLAIN &&
+                              part->was_double_quoted && part->param_name &&
+                              string_length(part->param_name) == 1;
+        bool quoted_at = quoted_special && string_cstr(part->param_name)[0] == '@';
+        bool quoted_star = quoted_special && string_cstr(part->param_name)[0] == '*';
+
+        if (quoted_star)
+        {
+            /* "$*": one field, parameters joined with the first character of
+             * IFS (a space when IFS is unset, nothing when it is empty). */
+            strlist_t *all = frame && frame->positional_params
+                                 ? positional_params_get_all(frame->positional_params)
+                                 : strlist_create();
+            string_t *sep = string_create_from_cstr(" ");
+            if (frame && frame_has_variable_cstr(frame, "IFS"))
+            {
+                string_t *ifs_var = frame_get_variable_cstr(frame, "IFS");
+                string_clear(sep);
+                if (string_length(ifs_var) > 0)
+                    string_append_char(sep, string_cstr(ifs_var)[0]);
+                string_destroy(&ifs_var);
+            }
+            string_t *joined = string_create();
+            for (int j = 0; j < strlist_size(all); j++)
+            {
+                if (j > 0)
+                    string_append(joined, sep);
+                string_append(joined, strlist_at(all, j));
+            }
+            fb_append_quoted(&fb, joined);
+            string_destroy(&joined);
+            string_destroy(&sep);
+            strlist_destroy(&all);
+            continue;
+        }
+
+        if (quoted_at)
+        {
+            /* "$@": one field per parameter; none at all when there are no
+             * parameters and nothing else in the word. */
+            strlist_t *all = frame && frame->positional_params
+                                 ? positional_params_get_all(frame->positional_params)
+                                 : strlist_create();
+            int n = strlist_size(all);
+            for (int j = 0; j < n; j++)
+            {
+                fb_append_quoted(&fb, strlist_at(all, j));
+                if (j < n - 1)
+                    fb_push_current(&fb);
+            }
+            strlist_destroy(&all);
+            continue;
+        }
+
+        if (part->type == PART_LITERAL)
+        {
+            if (quoted)
+                fb_append_quoted(&fb, part->text);
+            else
+                fb_append_literal(&fb, part->text);
+            continue;
+        }
+
+        string_t *expanded = expand_part(frame, part);
+        if (!expanded)
+            continue;
+        if (quoted || part->type == PART_TILDE)
+            fb_append_quoted(&fb, expanded);
+        else
+            fb_append_unquoted_expansion(&fb, expanded, ifs);
+        string_destroy(&expanded);
+    }
+
+    if (fb.has_content)
+        fb_push_current(&fb);
+    else
+        string_destroy(&fb.current);
+
+    string_destroy(&ifs);
+    if (out_glob)
+        *out_glob = fb.glob;
+    else
+        xfree(fb.glob);
+    return fb.fields;
+}
+
 /**
  * Remove quote characters from a string (final step of word expansion).
  * Note: This is typically handled during tokenization/parsing, but included
@@ -1042,8 +1485,11 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
         return NULL;
     }
 
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+
     /* Check if any expansion is needed */
-    if (!tok->needs_expansion && !tok->needs_field_splitting && !tok->needs_pathname_expansion)
+    if (!tilded && !tok->needs_expansion && !tok->needs_field_splitting &&
+        !tok->needs_pathname_expansion)
     {
         /* No expansion: return literal text */
         string_t *text = token_get_all_text(tok);
@@ -1052,45 +1498,37 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
         return result;
     }
 
-    /* Expand all parts */
-    string_t *expanded = expand_parts_to_string(frame, token_get_parts_const(tok));
+    /* Expand the parts into fields: unquoted expansion results are field-split
+     * as they are appended, "$@" yields one field per parameter. */
+    bool *glob_flags = NULL;
+    strlist_t *fields = expand_parts_to_fields(frame, tilded ? tilded : token_get_parts_const(tok),
+                                               &glob_flags);
+    if (tilded)
+        part_list_destroy(&tilded);
 
-    /* Field splitting */
-    strlist_t *fields;
-    if (tok->needs_field_splitting)
-    {
-        fields = expand_field_split(frame, expanded);
-        string_destroy(&expanded);
-
-        /* POSIX: If field splitting produced zero words (e.g., input was only
-         * IFS whitespace), that's correct - don't add an empty string. */
-    }
-    else
-    {
-        fields = strlist_create();
-        strlist_move_push_back(fields, &expanded);
-    }
-
-    /* Pathname expansion */
-    if (tok->needs_pathname_expansion)
+    /* Pathname expansion of the fields that hold unquoted pattern characters
+     * (unless set -f). A pattern that matches nothing stays as it is. */
+    bool noglob = frame && frame->opt_flags && frame->opt_flags->noglob;
+    if (!noglob && glob_flags)
     {
         strlist_t *globs = strlist_create();
-
         for (int i = 0; i < strlist_size(fields); i++)
         {
-            const string_t *pattern = strlist_at(fields, i);
-            strlist_t *matches = expand_pathname(frame, pattern);
-
-            for (int j = 0; j < strlist_size(matches); j++)
+            const string_t *field = strlist_at(fields, i);
+            if (!glob_flags[i])
             {
-                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
+                strlist_push_back(globs, string_create_from(field));
+                continue;
             }
+            strlist_t *matches = expand_pathname(frame, field);
+            for (int j = 0; j < strlist_size(matches); j++)
+                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
             strlist_destroy(&matches);
         }
-
         strlist_destroy(&fields);
-        return globs;
+        fields = globs;
     }
+    xfree(glob_flags);
 
     return fields;
 }
@@ -1102,15 +1540,65 @@ string_t *expand_word_nosplit(miga_frame_t *frame, const token_t *tok)
         return NULL;
     }
 
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+
     /* If no expansion is needed at all, return the literal text */
-    if (!tok->needs_expansion)
+    if (!tilded && !tok->needs_expansion)
     {
         return token_get_all_text(tok);
     }
 
     /* Expand parts (tilde, parameter, command subst, arithmetic)
      * but skip field splitting and pathname expansion */
-    return expand_parts_to_string(frame, token_get_parts_const(tok));
+    string_t *result =
+        expand_parts_to_string(frame, tilded ? tilded : token_get_parts_const(tok));
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
+}
+
+/* Append text to a pattern with the pattern characters escaped, so that
+ * fnmatch() matches them literally. */
+static void append_pattern_literal(string_t *pattern, const string_t *text)
+{
+    for (int i = 0; i < string_length(text); i++)
+    {
+        char c = string_at(text, i);
+        if (c == '*' || c == '?' || c == '[' || c == '\\')
+            string_append_char(pattern, '\\');
+        string_append_char(pattern, c);
+    }
+}
+
+string_t *expand_word_pattern(miga_frame_t *frame, const token_t *tok)
+{
+    if (!tok || tok->type != TOKEN_WORD)
+        return NULL;
+
+    part_list_t *tilded = tilde_expand_parts(frame, token_get_parts_const(tok), false);
+    const part_list_t *parts = tilded ? tilded : token_get_parts_const(tok);
+    string_t *result = string_create();
+    for (int i = 0; i < part_list_size(parts); i++)
+    {
+        const part_t *part = part_list_get(parts, i);
+        bool quoted = part->was_single_quoted || part->was_double_quoted;
+
+        string_t *text;
+        if (part->was_single_quoted && part->type == PART_LITERAL)
+            text = string_create_from(part->text);
+        else
+            text = expand_part(frame, part);
+        if (!text)
+            continue;
+        if (quoted)
+            append_pattern_literal(result, text);
+        else
+            string_append(result, text);
+        string_destroy(&text);
+    }
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
 }
 
 /**
@@ -1173,156 +1661,113 @@ string_t *expand_assignment_value(miga_frame_t *frame, const token_t *tok)
 
     /* Assignment values: tilde, parameter, command, arithmetic expansion
      * but NO field splitting or pathname expansion */
-    return expand_parts_to_string(frame, tok->assignment_value);
+    part_list_t *tilded = tilde_expand_parts(frame, tok->assignment_value, true);
+    string_t *result = expand_parts_to_string(frame, tilded ? tilded : tok->assignment_value);
+    if (tilded)
+        part_list_destroy(&tilded);
+    return result;
 }
 
 string_t *expand_heredoc(miga_frame_t *frame, const string_t *body, bool is_quoted)
 {
     if (is_quoted)
     {
-        /* Quoted delimiter: no expansion */
+        /* Quoted delimiter: the body is literal */
         return string_create_from(body);
     }
+    return expand_text_as_dquoted(frame, body);
+}
 
-    /* Unquoted heredoc: perform parameter, command, and arithmetic expansions.
-     * No field splitting or pathname expansion.
-     *
-     * We need to scan through the text and expand $var, ${...}, $(...), $((...))
-     * but not perform field splitting or globbing.
-     */
+/**
+ * Expand raw text as the contents of a double-quoted string (used for
+ * unquoted here-document bodies and for ${var-word} words inside double
+ * quotes).
+ */
+static string_t *expand_text_as_dquoted(miga_frame_t *frame, const string_t *body)
+{
 
-    string_t *result = string_create();
+    /* POSIX 2.7.4: with an unquoted delimiter the body undergoes parameter
+     * expansion, command substitution and arithmetic expansion, and backslash
+     * quotes only $ ` \ and newline: exactly the rules for the contents of a
+     * double-quoted string, except that the double-quote character itself is
+     * ordinary. So wrap the body in double quotes, escaping every literal
+     * double quote (a backslash before one must be kept as a backslash), lex
+     * it as one word, and expand the word's parts with no field splitting.
+     * Quotes inside $(...), $((...)) and `...` are part of that command or
+     * expression and are left alone. */
     const char *text = string_cstr(body);
     int len = string_length(body);
-
+    string_t *quoted = string_create();
+    string_append_char(quoted, '"');
+    int paren_depth = 0;   /* inside $( ... ) or $(( ... )) */
+    bool in_backquote = false;
     for (int i = 0; i < len; i++)
     {
         char c = text[i];
-
         if (c == '\\' && i + 1 < len)
         {
-            /* Backslash escapes: \$, \`, \\ */
+            /* Copy the pair unchanged, except that \" must stay a literal
+             * backslash followed by a literal quote. */
             char next = text[i + 1];
-            if (next == '$' || next == '`' || next == '\\' || next == '\n')
-            {
-                if (next != '\n')
-                {
-                    string_append_char(result, next);
-                }
-                i++; /* Skip escaped character */
-                continue;
-            }
-            /* Other backslashes are literal */
-            string_append_char(result, c);
-        }
-        else if (c == '$')
-        {
-            /* Parameter or command/arithmetic expansion */
-            if (i + 1 < len)
-            {
-                char next = text[i + 1];
-
-                if (next == '(')
-                {
-                    /* Command substitution $(...) or arithmetic $((...)) */
-                    /* This is complex - for now, log a warning and skip */
-                    log_warn("Command/arithmetic substitution in heredoc not fully implemented");
-                    string_append_char(result, c);
-                }
-                else if (next == '{')
-                {
-                    /* Parameter expansion ${...} */
-                    /* Find matching } */
-                    int j = i + 2;
-                    int brace_depth = 1;
-                    while (j < len && brace_depth > 0)
-                    {
-                        if (text[j] == '{')
-                            brace_depth++;
-                        else if (text[j] == '}')
-                            brace_depth--;
-                        j++;
-                    }
-
-                    if (brace_depth == 0)
-                    {
-                        /* Extract parameter name (simple case) */
-                        string_t *param_name = string_create();
-                        for (int k = i + 2; k < j - 1; k++)
-                        {
-                            string_append_char(param_name, text[k]);
-                        }
-
-                        string_t *value = expand_parameter(frame, param_name);
-                        if (value)
-                        {
-                            string_append(result, value);
-                            string_destroy(&value);
-                        }
-                        string_destroy(&param_name);
-
-                        i = j - 1; /* Move past the expansion */
-                        continue;
-                    }
-                    string_append_char(result, c);
-                }
-                else if (isalnum(next) || next == '_' || next == '?' || next == '$' ||
-                         next == '!' || next == '#' || next == '@' || next == '*' ||
-                         next == '-' || next == '0')
-                {
-                    /* Simple parameter: $var or $1, $?, etc. */
-                    string_t *param_name = string_create();
-                    i++; /* Move to first char of name */
-
-                    /* Special single-char parameters */
-                    if (strchr("?$!#@*-0", text[i]))
-                    {
-                        string_append_char(param_name, text[i]);
-                    }
-                    else
-                    {
-                        /* Variable name or positional param */
-                        while (i < len && (isalnum(text[i]) || text[i] == '_'))
-                        {
-                            string_append_char(param_name, text[i]);
-                            i++;
-                        }
-                        i--; /* Back up one for loop increment */
-                    }
-
-                    string_t *value = expand_parameter(frame, param_name);
-                    if (value)
-                    {
-                        string_append(result, value);
-                        string_destroy(&value);
-                    }
-                    string_destroy(&param_name);
-                }
-                else
-                {
-                    /* Literal $ */
-                    string_append_char(result, c);
-                }
-            }
+            if (next == '"' && paren_depth == 0 && !in_backquote)
+                string_append_cstr(quoted, "\\\\\\\"");
             else
             {
-                /* $ at end of string */
-                string_append_char(result, c);
+                string_append_char(quoted, c);
+                string_append_char(quoted, next);
             }
+            i++;
+            continue;
         }
-        else if (c == '`')
+        if (!in_backquote && c == '$' && i + 1 < len && text[i + 1] == '(')
         {
-            /* Backquote command substitution - deprecated but supported */
-            log_warn("Backquote command substitution in heredoc not fully implemented");
-            string_append_char(result, c);
+            paren_depth++;
+            string_append_char(quoted, c);
+            string_append_char(quoted, '(');
+            i++;
+            continue;
         }
-        else
+        if (paren_depth > 0)
         {
-            /* Regular character */
-            string_append_char(result, c);
+            if (c == '(')
+                paren_depth++;
+            else if (c == ')')
+                paren_depth--;
+            string_append_char(quoted, c);
+            continue;
         }
+        if (c == '`')
+        {
+            in_backquote = !in_backquote;
+            string_append_char(quoted, c);
+            continue;
+        }
+        if (c == '"' && !in_backquote)
+        {
+            string_append_cstr(quoted, "\\\"");
+            continue;
+        }
+        string_append_char(quoted, c);
     }
+    string_append_char(quoted, '"');
 
+    token_list_t *tokens = token_list_create();
+    lex_status_t st = lex_cstr_to_tokens(string_cstr(quoted), tokens);
+    string_destroy(&quoted);
+
+    string_t *result = NULL;
+    if (st == LEX_OK && token_list_size(tokens) >= 1 &&
+        token_get_type(token_list_get(tokens, 0)) == TOKEN_WORD)
+    {
+        result = expand_parts_to_string(frame, token_get_parts_const(token_list_get(tokens, 0)));
+    }
+    token_list_destroy(&tokens);
+
+    if (!result)
+    {
+        log_warn("expand_heredoc: could not lex here-document body; using it unexpanded");
+        result = string_create_from(body);
+    }
     return result;
 }
 

@@ -87,26 +87,6 @@ static void advance_over_operator(lexer_t *lx, token_type_t type)
     }
 }
 
-static bool is_heredoc_command_separator_token(token_type_t type)
-{
-    return type == TOKEN_NEWLINE || type == TOKEN_SEMI || type == TOKEN_AMPER ||
-           type == TOKEN_PIPE || type == TOKEN_LPAREN ||
-           type == TOKEN_EOF; // start of input also counts
-}
-
-static bool heredoc_previous_token_allows_io_number(const lexer_t *lx)
-{
-    if (token_list_size(lx->tokens) == 0)
-        return true;
-
-    const token_t *last = token_list_get_last(lx->tokens);
-    if (!last)
-        return true;
-
-    token_type_t t = token_get_type(last);
-    return is_heredoc_command_separator_token(t);
-}
-
 /* Parse a heredoc delimiter according to POSIX 2.3 rule 3.
  * Quotes are only allowed to surround the ENTIRE delimiter.
  * Returns true on success, false on syntax error.
@@ -130,102 +110,87 @@ static bool get_heredoc_delimiter(lexer_t *lx, string_t *out_delimiter, bool *ou
         return false;
     }
 
-    char first = lexer_peek(lx);
-
-    // Case 1: delimiter is fully single-quoted: <<'EOF'
-    if (first == '\'')
-    {
-        lexer_advance(lx); // consume '
-        *out_delimiter_quoted = true;
-
-        while (!lexer_at_end(lx))
-        {
-            char c = lexer_peek(lx);
-            if (c == '\'')
-            {
-                lexer_advance(lx);
-                // Now expect delimiter end (whitespace or operator)
-                lexer_skip_whitespace(lx);
-                return true;
-            }
-            if (c == '\n')
-            {
-                lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
-                return false;
-            }
-            string_append_char(out_delimiter, c);
-            lexer_advance(lx);
-        }
-        lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
-        return false;
-    }
-
-    // Case 2: delimiter is fully double-quoted: <<"EOF"
-    if (first == '"')
-    {
-        lexer_advance(lx); // consume "
-        *out_delimiter_quoted = true;
-
-        while (!lexer_at_end(lx))
-        {
-            char c = lexer_peek(lx);
-            if (c == '"')
-            {
-                lexer_advance(lx);
-                lexer_skip_whitespace(lx);
-                return true;
-            }
-            if (c == '\n')
-            {
-                lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
-                return false;
-            }
-            // Backslash escapes are not processed in heredoc delimiters.
-            // The only processing is quote removal. And backslash/newline.
-            if (c == '\\')
-            {
-                char next = lexer_peek_ahead(lx, 1);
-                if (next == '\n')
-                {
-                    lexer_advance(lx); // skip backslash
-                    lexer_advance(lx); // skip newline
-                    continue;
-                }
-            }
-            string_append_char(out_delimiter, c);
-            lexer_advance(lx);
-        }
-        lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
-        return false;
-    }
-
-    // Case 3: unquoted delimiter (may contain backslash escapes)
+    /* POSIX 2.7.4: the delimiter is the here_end word after quote removal; if
+     * ANY part of the word is quoted ('EOF', "EOF", EO"F", \EOF) the body is
+     * taken literally. So walk the word applying quote removal, remembering
+     * whether any quoting was seen. The word ends at blank, newline or an
+     * operator character. */
     while (!lexer_at_end(lx))
     {
         char c = lexer_peek(lx);
 
-        if (c == ' ' || c == '\t' || c == '\n' || lexer_is_metachar(c) || c == '&' || c == ';')
-            break; // delimiter ends here
+        if (c == '\'')
+        {
+            *out_delimiter_quoted = true;
+            lexer_advance(lx); // opening '
+            for (;;)
+            {
+                if (lexer_at_end(lx) || lexer_peek(lx) == '\n')
+                {
+                    lexer_set_error(lx, "unterminated single-quoted heredoc delimiter");
+                    return false;
+                }
+                char q = lexer_advance(lx);
+                if (q == '\'')
+                    break;
+                string_append_char(out_delimiter, q);
+            }
+            continue;
+        }
+
+        if (c == '"')
+        {
+            *out_delimiter_quoted = true;
+            lexer_advance(lx); // opening "
+            for (;;)
+            {
+                if (lexer_at_end(lx) || lexer_peek(lx) == '\n')
+                {
+                    lexer_set_error(lx, "unterminated double-quoted heredoc delimiter");
+                    return false;
+                }
+                char q = lexer_advance(lx);
+                if (q == '"')
+                    break;
+                if (q == '\\' && !lexer_at_end(lx))
+                {
+                    char next = lexer_peek(lx);
+                    if (next == '\n')
+                    {
+                        lexer_advance(lx); // backslash-newline is removed
+                        continue;
+                    }
+                    if (next == '"' || next == '\\' || next == '$' || next == '`')
+                    {
+                        string_append_char(out_delimiter, lexer_advance(lx));
+                        continue;
+                    }
+                }
+                string_append_char(out_delimiter, q);
+            }
+            continue;
+        }
 
         if (c == '\\')
         {
             char next = lexer_peek_ahead(lx, 1);
             if (next == '\n')
             {
-                // Backslash-newline is removed
-                lexer_advance(lx);
+                lexer_advance(lx); // backslash-newline is removed
                 lexer_advance(lx);
                 continue;
             }
             if (next != '\0')
             {
-                *out_delimiter_quoted = true; // backslash makes it quoted
-                lexer_advance(lx);            // skip <backslash>
-                string_append_char(out_delimiter, next);
-                lexer_advance(lx);
+                *out_delimiter_quoted = true;
+                lexer_advance(lx); // skip the backslash
+                string_append_char(out_delimiter, lexer_advance(lx));
                 continue;
             }
         }
+
+        if (c == ' ' || c == '\t' || c == '\n' || lexer_is_metachar(c) || c == '&' || c == ';')
+            break; // delimiter ends here
 
         string_append_char(out_delimiter, c);
         lexer_advance(lx);
@@ -237,6 +202,7 @@ static bool get_heredoc_delimiter(lexer_t *lx, string_t *out_delimiter, bool *ou
         return false;
     }
 
+    lexer_skip_whitespace(lx);
     return true;
 }
 
@@ -252,7 +218,7 @@ static heredoc_process_result_t try_process_heredoc(lexer_t *lx)
     Expects_not_null(lx);
     Expects_not_null(lx->tokens);
 
-    if (lexer_input_starts_with_integer(lx) && heredoc_previous_token_allows_io_number(lx))
+    if (lexer_input_starts_with_integer(lx) && !lx->in_word)
     {
         int digit_count = 0;
         int io_number = lexer_peek_integer(lx, &digit_count);
@@ -413,7 +379,7 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
                 lexer_start_word(lx);
             }
             lexer_advance(lx);                                        // consume backslash
-            lexer_append_literal_char_to_word(lx, lexer_advance(lx)); // append next char
+            lexer_append_escaped_char_to_word(lx, lexer_advance(lx)); // append next char
             token_set_quoted(lx->current_token, true);
             continue;
         }
@@ -513,8 +479,7 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
                 }
                 continue;
             }
-            // Otherwise treat as word character
-            lexer_start_word(lx);
+            // Inside a word '#' is an ordinary character (echo a#b)
             lexer_append_literal_char_to_word(lx, lexer_advance(lx));
             continue;
         }
@@ -544,29 +509,12 @@ static bool is_redirection_start_char(char c)
     return c == '<' || c == '>';
 }
 
-static bool previous_token_allows_io_number(const lexer_t *lx)
-{
-    if (token_list_size(lx->tokens) == 0)
-        return true; // start of input
-
-    const token_t *last = token_list_get_last(lx->tokens);
-    if (!last)
-        return true;
-
-    token_type_t t = token_get_type(last);
-    return t == TOKEN_NEWLINE || t == TOKEN_SEMI || t == TOKEN_AMPER || t == TOKEN_PIPE ||
-           t == TOKEN_LPAREN || t == TOKEN_AND_IF || // &&
-           t == TOKEN_OR_IF ||                       // ||
-           t == TOKEN_EOF;
-    // Note: TOKEN_EOF covers the case after a complete command
-}
-
 static bool try_emit_io_number(lexer_t *lx)
 {
     Expects_not_null(lx);
 
-    // 1. Must be at start of potential redirection context
-    if (!previous_token_allows_io_number(lx))
+    // 1. The digits must start a new token (e.g. "cmd 2>err", not "x=2>f").
+    if (lx->in_word)
         return false;
 
     // 2. Must start with one or more digits
@@ -615,7 +563,20 @@ static bool try_emit_braced_io_location(lexer_t *lx)
             if (next == '<' || next == '>')
             {
                 int len = n + 1; // include closing brace
-                string_t *io_location = string_create_from_cstr_len(string_data(lx->input) + lx->pos, len);
+                /* The inner text must be a decimal number or a valid name
+                 * (POSIX.1-2024 token recognition). Anything else is an
+                 * ordinary word, e.g. the command named "{2x}". */
+                const char *inner = string_data(lx->input) + lx->pos + 1;
+                int inner_len = len - 2;
+                bool all_digits = true;
+                for (int i = 0; i < inner_len; i++)
+                    if (!isdigit((unsigned char)inner[i]))
+                        all_digits = false;
+                bool is_name = !isdigit((unsigned char)inner[0]);
+                if (!all_digits && !is_name)
+                    return false;
+
+                string_t *io_location = string_create_from_cstr_len(inner, inner_len);
                 lexer_emit_io_location_token(lx, string_cstr(io_location));
                 string_destroy(&io_location);
                 lexer_advance_n_chars(lx, len);

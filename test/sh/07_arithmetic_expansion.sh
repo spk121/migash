@@ -2,7 +2,7 @@
 # Test: Quoting and Arithmetic Expansion
 # Verify quoting correctly controls arithmetic expansion behavior
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing quoting with arithmetic expansion...\n"
 

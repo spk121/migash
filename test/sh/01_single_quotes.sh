@@ -8,7 +8,7 @@
 # echo "Script directory: $SCRIPT_DIR"
 # . "${SCRIPT_DIR}/../test_helpers.sh"
 
-. "./test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then

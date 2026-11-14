@@ -23,8 +23,9 @@ else
     NC=''
 fi
 
-# Default shell to test
-TEST_SHELL="${1:-/bin/sh}"
+# Default shell to test: first argument, else $MIGASH (set by "make check"),
+# else /bin/sh.
+TEST_SHELL="${1:-${MIGASH:-/bin/sh}}"
 shift 2>/dev/null || true
 SHELL_ARGS="$*"
 
@@ -33,8 +34,7 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 
 # Get the directory where this script lives
-#SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT_DIR='.'
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 printf "${BLUE}POSIX Shell Quoting Test Suite${NC}\n"
 printf "Testing: %s %s\n" "$TEST_SHELL" "$SHELL_ARGS"

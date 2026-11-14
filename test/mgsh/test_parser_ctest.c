@@ -10,7 +10,7 @@
 #include "lower.h"
 #include "miga/string_t.h"
 #include "token.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * Helper Functions
@@ -584,8 +584,22 @@ CTEST(test_parser_braced_io_name_redirection)
 
 CTEST(test_parser_braced_io_invalid_redirection)
 {
+    /* "{2x}" is neither a number nor a name, so per POSIX.1-2024 token
+     * recognition it is an ordinary WORD: a command named "{2x}" with a
+     * redirection on fd 1. */
     ast_node_t* ast = parse_string("{2x}>out.txt");
-    CTEST_ASSERT_NULL(ctest, ast, "parsing failed for invalid IO location");
+    CTEST_ASSERT_NOT_NULL(ctest, ast, "parsing succeeded");
+    if (!ast) return;
+
+    ast_node_t* first = get_first_command(ctest, ast);
+    if (!first) { ast_node_destroy(&ast); return; }
+
+    CTEST_ASSERT_EQ(ctest, ast_node_get_type(first), AST_SIMPLE_COMMAND, "is simple command");
+    CTEST_ASSERT_EQ(ctest, first->data.simple_command.redirections->size, 1, "one redirection");
+    ast_node_t* redir = first->data.simple_command.redirections->nodes[0];
+    CTEST_ASSERT_NULL(ctest, redir->data.redirection.fd_string, "no io location");
+
+    ast_node_destroy(&ast);
     (void)ctest;
 }
 
@@ -595,7 +609,7 @@ CTEST(test_parser_braced_io_invalid_redirection)
 
 CTEST(test_exec_create_destroy)
 {
-    exec_t *executor = exec_create();
+    miga_exec_t *executor = exec_create();
     CTEST_ASSERT_NOT_NULL(ctest, executor, "executor created");
     CTEST_ASSERT_EQ(ctest, exec_get_exit_status(executor), 0, "initial exit status is 0");
     exec_destroy(&executor);

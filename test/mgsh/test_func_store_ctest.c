@@ -8,7 +8,7 @@
 #include "func_store.h"
 #include "ast.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Helper functions for creating test AST nodes
@@ -21,7 +21,7 @@ static ast_node_t *create_test_function_node(const char *name)
 
     // Create function definition
     string_t *func_name = string_create_from_cstr(name);
-    ast_node_t *func_def = ast_create_function_def(func_name, body);
+    ast_node_t *func_def = ast_create_function_def(func_name, body, NULL);
     string_destroy(&func_name);
 
     return func_def;
@@ -138,7 +138,7 @@ CTEST(test_func_store_add_ex_new_function)
     string_t *name = string_create_from_cstr("new_func");
     ast_node_t *func_def = create_test_function_node("new_func");
 
-    func_store_insert_result_t result = func_store_add_ex(store, name, func_def);
+    func_store_insert_result_t result = func_store_add_ex(store, name, func_def, NULL);
 
     CTEST_ASSERT_EQ(ctest, result.error, FUNC_STORE_ERROR_NONE, "add succeeded");
     CTEST_ASSERT_TRUE(ctest, result.was_new, "was_new is true for new function");
@@ -156,10 +156,10 @@ CTEST(test_func_store_add_ex_replaces_existing)
     ast_node_t *func1 = create_test_function_node("existing");
     ast_node_t *func2 = create_test_function_node("existing");
 
-    func_store_insert_result_t result1 = func_store_add_ex(store, name, func1);
+    func_store_insert_result_t result1 = func_store_add_ex(store, name, func1, NULL);
     CTEST_ASSERT_TRUE(ctest, result1.was_new, "first add was_new is true");
 
-    func_store_insert_result_t result2 = func_store_add_ex(store, name, func2);
+    func_store_insert_result_t result2 = func_store_add_ex(store, name, func2, NULL);
     CTEST_ASSERT_EQ(ctest, result2.error, FUNC_STORE_ERROR_NONE, "replace succeeded");
     CTEST_ASSERT_FALSE(ctest, result2.was_new, "was_new is false for replacement");
 

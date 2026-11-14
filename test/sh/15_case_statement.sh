@@ -4,7 +4,7 @@
 # pattern matching rules, nested cases, fall-through (;; vs ;& / ;& not POSIX),
 # and special/edge cases.
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing case statement behavior...\n"
 
@@ -73,9 +73,10 @@ assert_eq "literal *.txt" "$result" "quoted pattern matches literally"
 # 5. Empty pattern list (deliberate no-op branch)
 # -----------------------------
 status=0
+result=""
 
 case $status in
-    0)  ;;                    # empty branch is allowed
+    0)  ;;                    # empty branch is allowed: result stays empty
     1)  result="error" ;;
     *)  result="other" ;;
 esac
@@ -109,11 +110,13 @@ assert_eq "linux-amd64" "$result" "nested case statement"
 # -----------------------------
 # 7. Pattern with character class and negation
 # -----------------------------
-code="v7.4.2-beta"
+code="7.4.2-beta"
 
+# Patterns are tried in order and the first match wins, so the more specific
+# "-beta" pattern must come before the general one (which would also match).
 case "$code" in
-    [0-9]*.[0-9]*.[0-9]*)           result="semver stable" ;;
     [0-9]*.[0-9]*.[0-9]*-*beta*)    result="semver beta"   ;;
+    [0-9]*.[0-9]*.[0-9]*)           result="semver stable" ;;
     [!0-9]*)                        result="invalid prefix" ;;
     *)                              result="unknown" ;;
 esac
@@ -163,15 +166,17 @@ esac
 assert_eq "wait" "$result" "no fall-through (POSIX requires ;; to terminate)"
 
 # -----------------------------
-# 11. Unquoted variable in case word (field splitting)
+# 11. Unquoted variable in case word: NO field splitting (POSIX 2.9.4.3: the
+#     case word undergoes tilde, parameter, command and arithmetic expansion
+#     and quote removal only)
 # -----------------------------
 input="  banana  "
 
-case $input in          # unquoted → field splitting + empty removal
+case $input in
     banana) result="matched after splitting" ;;
     *)      result="no match" ;;
 esac
 
-assert_eq "matched after splitting" "$result" "case word undergoes field splitting (unquoted)"
+assert_eq "no match" "$result" "case word is not field-split (unquoted)"
 
 finish_tests

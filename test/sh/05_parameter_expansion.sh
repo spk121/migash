@@ -2,7 +2,7 @@
 # Test: Quoting and Parameter Expansion
 # Verify quoting correctly controls parameter expansion behavior
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing quoting with parameter expansion...\n"
 

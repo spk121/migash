@@ -428,14 +428,16 @@ bool builtins_init_default(builtin_store_t *store)
     ok = ok && builtin_store_set(store, "unset", (miga_builtin_fn_t)builtin_unset, MIGA_BUILTIN_CATEGORY_SPECIAL);
 
     /* -- Regular builtins ------------------------------------------------- */
-#ifdef MIGA_UCRT_API
     ok = ok && builtin_store_set(store, "cd", (miga_builtin_fn_t)builtin_cd, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "pwd", (miga_builtin_fn_t)builtin_pwd, MIGA_BUILTIN_CATEGORY_REGULAR);
+#ifdef MIGA_UCRT_API
+    /* Windows has no ls(1); provide a minimal one */
     ok = ok && builtin_store_set(store, "ls", (miga_builtin_fn_t)builtin_ls, MIGA_BUILTIN_CATEGORY_REGULAR);
 #endif
     ok = ok && builtin_store_set(store, "echo", (miga_builtin_fn_t)builtin_echo, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "printf", (miga_builtin_fn_t)builtin_printf, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "[", (miga_builtin_fn_t)builtin_bracket, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "test", (miga_builtin_fn_t)builtin_test, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "alias", (miga_builtin_fn_t)builtin_alias, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "unalias", (miga_builtin_fn_t)builtin_unalias, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "getopts", (miga_builtin_fn_t)builtin_getopts, MIGA_BUILTIN_CATEGORY_REGULAR);

@@ -160,11 +160,21 @@ lex_status_t lexer_process_param_exp_braced(lexer_t *lx)
     int name_start = lx->pos;
     int name_len = 0;
 
-    if (is_special_param_char(c))
+    if (isdigit((unsigned char)c))
+    {
+        // Positional parameter: inside braces any number of digits (${10},
+        // ${008}); the value is decimal, leading zeros included.
+        while (!lexer_at_end(lx) && isdigit((unsigned char)lexer_peek(lx)))
+        {
+            lexer_advance(lx);
+            name_len++;
+        }
+    }
+    else if (is_special_param_char(c))
     {
         // For length expansion, only @, *, and positional digits are valid.
         // ${#?}, ${#-}, ${#$}, ${#!} are not POSIX.
-        if (is_length && c != '@' && c != '*' && !isdigit(c))
+        if (is_length && c != '@' && c != '*')
         {
             lexer_set_error(lx, "bad substitution: ${#%c} is not a valid length expansion", c);
             return LEX_ERROR;

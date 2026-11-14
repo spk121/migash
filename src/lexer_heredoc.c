@@ -56,11 +56,6 @@ static bool is_name_start_char(char c)
  * Characters that can be escaped with backslash in unquoted heredoc.
  * Per POSIX, backslash in heredoc behaves like inside double quotes.
  */
-static bool is_heredoc_escapable(char c)
-{
-    return (c == '$' || c == '`' || c == '\\' || c == '\n');
-}
-
 static bool lexer_check_heredoc_delimiter(lexer_t *lx, const string_t *delim, bool strip_tabs)
 {
     Expects_not_null(lx);
@@ -86,7 +81,10 @@ static bool lexer_check_heredoc_delimiter(lexer_t *lx, const string_t *delim, bo
     Expects_le(pos, string_length(lx->input));
     if (string_length(lx->input) == pos)
     {
+        // Delimiter is the last line of the input with no trailing newline:
+        // the here-document is complete.
         lexer_advance_n_chars(lx, pos - pos_initial);
+        return true;
     }
     else if (string_at(lx->input, pos) == '\n')
     {
@@ -176,44 +174,12 @@ lex_status_t lexer_process_heredoc_body(lexer_t *lx)
             continue;
         }
 
-        if (quoted)
-        {
-            /* Fully literal - no escape processing */
-            string_append_char(content, c);
-            lexer_advance(lx);
-            continue;
-        }
-
-        /* Unquoted heredoc: handle backslash escapes per POSIX.
-         * Backslash escapes: $ ` \ newline
-         * All other characters (including $ and `) are kept literally
-         * for later expansion at execution time. */
-        if (c == '\\')
-        {
-            char next = lexer_peek_ahead(lx, 1);
-            if (next == '\n')
-            {
-                /* Backslash-newline: line continuation, remove both */
-                lexer_advance(lx);
-                lexer_advance(lx);
-                lx->line_no++;
-                lx->col_no = 1;
-                continue;
-            }
-            if (is_heredoc_escapable(next))
-            {
-                /* Escape: remove backslash, keep the character */
-                string_append_char(content, next);
-                lexer_advance(lx);
-                lexer_advance(lx);
-                continue;
-            }
-            /* Backslash not followed by escapable char: keep the backslash */
-            string_append_char(content, '\\');
-            lexer_advance(lx);
-            continue;
-        }
-
+        /* The body is kept exactly as written. For an unquoted delimiter the
+         * backslash rules (\$ \` \\ and backslash-newline) are applied by
+         * expand_heredoc() together with the expansions, like the contents of
+         * a double-quoted string (POSIX 2.7.4); a quoted delimiter means the
+         * body is literal. Applying the escapes here as well would process
+         * them twice. */
         /* All other characters (including $ and `) are kept for later expansion */
         string_append_char(content, c);
         lexer_advance(lx);

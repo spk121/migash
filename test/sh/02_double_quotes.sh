@@ -4,7 +4,7 @@
 # of all characters within the double-quotes, with the exception of the
 # characters backquote, dollar-sign, and backslash"
 
-. ./test_helpers.sh
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then
@@ -62,7 +62,7 @@ assert_eq "}" "}" "close brace preserved"
 assert_eq "," "," "comma preserved"
 
 # Whitespace preservation and no word splitting
-mgsh_printfvar result '%s' "hello   world" 
+result=$(printf '%s' "hello   world")
 assert_eq "hello   world" "$result" "multiple spaces preserved"
 
 count_words() {

@@ -7,7 +7,7 @@
 #include "ctest.h"
 #include "job_store.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ------------------------------------------------------------
 // Creation and Destruction Tests

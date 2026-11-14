@@ -190,7 +190,6 @@ int main(int argc, char **argv)
     // the logger?
     // log_init();
     setlocale(LC_ALL, "");
-    printf("Welcome to Miga Shell. This is pre-alpha software. Use at your own risk.\n");
 
     /* Convert argv to strlist_t for the new getopt API */
     strlist_t *argv_list = strlist_create_from_cstr_array((const char **)argv, argc);
@@ -440,7 +439,6 @@ int main(int argc, char **argv)
             strlist_destroy(&arguments);
             strlist_destroy(&argv_list);
             string_destroy(&optstring);
-            free(arg_array);
             return SH_EXIT_COMMAND_FILE_NOT_FOUND;
         }
         else if (ret == SH_EXIT_COMMAND_FILE_READ_ERROR)
@@ -450,7 +448,6 @@ int main(int argc, char **argv)
             strlist_destroy(&arguments);
             strlist_destroy(&argv_list);
             string_destroy(&optstring);
-            free(arg_array);
             return SH_EXIT_COMMAND_FILE_READ_ERROR;
         }
     }
@@ -463,12 +460,16 @@ int main(int argc, char **argv)
         strlist_destroy(&arguments);
         strlist_destroy(&argv_list);
         string_destroy(&optstring);
-        free(arg_array);
         return SH_EXIT_GENERAL_ERROR;
     }
 
     const char *name =
         command_name ? command_name : ((argc > 0 && argv[0][0]) ? argv[0] : "shell");
+
+    /* The banner belongs to interactive sessions only; scripts, -c strings
+     * and piped input must produce exactly the output of their commands. */
+    if (mode == SHELL_MODE_INTERACTIVE)
+        printf("Welcome to Miga Shell. This is pre-alpha software. Use at your own risk.\n");
 
     shell_cfg_t cfg = {0};
     cfg.mode = mode;
@@ -495,7 +496,6 @@ int main(int argc, char **argv)
         strlist_destroy(&arguments);
         strlist_destroy(&argv_list);
         string_destroy(&optstring);
-        free(arg_array);
         return SH_EXIT_SUCCESS;
     }
 
@@ -506,6 +506,7 @@ int main(int argc, char **argv)
     miga_set_out_of_memory_cleanup_cb(shell_cleanup, (void *)sh);
     sh_status_t status;
     status = shell_execute(sh);
+    int exit_code = shell_get_exit_code(sh);
 
     // Print any error message before exiting
     if (status != SH_OK)
@@ -522,10 +523,11 @@ int main(int argc, char **argv)
     strlist_destroy(&argv_list);
     string_destroy(&optstring);
 
-    // Don't call shell_destroy here - miga_arena_end will call shell_cleanup
+    // Don't call shell_destroy here - miga_arena_end will call shell_cleanup.
+    // arg_array is arena memory too and is released here.
     miga_arena_end();
 
-    free(arg_array);
-    printf("Goodbye!\n");
-    return status;
+    if (mode == SHELL_MODE_INTERACTIVE)
+        printf("Goodbye!\n");
+    return exit_code;
 }

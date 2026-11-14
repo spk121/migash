@@ -2,7 +2,7 @@
 # Test: Quote Concatenation and Mixing
 # Verify that adjacent quoted strings combine correctly
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing quote concatenation and mixing...\n"
 

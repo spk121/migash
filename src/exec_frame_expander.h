@@ -98,6 +98,14 @@ strlist_t *expand_words(miga_frame_t *frame, const token_list_t *tokens);
 string_t *expand_word_nosplit(miga_frame_t *frame, const token_t *tok);
 
 /**
+ * Expand a word for use as a pattern (case patterns): the same expansions as
+ * expand_word_nosplit(), but pattern characters that come from quoted text
+ * (including the results of quoted expansions and backslash-escaped
+ * characters) are backslash-escaped so that fnmatch() matches them literally.
+ */
+string_t *expand_word_pattern(miga_frame_t *frame, const token_t *tok);
+
+/**
  * Expand a string with specified expansion flags.
  *
  * This is a lower-level function for expanding arbitrary strings.

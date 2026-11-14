@@ -8,7 +8,7 @@
 #include "token.h"
 #include "miga/string_t.h"
 #include "lib.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 // ============================================================================
 // Token Lifecycle

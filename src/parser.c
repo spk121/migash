@@ -14,6 +14,8 @@
 
 // For testing purposes
 #include "lexer.h"
+#include "tokenizer.h"
+#include "alias_store.h"
 
 // Ignore warning 4061: enumerator in switch of enum is not explicitly handled by a case label
 #ifdef _MSC_VER
@@ -948,6 +950,7 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
 
     /* Try function_definition first */
     gnode_t *func = NULL;
+    int start_position = parser->position;
     parse_status_t status = gparse_function_definition(parser, &func);
 
     if (status == PARSE_OK)
@@ -955,6 +958,16 @@ parse_status_t gparse_command(parser_t *parser, gnode_t **out_node)
         node->data.child = func;
         *out_node = node;
         return PARSE_OK;
+    }
+
+    /* If the function-definition parser consumed "name ( )" and then failed,
+     * this is a syntax error in a function definition, not a different kind of
+     * command. Do not fall through to the other alternatives, which would
+     * silently parse the remainder as a simple command. */
+    if (status == PARSE_ERROR && parser->position != start_position)
+    {
+        g_node_destroy(&node);
+        return PARSE_ERROR;
     }
 
     /* If function definition parsing is incomplete, don't try other alternatives */
@@ -2540,6 +2553,32 @@ static bool is_redirect_token(token_type_t t)
 }
 
 /* ============================================================================
+ * Helper: take the next here-document body token.
+ *
+ * The lexer emits the TOKEN_END_OF_HEREDOC tokens (one per here-document, in
+ * the order of the << operators) after the NEWLINE that ends the command line.
+ * The parser may still be in the middle of that line ("cat <<A; cat <<B"), so
+ * the body is found by scanning forward from the current position; it is
+ * cloned for the io_here node and removed from the token stream so that the
+ * rest of the line parses undisturbed.
+ * ============================================================================
+ */
+static token_t *take_heredoc_token(parser_t *parser)
+{
+    for (int i = parser->position; i < token_list_size(parser->tokens); i++)
+    {
+        const token_t *tok = token_list_get(parser->tokens, i);
+        if (token_get_type(tok) == TOKEN_END_OF_HEREDOC)
+        {
+            token_t *copy = token_clone(tok);
+            token_list_remove(parser->tokens, i);
+            return copy;
+        }
+    }
+    return NULL;
+}
+
+/* ============================================================================
  * Helper: Match G_IO_HERE nodes with their TOKEN_END_OF_HEREDOC tokens
  *
  * This scans a G_SIMPLE_COMMAND node looking for G_IO_HERE redirections
@@ -2586,19 +2625,13 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
                     gnode_t *target = suffix_item->data.multi.c;
                     if (target && target->type == G_IO_HERE && target->data.io_here.tok == NULL)
                     {
-                        /* Skip newlines to find TOKEN_END_OF_HEREDOC */
-                        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-                            parser_advance(parser);
-
-                        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+                        target->data.io_here.tok = take_heredoc_token(parser);
+                        if (!target->data.io_here.tok)
                         {
                             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                                              string_cstr(target->data.io_here.here_end));
                             return PARSE_ERROR;
                         }
-
-                        target->data.io_here.tok = token_clone(parser_current_token(parser));
-                        parser_advance(parser);
                     }
                 }
             }
@@ -2616,19 +2649,13 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
         if (target->data.io_here.tok != NULL)
             continue; /* Already matched */
 
-        /* Skip newlines to find TOKEN_END_OF_HEREDOC */
-        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-            parser_advance(parser);
-
-        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+        target->data.io_here.tok = take_heredoc_token(parser);
+        if (!target->data.io_here.tok)
         {
             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                              string_cstr(target->data.io_here.here_end));
             return PARSE_ERROR;
         }
-
-        target->data.io_here.tok = token_clone(parser_current_token(parser));
-        parser_advance(parser);
     }
 
 
@@ -2644,31 +2671,6 @@ static parse_status_t match_heredocs_in_simple_command(parser_t *parser, gnode_t
  * where they might be closing/continuing keywords of compound constructs.
  * ============================================================================
  */
-static bool is_terminating_reserved_word(const token_t *tok)
-{
-    if (!tok || token_get_type(tok) != TOKEN_WORD)
-        return false;
-
-    /* A reserved word must be a single literal part and not quoted */
-    if (token_was_quoted(tok) || token_part_count(tok) != 1)
-        return false;
-
-    const part_t *first_part = tok->parts->parts[0];
-    if (part_get_type(first_part) != PART_LITERAL)
-        return false;
-
-    const char *word = string_cstr(first_part->text);
-
-    /* These are the reserved words that can terminate or continue
-     * compound commands and should not be consumed as simple command words */
-    return (strcmp(word, "then") == 0 ||
-            strcmp(word, "fi") == 0 ||
-            strcmp(word, "do") == 0 ||
-            strcmp(word, "done") == 0 ||
-            strcmp(word, "else") == 0 ||
-            strcmp(word, "elif") == 0 ||
-            strcmp(word, "esac") == 0);
-}
 
 /* ============================================================================
  * simple_command   : cmd_prefix cmd_word cmd_suffix
@@ -2731,9 +2733,9 @@ parse_status_t gparse_simple_command(parser_t *parser, gnode_t **out_node)
         break;
     }
 
-    /* Try to parse cmd_name (WORD) - but not if it's a reserved word */
-    if (parser_current_token_type(parser) == TOKEN_WORD &&
-        !is_terminating_reserved_word(parser_current_token(parser)))
+    /* Try to parse cmd_name (WORD). Reserved words were already turned into
+     * their own token types by the tokenizer, so any WORD here is a name. */
+    if (parser_current_token_type(parser) == TOKEN_WORD)
     {
         gnode_t *name = g_node_create(G_CMD_NAME);
         name->data.token = token_clone(parser_current_token(parser));
@@ -2762,8 +2764,9 @@ parse_status_t gparse_simple_command(parser_t *parser, gnode_t **out_node)
             continue;
         }
 
-        /* Parse WORD as cmd_suffix - but not if it's a reserved word */
-        if (t == TOKEN_WORD && !is_terminating_reserved_word(parser_current_token(parser)))
+        /* Parse WORD as cmd_suffix. A word like "done" after the command
+         * name is an ordinary argument (POSIX token rule 1). */
+        if (t == TOKEN_WORD)
         {
             gnode_t *word = g_node_create(G_CMD_WORD);
             word->data.token = token_clone(parser_current_token(parser));
@@ -2865,22 +2868,17 @@ parse_status_t gparse_redirect_list(parser_t *parser, gnode_t **out_node)
         if (!target || target->type != G_IO_HERE)
             continue;
 
-        /* Skip any newlines to find the TOKEN_END_OF_HEREDOC */
-        while (parser_current_token_type(parser) == TOKEN_NEWLINE)
-            parser_advance(parser);
+        if (target->data.io_here.tok != NULL)
+            continue; /* Already matched */
 
-        if (parser_current_token_type(parser) != TOKEN_END_OF_HEREDOC)
+        target->data.io_here.tok = take_heredoc_token(parser);
+        if (!target->data.io_here.tok)
         {
             parser_set_error(parser, "Expected heredoc content for delimiter '%s'",
                              string_cstr(target->data.io_here.here_end));
             g_node_destroy(&node);
             return PARSE_ERROR;
         }
-
-        /* Clone the TOKEN_END_OF_HEREDOC and store it in the io_here node */
-        const token_t *heredoc_tok = parser_current_token(parser);
-        target->data.io_here.tok = token_clone(heredoc_tok);
-        parser_advance(parser);
     }
 
     *out_node = node;
@@ -3186,13 +3184,30 @@ extern lex_status_t lex_cstr_to_tokens(const char *input, token_list_t *out_toke
 parser_t *parser_create_from_string(const char* input)
 {
     Expects_not_null(input);
-    token_list_t *tokens = token_list_create();
-    lex_status_t status = lex_cstr_to_tokens(input, tokens);
+    token_list_t *raw_tokens = token_list_create();
+    lex_status_t status = lex_cstr_to_tokens(input, raw_tokens);
     if (status != LEX_OK)
+    {
+        token_list_destroy(&raw_tokens);
+        return NULL;
+    }
+
+    /* Run the tokenizer (reserved-word and assignment-word classification by
+     * position, IO numbers, alias expansion with an empty alias table) so that
+     * this entry point sees the same tokens the shell does. */
+    alias_store_t *aliases = alias_store_create();
+    tokenizer_t *tokenizer = tokenizer_create(aliases);
+    token_list_t *tokens = token_list_create();
+    tok_status_t tok_status = tokenizer_process(tokenizer, raw_tokens, tokens);
+    token_list_destroy(&raw_tokens);
+    tokenizer_destroy(&tokenizer);
+    alias_store_destroy(&aliases);
+    if (tok_status != TOK_OK)
     {
         token_list_destroy(&tokens);
         return NULL;
     }
+
     parser_t *parser = parser_create_with_tokens_move(&tokens);
     return parser;
 }

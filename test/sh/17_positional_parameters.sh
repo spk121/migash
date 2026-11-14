@@ -9,14 +9,14 @@
 #   - Quoting behavior, field splitting, empty fields
 #   - Nested function calls (positional parameters are local to function scope)
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing positional and special parameters (POSIX 2.5.1 + 2.5.2)...\n"
 
 # ────────────────────────────────────────────────
 # Setup: many positional parameters
 # ────────────────────────────────────────────────
-set -- one "two three" four "" six seven eight nine ten eleven "  twelve  "
+set -- one "two three" three four "" six seven eight nine ten eleven "  twelve  "
 
 assert_argc 12 "setup: 12 positional parameters" "$@"
 
@@ -36,12 +36,11 @@ assert_eq "ten"        "${10}"       "\${10} → tenth parameter"
 assert_eq "eleven"     "${11}"       "\${11}"
 assert_eq "  twelve  " "${12}"       "\${12} → trailing/leading spaces preserved"
 
-# Wrong (classic mistake)
-assert_eq "ten0"       "$10"         "\$10 → \$1 followed by literal 0"
+# Without braces only one digit is taken: $10 is $1 followed by a literal 0
 assert_eq "one0"       "$10"         "\$10 expands to first arg + '0' (classic bug)"
 
 # Leading zeros are still decimal
-assert_eq "ten"        "${08}"       "\${08} is treated as 8 (decimal)"
+assert_eq "eight"      "${08}"       "\${08} is treated as 8 (decimal)"
 assert_eq "eight"      "${008}"      "\${008} still eighth parameter"
 
 # ────────────────────────────────────────────────
@@ -60,16 +59,19 @@ assert_eq "0"          "$#"          "\$# → 0 when no positional parameters"
 # ────────────────────────────────────────────────
 set -- "a b" "c" "" "d e"
 
+count_args() { printf '%s' "$#"; }
+
 assert_output '4' "count_args \"\$@\""     count_args "$@"
 assert_output '1' "count_args \"\$*\""     count_args "$*"
-assert_output '4' "count_args  \$@"        count_args  $@   # field splitting + empty removal
-assert_output '3' "count_args  \$*"        count_args  $*   # usually 3 (empty fields removed)
+assert_output '5' "count_args  \$@"        count_args  $@   # field splitting + empty removal
+assert_output '5' "count_args  \$*"        count_args  $*   # same: "a b" splits, "" vanishes
 
-# More precise test with custom IFS
+# More precise test with custom IFS: "$*" joins with the first character of
+# IFS, while "$@" keeps the parameters separate whatever IFS is
 old_ifs="$IFS"
 IFS=:
-assert_output 'a b|c||d e' "IFS=:; printf %s \"\$*\""  sh -c 'IFS=:; printf %s "$*"' sh "$@"
-assert_output 'a b|c||d e' "IFS=:; join_args \"\$@\""  sh -c 'IFS=:; join_args "$@"' sh "$@"
+assert_output 'a b:c::d e' "IFS=:; printf %s \"\$*\""  printf %s "$*"
+assert_output 'a b|c||d e' "IFS=:; join_args \"\$@\""  join_args "$@"
 IFS="$old_ifs"
 
 # ────────────────────────────────────────────────
@@ -85,8 +87,8 @@ outer() {
         assert_eq "innerA" "$1"     "inner: \$1 (local scope)"
         assert_eq "2"      "$#"     "inner: \$# = 2"
 
-        # Check outer still sees its own parameters
-        assert_eq "outer1" "$1"     "outer parameters not visible inside inner"
+        # inner's own set -- replaced inner's parameters, not outer's
+        assert_eq "innerA" "$1"     "set -- inside inner applies to inner"
     }
 
     inner
@@ -107,9 +109,9 @@ assert_eq "0" "$?" "true → \$? = 0"
 false
 assert_eq "1" "$?" "false → \$? = 1"
 
-# Subshell preserves $? from parent only at creation time
+# The exit status of a subshell is the status of its last command
 ( exit 42 )
-assert_eq "0" "$?" "exit in subshell does NOT affect parent \$? (assignment rule)"
+assert_eq "42" "$?" "( exit 42 ) sets \$? to 42"
 
 # But command substitution result DOES propagate
 x=$(exit 55)
@@ -145,7 +147,7 @@ esac
 # 8. Edge case: empty $@ inside double quotes + other parts
 # ────────────────────────────────────────────────
 set --
-assert_eq ""       "$@"      "empty \$@ expands to zero fields"
+assert_argc 0 "empty \$@ expands to zero fields" "$@"
 
 prefix="begin-"
 result="${prefix}$@"

@@ -2,7 +2,7 @@
 # Test: Quoting Edge Cases and Corner Cases
 # Various tricky scenarios and potential pitfalls
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing quoting edge cases...\n"
 

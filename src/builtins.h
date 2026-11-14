@@ -68,6 +68,7 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args);
 int builtin_printf(miga_frame_t *frame, const strlist_t *args);
 
 int builtin_bracket(miga_frame_t *frame, const strlist_t *args);
+int builtin_test(miga_frame_t *frame, const strlist_t *args);
 
 int builtin_jobs(miga_frame_t *frame, const strlist_t *args);
 int builtin_kill(miga_frame_t *frame, const strlist_t *args);

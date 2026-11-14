@@ -191,6 +191,11 @@ void log_set_level(LogLevel lv)
     g_log_threshold = lv;
 }
 
+LogLevel log_get_level(void)
+{
+    return g_log_threshold;
+}
+
 void log_disable_abort(void)
 {
     g_log_abort_level = LOG_LEVEL_NONE;

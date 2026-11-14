@@ -524,7 +524,9 @@ ast_node_list_t *ast_node_list_create(void)
 
 ast_node_list_t *ast_node_list_clone(const ast_node_list_t *other)
 {
-    Expects_not_null(other);
+    /* Optional lists (e.g. function/simple-command redirections) may be NULL. */
+    if (!other)
+        return NULL;
 
     ast_node_list_t *new_list = ast_node_list_create();
     if (!new_list)

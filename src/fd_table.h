@@ -31,6 +31,7 @@ typedef enum fd_flags_t
     FD_IS_CLOSE_ON_EXEC = 1 << 0,    ///< Close-on-exec flag (should be closed in child)
     FD_IS_REDIRECTED = 1 << 1, ///< FD was created by shell redirection
     FD_IS_SAVED = 1 << 2,      ///< FD is a saved copy of another FD
+    FD_IS_RESTORE_CLOSE = 1 << 3, ///< FD was closed before being redirected; restore by closing it
 } fd_flags_t;
 
 /**
@@ -121,7 +122,7 @@ string_t *fd_table_generate_heredoc_name(int target_fd);
  * @param table The FD table
  * @param fd File descriptor number
  * @param flags Flags to associate with this FD
- * @param path Path associated with this FD (copies, does not take ownership)
+ * @param path Path associated with this FD (copies, does not take ownership); may be NULL
  * @return true on success, false on allocation failure
  */
 bool fd_table_add(fd_table_t *table, int fd, fd_flags_t flags, const string_t *path);

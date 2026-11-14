@@ -53,6 +53,8 @@ typedef struct tokenizer_t
 
     /* Context flags */
     bool at_command_position; // true if next word could be eligible for alias expansion
+    bool in_cmd_prefix;       // true after an assignment word: still before the command name,
+                              // so more assignments are recognised but reserved words are not
     char padding2[3];
 
     /* Compound command nesting tracking - stack of opening tokens */

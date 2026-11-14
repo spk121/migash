@@ -2,7 +2,7 @@
 # Test: Special Characters Without Quoting
 # Verify that special characters have their special meaning when unquoted
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then
@@ -14,8 +14,6 @@ if [ -z "$TMPDIR" ]; then
         TMPDIR="/tmp"
     fi
 fi
-
-TMPDIR="$TEMP"
 
 printf "  Testing unquoted special character behavior...\n"
 
@@ -32,7 +30,6 @@ result=$(echo hello; echo world)
 expected="hello
 world"
 assert_eq "$expected" "$result" "semicolon separates commands"
-exit
 
 # Less-than < (input redirection)
 echo "test content" > "$TMPDIR/quoting_redirect_test_$$"

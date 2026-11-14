@@ -50,6 +50,8 @@ lexer_t *lexer_create(void)
     lx->heredoc_queue.size = 0;
     lx->reading_heredoc = false;
     lx->heredoc_index = 0;
+    lx->cmd_subst_text = NULL;
+    lx->cmd_subst_depth = 0;
 
     lx->escaped = false;
     lx->operator_buffer = string_create();
@@ -72,6 +74,9 @@ void lexer_reset(lexer_t *lx)
 
     string_clear(lx->input);
     lx->pos = 0;
+    if (lx->cmd_subst_text)
+        string_destroy(&lx->cmd_subst_text);
+    lx->cmd_subst_depth = 0;
     lx->line_no = 1;
     lx->col_no = 1;
     lx->tok_start_line = 1;
@@ -194,6 +199,8 @@ void lexer_destroy(lexer_t **lx)
     // Free the delimiter strings inside each heredoc entry before freeing
     // the entries array. Previously the array was freed directly, leaking all
     // delimiter string_t allocations still in the queue.
+    if (l->cmd_subst_text)
+        string_destroy(&l->cmd_subst_text);
     if (l->heredoc_queue.entries)
     {
         lexer_empty_heredoc_queue(l);
@@ -484,6 +491,31 @@ void lexer_append_literal_char_to_word(lexer_t *lx, char c)
     }
 }
 
+void lexer_append_escaped_char_to_word(lexer_t *lx, char c)
+{
+    Expects_not_null(lx);
+    Expects_not_null(lx->current_token);
+
+    int count = token_part_count(lx->current_token);
+    if (count > 0)
+    {
+        part_t *last = token_get_part(lx->current_token, count - 1);
+        if (part_get_type(last) == PART_LITERAL && part_was_double_quoted(last) &&
+            !part_was_single_quoted(last))
+        {
+            token_append_char_to_last_literal_part(lx->current_token, c);
+            return;
+        }
+    }
+
+    char buf[2] = {c, '\0'};
+    string_t *s = string_create_from_cstr(buf);
+    part_t *part = part_create_literal(s);
+    part_set_quoted(part, false, true); // quoted: no splitting, no globbing
+    token_add_part(lx->current_token, part);
+    string_destroy(&s);
+}
+
 void lexer_append_literal_cstr_to_word(lexer_t *lx, const char *str)
 {
     Expects_not_null(lx);
@@ -534,8 +566,7 @@ static bool try_promote_to_assignment(token_t *tok)
     if (idx < 1)
         return false;
     bool equals_at_end = (idx == string_length(first_part->text) - 1);
-    if (equals_at_end && part_list_size(parts) == 1)
-        return false;
+    /* "name=" with nothing after it is an assignment of the empty string */
 
     // OK, can promote to assignment.
     tok->type = TOKEN_ASSIGNMENT_WORD;

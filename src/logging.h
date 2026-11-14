@@ -49,6 +49,9 @@ LogLevel log_level(void);
  */
 void log_set_level(LogLevel lv);
 
+/** Current logging threshold (messages below it are discarded). */
+LogLevel log_get_level(void);
+
 /**
  * @brief Disable abort on fatal messages
  *

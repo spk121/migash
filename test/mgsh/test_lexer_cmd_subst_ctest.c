@@ -6,7 +6,7 @@
 #include "lexer_cmd_subst.h"
 #include "token.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * $(...) Command Substitution Tests

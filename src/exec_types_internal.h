@@ -13,9 +13,6 @@
  * Library consumers should include only exec.h and frame.h.
  */
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
 
 #include <signal.h>
 #include <stdbool.h>
@@ -194,6 +191,12 @@ struct miga_exec_t
     fd_table_t *open_fds;
     int next_fd;
 #endif
+
+    /* Redirections in effect, innermost first: each exec_redirect_apply
+     * pushes the descriptors it saved, and the matching restore or commit
+     * pops them (exec_redirect.c). Nested redirections ({ cmd >a; } >b)
+     * therefore undo only their own changes. */
+    struct redir_save_set_t *redir_saves;
 
     string_t *working_directory;
 #ifdef MIGA_POSIX_API
@@ -427,10 +430,6 @@ typedef struct exec_params_t
 #else
     int pipeline_pgid;
 #endif
-    int stdin_pipe_fd;      /* -1 if not piped, else fd to dup2 to stdin */
-    int stdout_pipe_fd;     /* -1 if not piped, else fd to dup2 to stdout */
-    int *pipe_fds_to_close; /* Array of all pipe FDs to close */
-    int pipe_fds_count;     /* Count of pipe FDs to close */
 
     /* For background jobs / debugging */
     strlist_t *command_args; /* Original command text for job display */

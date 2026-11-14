@@ -4,7 +4,6 @@
 
 #ifdef MIGA_POSIX_API
 // #define _POSIX_C_SOURCE 202405L
-#define _GNU_SOURCE
 #endif
 
 #ifdef MIGA_UCRT_API
@@ -180,6 +179,65 @@ static int redirection_default_fd(const exec_redirection_t *r)
 }
 
 #ifdef MIGA_POSIX_API
+/* ============================================================================
+ * Save sets (POSIX)
+ * ============================================================================
+ * Every application of a redirection list records what it saved in a set
+ * that is pushed on executor->redir_saves. The matching restore (or commit,
+ * for "exec") pops that set and undoes (or forgets) exactly those saves, so
+ * nested redirections and redirections around compound commands whose bodies
+ * run further commands in the same process are undone in LIFO order.
+ */
+typedef struct
+{
+    int fd;     /* the redirected descriptor */
+    int backup; /* copy of its previous open file, or -1 when it was closed */
+} redir_saved_fd_t;
+
+struct redir_save_set_t
+{
+    redir_saved_fd_t *items;
+    size_t count;
+    size_t capacity;
+    struct redir_save_set_t *next;
+};
+
+static struct redir_save_set_t *save_set_push(miga_exec_t *executor)
+{
+    struct redir_save_set_t *set = xcalloc(1, sizeof(*set));
+    set->next = executor->redir_saves;
+    executor->redir_saves = set;
+    return set;
+}
+
+static struct redir_save_set_t *save_set_pop(miga_exec_t *executor)
+{
+    struct redir_save_set_t *set = executor->redir_saves;
+    if (set)
+        executor->redir_saves = set->next;
+    return set;
+}
+
+static void save_set_destroy(struct redir_save_set_t *set)
+{
+    if (!set)
+        return;
+    xfree(set->items);
+    xfree(set);
+}
+
+static void save_set_add(struct redir_save_set_t *set, int fd, int backup)
+{
+    if (set->count == set->capacity)
+    {
+        set->capacity = set->capacity ? set->capacity * 2 : 4;
+        set->items = xrealloc(set->items, set->capacity * sizeof(*set->items));
+    }
+    set->items[set->count].fd = fd;
+    set->items[set->count].backup = backup;
+    set->count++;
+}
+
 miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);
@@ -194,6 +252,9 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
     }
 
     size_t count = redirs->count;
+
+    /* Pushed even when empty: every apply is matched by one restore/commit. */
+    struct redir_save_set_t *saves = save_set_push(executor);
     if (count == 0)
         return MIGA_EXEC_STATUS_OK;
 
@@ -256,15 +317,23 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
         if (!will_redirect[fd])
             continue;
 
-        // Skip if already redirected by an outer scope — the outermost save
-        // is the one we need to restore to, so don't overwrite it.
-        if (fd_table_has_flag(fds, fd, FD_IS_REDIRECTED))
-            continue;
+        // Always save, even when an outer scope has redirected this fd:
+        // restoring must bring it back to the outer scope's redirection,
+        // not to the shell's original descriptor.
 
         // F_DUPFD_CLOEXEC: kernel picks the lowest available fd >= min_backup_fd
         // and sets O_CLOEXEC atomically, keeping backup fds out of child processes.
         log_debug("apply(posix): phase1 saving fd=%d before redirect", fd);
         int backup = fcntl(fd, F_DUPFD_CLOEXEC, min_backup_fd);
+        if (backup < 0 && errno == EBADF)
+        {
+            /* The fd is not open (e.g. "exec 3>file" or "cmd 4<file"):
+             * nothing to save; restoring it means closing it again. */
+            log_debug("apply(posix): phase1 fd=%d not open; will restore by closing", fd);
+            fd_table_add(fds, fd, FD_IS_RESTORE_CLOSE, NULL);
+            save_set_add(saves, fd, -1);
+            continue;
+        }
         if (backup < 0)
         {
             exec_set_error_printf(executor, "fcntl(F_DUPFD_CLOEXEC) failed for fd %d: %s", fd,
@@ -283,6 +352,7 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
         }
         fd_table_mark_saved(fds, backup, fd);
         string_destroy(&saved_name);
+        save_set_add(saves, fd, backup);
     }
 
     // Step 3: Apply redirections in order (left-to-right, allowing overwrites).
@@ -352,16 +422,21 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
 
             log_debug("apply(posix): dup2(%d -> %d) wiring fd=%d to '%s'", newfd, target_fd,
                       target_fd, fname);
-            if (dup2(newfd, target_fd) < 0)
+            if (newfd != target_fd)
             {
-                exec_set_error_printf(executor, "dup2(%d, %d) failed: %s", newfd, target_fd,
-                               strerror(errno));
+                if (dup2(newfd, target_fd) < 0)
+                {
+                    exec_set_error_printf(executor, "dup2(%d, %d) failed: %s", newfd, target_fd,
+                                   strerror(errno));
+                    close(newfd);
+                    string_destroy(&fname_str);
+                    goto cleanup_error;
+                }
+                log_debug("apply(posix): close(%d) temp file fd", newfd);
                 close(newfd);
-                string_destroy(&fname_str);
-                goto cleanup_error;
             }
-            log_debug("apply(posix): close(%d) temp file fd", newfd);
-            close(newfd);
+            /* else: open() returned the target fd itself (it was closed, e.g.
+             * "exec 3>file"); nothing to dup and nothing to close. */
 
             if (!fd_table_add(fds, target_fd, FD_IS_REDIRECTED, fname_str))
             {
@@ -407,7 +482,7 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
             {
                 // n<&- or n>&-: explicit close of target fd.
                 log_debug("apply(posix): close(%d) explicit n<&- or n>&-", target_fd);
-                if (close(target_fd) < 0)
+                if (close(target_fd) < 0 && errno != EBADF) /* closing a closed fd is fine */
                 {
                     exec_set_error_printf(executor, "close(%d) failed: %s", target_fd,
                                           strerror(errno));
@@ -459,7 +534,7 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
 
         case REDIR_TARGET_CLOSE: {
             log_debug("apply(posix): close(%d) REDIR_TARGET_CLOSE", target_fd);
-            if (close(target_fd) < 0)
+            if (close(target_fd) < 0 && errno != EBADF) /* closing a closed fd is fine */
             {
                 exec_set_error_printf(executor, "close(%d) failed: %s", target_fd, strerror(errno));
                 goto cleanup_error;
@@ -602,68 +677,67 @@ void exec_restore_redirections_posix(miga_frame_t *frame)
         return;
 
     fd_table_t *fds = exec_frame_get_fds(frame);
-    if (!fds)
-        return;
-
-    // Snapshot saved FDs before mutating the table, since fd_table_remove()
-    // compacts in place and would corrupt live iteration.
-    size_t saved_count = 0;
-    int *saved_fds = fd_table_get_saved_fds(fds, &saved_count);
-    if (!saved_fds)
-        return;
-
-    log_debug("restore(posix): begin -- %zu saved fd(s) to restore", saved_count);
-    for (size_t i = 0; i < saved_count; i++)
+    struct redir_save_set_t *saves = save_set_pop(frame->executor);
+    if (!saves)
     {
-        int backup_fd = saved_fds[i];
-        int orig_fd = fd_table_get_original_fd(fds, backup_fd);
-        log_debug("restore(posix): [%zu] backup_fd=%d orig_fd=%d", i, backup_fd, orig_fd);
+        log_debug("restore(posix): nothing applied");
+        return;
+    }
 
-        if (orig_fd < 0)
+    /* Builtins write through stdio. Anything still buffered belongs to the
+     * redirected destination, so flush before the descriptors change back. */
+    fflush(stdout);
+    fflush(stderr);
+
+    log_debug("restore(posix): begin -- %zu saved fd(s) to restore", saves->count);
+    for (size_t k = saves->count; k-- > 0;)
+    {
+        int fd = saves->items[k].fd;
+        int backup_fd = saves->items[k].backup;
+
+        if (backup_fd < 0)
         {
-            log_warn("exec_restore_redirections_posix: saved fd %d has no recorded original; "
-                     "closing and skipping",
-                     backup_fd);
-            close(backup_fd);
-            fd_table_mark_closed(fds, backup_fd);
-            fd_table_remove(fds, backup_fd);
+            /* The descriptor was not open before the redirection. */
+            log_debug("restore(posix): close(%d), was not open before redirection", fd);
+            close(fd);
+            if (fds)
+            {
+                fd_table_mark_closed(fds, fd);
+                fd_table_remove(fds, fd);
+            }
             continue;
         }
 
-        log_debug("restore(posix): dup2(%d -> %d) restoring fd=%d from backup", backup_fd, orig_fd,
-                  orig_fd);
-        if (dup2(backup_fd, orig_fd) < 0)
-        {
-            log_warn("restore(posix): dup2(%d, %d) failed: %s", backup_fd, orig_fd,
-                     strerror(errno));
-        }
-        else
-        {
-            fd_table_mark_open(fds, orig_fd);
-        }
+        log_debug("restore(posix): dup2(%d -> %d) restoring fd from backup", backup_fd, fd);
+        if (dup2(backup_fd, fd) < 0)
+            log_warn("restore(posix): dup2(%d, %d) failed: %s", backup_fd, fd, strerror(errno));
+        else if (fds)
+            fd_table_mark_open(fds, fd);
 
-        log_debug("restore(posix): close(%d) backup fd", backup_fd);
         close(backup_fd);
-
-        /* Bug 5 fix: after dup2(backup_fd, orig_fd) the original fd is live
-         * again — do NOT remove its table entry.  Removing it caused the
-         * shell's fd tracking to diverge from reality: subsequent
-         * fd_table_has_flag(fds, orig_fd, FD_IS_REDIRECTED) calls returned false
-         * even when another redirection was in flight, leading to double-saves
-         * and leaked backup fds.
-         *
-         * The correct cleanup is:
-         *   - Clear FD_IS_REDIRECTED from orig_fd so it is known to be "normal"
-         *     again.  (Leave any other flags, e.g. FD_IS_CLOSE_ON_EXEC, intact.)
-         *   - Remove the backup entry entirely — it is now closed and gone. */
-        fd_table_clear_flag(fds, orig_fd, FD_IS_REDIRECTED);
-
-        fd_table_mark_closed(fds, backup_fd);
-        fd_table_remove(fds, backup_fd);
+        if (fds)
+        {
+            /* fd is live again. An enclosing redirection may still own it, so
+             * only drop our own marks: the backup entry, and the REDIRECTED
+             * flag when no outer save set still covers this descriptor. */
+            bool outer = false;
+            for (struct redir_save_set_t *o = frame->executor->redir_saves; o && !outer;
+                 o = o->next)
+                for (size_t m = 0; m < o->count; m++)
+                    if (o->items[m].fd == fd)
+                    {
+                        outer = true;
+                        break;
+                    }
+            if (!outer)
+                fd_table_clear_flag(fds, fd, FD_IS_REDIRECTED);
+            fd_table_mark_closed(fds, backup_fd);
+            fd_table_remove(fds, backup_fd);
+        }
     }
 
     log_debug("restore(posix): complete");
-    xfree(saved_fds);
+    save_set_destroy(saves);
 }
 #elifdef MIGA_UCRT_API
 
@@ -1533,6 +1607,36 @@ void exec_redirect_restore_redirections(miga_frame_t *frame, const exec_redirect
 #endif
 }
 
+void exec_redirect_commit_redirections(miga_frame_t *frame)
+{
+    if (!frame)
+        return;
+    fd_table_t *fds = exec_frame_get_fds(frame);
+    struct redir_save_set_t *saves = save_set_pop(frame->executor);
+    if (!saves)
+        return;
+
+    for (size_t k = 0; k < saves->count; k++)
+    {
+        int fd = saves->items[k].fd;
+        int backup_fd = saves->items[k].backup;
+        if (backup_fd < 0)
+        {
+            if (fds)
+                fd_table_clear_flag(fds, fd, FD_IS_RESTORE_CLOSE);
+            continue;
+        }
+#ifdef MIGA_POSIX_API
+        close(backup_fd);
+#elifdef MIGA_UCRT_API
+        _close(backup_fd);
+#endif
+        if (fds)
+            fd_table_remove(fds, backup_fd);
+    }
+    save_set_destroy(saves);
+}
+
 /* ============================================================================
  * Redirection Structure Management
  * ============================================================================ */
@@ -1876,7 +1980,8 @@ exec_redirections_t *exec_redirections_create_from_ast_nodes(miga_frame_t *frame
         case REDIR_TARGET_FD:
             /* For FD target, we can have a fixed fd, a literal, or an expression (including
              * variable). */
-            if (ast_target && ast_target->io_number >= 0)
+            runtime_redir->target.fd.fixed_fd = -1;
+            if (ast_target && ast_target->type == TOKEN_IO_NUMBER && ast_target->io_number >= 0)
             {
                 runtime_redir->target.fd.fixed_fd = ast_target->io_number;
             }

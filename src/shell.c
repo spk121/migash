@@ -5,6 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "libmigash.h"
+#ifdef MIGA_POSIX_API
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include "shell.h"
 
 /* This is not part of libmigash, so only use the public API header. */
@@ -19,7 +25,39 @@ struct shell_t
     string_t *script_filename; // Script file name (if any)
     string_t *command_string;  // Command string (if any)
     miga_exec_t *executor;          // Points to the currently executing miga_exec_t
+    int exit_code;             // Exit status the shell process should return
 };
+
+/**
+ * Record the process exit status after a run. POSIX: the shell exits with the
+ * status of the last command executed; a shell error that left no status
+ * (syntax error, failed redirection of a special builtin, ...) exits non-zero.
+ */
+static void shell_record_exit_code(shell_t *sh, miga_exec_status_t status, int exit_code)
+{
+    switch (status)
+    {
+    case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
+        sh->exit_code = exit_code & 0xff;
+        break;
+    case MIGA_EXEC_STATUS_INCOMPLETE:
+        sh->exit_code = 2; /* syntax error: unterminated input */
+        break;
+    case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_NOT_IMPL:
+    default:
+        sh->exit_code = exit_code ? (exit_code & 0xff) : 2;
+        break;
+    }
+}
+
+int shell_get_exit_code(const shell_t *sh)
+{
+    Expects_not_null(sh);
+    return sh->exit_code;
+}
 
 static sh_status_t shell_execute_script_file(shell_t *sh);
 static sh_status_t shell_execute_interactive(shell_t *sh);
@@ -135,7 +173,9 @@ sh_status_t shell_execute(shell_t *sh)
         }
         return shell_execute_command_string(sh);
     case SHELL_MODE_STDIN:
-        exec_setup_interactive(sh->executor);
+        /* main() upgrades stdin mode to interactive when stdin is a terminal,
+         * so reaching here means a pipe or file: no prompts. */
+        exec_setup_noninteractive(sh->executor);
         return shell_execute_stdin(sh);
     case SHELL_MODE_UNKNOWN:
     case SHELL_MODE_INVALID_UID_GID:
@@ -184,7 +224,29 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
     Expects_not_null(sh);
     Expects_not_null(sh->script_filename);
 
-    FILE *fp = fopen(string_cstr(sh->script_filename), "r");
+    FILE *fp = NULL;
+#ifdef MIGA_POSIX_API
+    /* Open the script on a descriptor >= 10 with close-on-exec, so that the
+     * script's own redirections (exec 3>file, ...) cannot clobber it and
+     * child processes do not inherit it. */
+    {
+        int fd = open(string_cstr(sh->script_filename), O_RDONLY);
+        if (fd >= 0)
+        {
+            int hi = fcntl(fd, F_DUPFD_CLOEXEC, 10);
+            if (hi >= 0)
+            {
+                close(fd);
+                fd = hi;
+            }
+            fp = fdopen(fd, "r");
+            if (!fp)
+                close(fd);
+        }
+    }
+#else
+    fp = fopen(string_cstr(sh->script_filename), "r");
+#endif
     if (!fp)
     {
         exec_set_error_printf(sh->executor, "Cannot open file: %s",
@@ -205,13 +267,17 @@ static sh_status_t shell_execute_script_file(shell_t *sh)
 
     miga_exec_status_t status = exec_execute_stream(sh->executor, fp);
     fclose(fp);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
 
     // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
@@ -227,72 +293,21 @@ sh_status_t shell_execute_command_string(shell_t *sh)
     const char *cmd = string_cstr(sh->command_string);
 
     miga_exec_result_t result = exec_execute_command_string(sh->executor, cmd);
+    shell_record_exit_code(sh, result.status, result.exit_code);
 
     switch (result.status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
         return SH_INTERNAL_ERROR;
     }
-}
-
-/**
- * Read a single line from stdin into a caller-provided buffer, with dynamic
- * fallback for lines that exceed the buffer.
- *
- * @param static_buf   Caller's stack buffer
- * @param static_size  Size of the stack buffer
- * @param out_buf      Receives a pointer to the line (either static_buf or a
- *                     heap allocation that the caller must free)
- * @param out_len      Receives the length of the line (excluding NUL)
- * @return true on success, false on EOF or error
- */
-// FIXME: get rid of this. Use exec.c functions instead.
-static bool read_line(char *static_buf, size_t static_size, char **out_buf, size_t *out_len)
-{
-    if (!fgets(static_buf, (int)static_size, stdin))
-        return false;
-
-    size_t len = strlen(static_buf);
-
-    /* If the line fits (terminated by newline or EOF hit before buffer full),
-     * we're done — no allocation needed. */
-    if (len < static_size - 1 || static_buf[len - 1] == '\n')
-    {
-        *out_buf = static_buf;
-        *out_len = len;
-        return true;
-    }
-
-    /* Line was truncated — switch to dynamic accumulation. */
-    size_t cap = static_size * 2;
-    char *dyn = xmalloc(cap);
-    memcpy(dyn, static_buf, len);
-
-    for (;;)
-    {
-        if (len + static_size > cap)
-        {
-            cap *= 2;
-            dyn = xrealloc(dyn, cap);
-        }
-
-        if (!fgets(dyn + len, (int)(cap - len), stdin))
-            break; /* EOF mid-line; return what we have */
-
-        len += strlen(dyn + len);
-
-        if (dyn[len - 1] == '\n')
-            break; /* got a full line */
-    }
-
-    *out_buf = dyn;
-    *out_len = len;
-    return true;
 }
 
 static sh_status_t shell_execute_interactive(shell_t *sh)
@@ -301,12 +316,16 @@ static sh_status_t shell_execute_interactive(shell_t *sh)
 
     exec_setup_interactive(sh->executor);
     miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
 
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:
@@ -318,12 +337,16 @@ sh_status_t shell_execute_stdin(shell_t *sh)
 {
     Expects_not_null(sh);
     miga_exec_status_t status = exec_execute_stream(sh->executor, stdin);
+    shell_record_exit_code(sh, status, exec_get_last_exit_status(sh->executor));
     // Convert miga_exec_status_t to sh_status_t
     switch (status)
     {
     case MIGA_EXEC_STATUS_OK:
+    case MIGA_EXEC_STATUS_EXIT:
+    case MIGA_EXEC_STATUS_EMPTY:
         return SH_OK;
     case MIGA_EXEC_STATUS_ERROR:
+    case MIGA_EXEC_STATUS_INCOMPLETE:
         return SH_RUNTIME_ERROR;
     case MIGA_EXEC_STATUS_NOT_IMPL:
     default:

@@ -19,9 +19,7 @@
 // <signal.h> to ensure we get the right definitions. And this has to happen
 // for all files that include <signal.h>.
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
+#include "miga/migaconf.h"
 
 #include <signal.h>
 #include <stdbool.h>
@@ -31,9 +29,7 @@
 #if defined(MIGA_POSIX_API) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MSYS__) &&          \
     !defined(_MSC_VER)
 /* Most Unix-likes + real POSIX environments */
-
-// Disabled for now until we fix the <signal.h> macro problem
-// #define MIGA_POSIX_API
+#define SIG_ACT_USE_SIGACTION 1
 #endif
 
 // Signal disposition tracking for restoration after traps

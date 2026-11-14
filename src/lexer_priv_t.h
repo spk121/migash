@@ -156,6 +156,12 @@ struct lexer_t
     /* Operator recognition */
     string_t *operator_buffer; // for multi-char operators like &&, <<, etc.
 
+    /* Command substitution in progress ($(...) or `...`). Input arrives one
+     * line at a time, so the text collected so far and the nesting depth must
+     * survive a LEX_INCOMPLETE return and the next call. */
+    string_t *cmd_subst_text; // NULL when no substitution is being collected
+    int cmd_subst_depth;      // unmatched '(' inside $( ... )
+
     /* Context for reserved word recognition */
     bool at_command_start; // true if next word could be a reserved word
     bool after_case_in;    // special context for case...in patterns
@@ -232,6 +238,10 @@ bool lexer_at_end(const lexer_t *lx);
 
 void lexer_start_word(lexer_t *lx);
 void lexer_append_literal_char_to_word(lexer_t *lx, char c);
+
+/* Append a backslash-escaped character. It is stored in a quoted literal part
+ * so that it is exempt from field splitting and pathname expansion. */
+void lexer_append_escaped_char_to_word(lexer_t *lx, char c);
 void lexer_append_literal_cstr_to_word(lexer_t *lx, const char *str);
 void lexer_finalize_word(lexer_t *lx);
 void lexer_emit_token(lexer_t *lx, token_type_t type);

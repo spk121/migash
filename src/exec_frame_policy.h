@@ -1,6 +1,7 @@
 #ifndef EXEC_FRAME_POLICY_H
 #define EXEC_FRAME_POLICY_H
 
+#include "miga/migaconf.h"
 #include <stdbool.h>
 
 /* ============================================================================

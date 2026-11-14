@@ -3,7 +3,7 @@
 # POSIX 2.2 lists these as "might need to be quoted under certain circumstances":
 # *  ?  [  ]  ^  -  !  #  ~  =  %  {  ,  }
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 # Set TMPDIR if not already set (for cross-platform support)
 if [ -z "$TMPDIR" ]; then

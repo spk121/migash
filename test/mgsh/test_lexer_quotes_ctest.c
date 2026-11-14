@@ -7,7 +7,7 @@
 #include "lexer_dquote.h"
 #include "token.h"
 #include "miga/string_t.h"
-#include "xalloc.h"
+#include "miga/xalloc.h"
 
 /* ============================================================================
  * Single Quote Tests

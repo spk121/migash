@@ -1,9 +1,6 @@
 #ifndef SHELL_T_H
 #define SHELL_T_H
 
-#ifdef MIGA_POSIX_API
-#define _POSIX_C_SOURCE 202405L
-#endif
 
 #include "miga/exec.h"
 #include "exec_frame.h"
@@ -106,6 +103,9 @@ sh_status_t shell_execute(shell_t *sh);
 // If shell_feed_line returns SH_OK and a command is complete,
 // the shell has already executed it. Errors are reported via sh->error.
 const char *shell_last_error(shell_t *sh);
+
+/* Exit status the shell process should return after shell_execute(). */
+int shell_get_exit_code(const shell_t *sh);
 
 // Clear the last error message.
 void shell_reset_error(shell_t *sh);

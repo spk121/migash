@@ -4,7 +4,7 @@
 # Tests that reserved words work as reserved words when unquoted,
 # and demonstrates various quoting contexts.
 
-. "$(dirname "$0")/../test_helpers.sh"
+. "$(dirname "$0")/test_helpers.sh"
 
 printf "  Testing reserved word recognition...\n"
 
