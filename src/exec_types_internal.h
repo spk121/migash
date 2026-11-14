@@ -192,6 +192,15 @@ struct miga_exec_t
     int next_fd;
 #endif
 
+    /* set -e bookkeeping: > 0 while executing a context in which errexit is
+     * ignored (if/while/until conditions, the left side of && and ||, a
+     * pipeline beginning with !). */
+    int errexit_ignore_depth;
+    /* An expansion failed in a way that must stop the command (set -u on an
+     * unset parameter, ${var:?word}). Set by the expander, consumed by the
+     * simple-command executor. */
+    bool expansion_error;
+
     /* Redirections in effect, innermost first: each exec_redirect_apply
      * pushes the descriptors it saved, and the matching restore or commit
      * pops them (exec_redirect.c). Nested redirections ({ cmd >a; } >b)

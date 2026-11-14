@@ -427,6 +427,8 @@ miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga
     init_fds(frame);
     init_traps(frame);
     init_options(frame);
+    if (!parent && frame->opt_flags)
+        *frame->opt_flags = exec->opt; /* command-line options (sh -e, -x, ...) */
     init_cwd(frame);
     init_umask(frame);
     init_functions(frame);
@@ -955,8 +957,10 @@ static exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_
     while (true)
     {
         // Execute condition
+        frame->executor->errexit_ignore_depth++; /* set -e ignored in the condition */
         exec_frame_execute_result_t cond_result =
             exec_frame_execute_dispatch(frame, params->condition);
+        frame->executor->errexit_ignore_depth--;
         if (cond_result.status != MIGA_EXEC_STATUS_OK)
         {
             return cond_result;
@@ -1187,6 +1191,8 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
     if (policy->process.forks)
     {
 #ifdef MIGA_POSIX_API
+        fflush(stdout);
+        fflush(stderr);
         pid_t pid = fork();
         if (pid < 0)
         {
@@ -1267,6 +1273,7 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
     if (policy->exit.terminates_process)
     {
 #ifdef MIGA_POSIX_API
+        fflush(NULL); /* builtins write through stdio */
         _exit(result.exit_status);
 #else
         /* For ISO C mode, just return */
@@ -1440,6 +1447,14 @@ exec_frame_execute_result_t exec_frame_execute_dispatch(miga_frame_t *frame, con
     /* Update LINENO before executing this command */
     exec_frame_update_lineno(frame, node);
 
+    /* set -n: commands are read and checked but not executed, from the
+     * command after the one that set it onwards */
+    if (frame->opt_flags && frame->opt_flags->noexec)
+    {
+        result.has_exit_status = true;
+        return result;
+    }
+
     switch (node->type)
     {
     case AST_COMMAND_LIST:
@@ -1534,6 +1549,9 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame
     // Iterate through each command in the list
     for (int i = 0; i < items->size; i++)
     {
+        /* set -n: nothing after the command that set it is executed */
+        if (frame->opt_flags && frame->opt_flags->noexec)
+            break;
         ast_node_t *cmd = items->nodes[i];
         if (!cmd)
             continue; // Skip null commands (shouldn't happen, but defensive)
@@ -1631,6 +1649,13 @@ exec_frame_execute_result_t exec_frame_execute_compound_list(miga_frame_t *frame
             result.exit_status = cmd_result.exit_status;
         }
 
+        // set -e also applies to a failing compound command as a whole
+        // ("(exit 3)", a function body, ...); a simple command has already
+        // been checked by exec_frame_execute_simple_command().
+        if (sep != CMD_EXEC_BACKGROUND && cmd->type != AST_AND_OR_LIST &&
+            cmd->type != AST_PIPELINE)
+            exec_frame_apply_errexit(frame, &cmd_result);
+
         // break / continue / return / exit: stop executing this list and let
         // the enclosing loop, function or shell handle it.
         if (cmd_result.flow != MIGA_FRAME_FLOW_NORMAL)
@@ -1688,7 +1713,9 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, 
 
     /* Either side may be any command: a pipeline, a simple command or a
      * compound command (if, {, (, for, ...) with or without redirections. */
+    frame->executor->errexit_ignore_depth++; /* set -e ignored except for the last command */
     exec_frame_execute_result_t left_result = exec_frame_execute_dispatch(frame, left);
+    frame->executor->errexit_ignore_depth--;
 
     if (left_result.status != MIGA_EXEC_STATUS_OK || left_result.flow != MIGA_FRAME_FLOW_NORMAL)
     {
@@ -1719,6 +1746,9 @@ exec_frame_execute_result_t exec_frame_execute_and_or_list(miga_frame_t *frame, 
         exec_frame_update_lineno(frame, right);
 
         exec_frame_execute_result_t right_result = exec_frame_execute_dispatch(frame, right);
+        /* The last command of an and-or list is subject to set -e; a compound
+         * command there (true && (exit 3)) is checked here. */
+        exec_frame_apply_errexit(frame, &right_result);
 
         if (right_result.status != MIGA_EXEC_STATUS_OK)
         {
@@ -1748,9 +1778,16 @@ exec_frame_execute_result_t exec_frame_execute_pipeline(miga_frame_t *frame, ast
     ast_node_list_t *commands = list->data.pipeline.commands;
     bool is_negated = list->data.pipeline.is_negated;
 
-    // Execute the pipeline using the frame system
+    // Execute the pipeline using the frame system. set -e is ignored in a
+    // pipeline that begins with "!".
+    if (is_negated)
+        frame->executor->errexit_ignore_depth++;
     exec_frame_execute_result_t result =
         exec_frame_execute_pipeline_group(frame, commands, is_negated);
+    if (is_negated)
+        frame->executor->errexit_ignore_depth--;
+    else
+        exec_frame_apply_errexit(frame, &result); /* status of the last command */
 
     return result;
 }
@@ -1783,7 +1820,23 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(miga_frame_t *fram
         result.exit_status = frame->executor->last_exit_status;
     }
 
+    exec_frame_apply_errexit(frame, &result);
     return result;
+}
+
+/* set -e (XCU 2.14 "set"): a command that fails in a context where errexit is
+ * not ignored makes the shell exit with that status, as if by "exit". */
+void exec_frame_apply_errexit(miga_frame_t *frame, exec_frame_execute_result_t *result)
+{
+    miga_exec_t *executor = frame->executor;
+    if (!result->has_exit_status || result->exit_status == 0)
+        return;
+    if (result->flow != MIGA_FRAME_FLOW_NORMAL || executor->exit_requested)
+        return;
+    if (!frame->opt_flags || !frame->opt_flags->errexit || executor->errexit_ignore_depth > 0)
+        return;
+    exec_request_exit(executor, result->exit_status);
+    result->flow = MIGA_FRAME_FLOW_TOP;
 }
 
 exec_frame_execute_result_t exec_frame_execute_if_clause(miga_frame_t *frame, ast_node_t *node)
@@ -1796,8 +1849,10 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(miga_frame_t *frame, as
         .status = MIGA_EXEC_STATUS_OK, .has_exit_status = false, .exit_status = 0};
 
     // Execute the main condition
+    frame->executor->errexit_ignore_depth++; /* set -e ignored in the condition */
     exec_frame_execute_result_t cond_result =
         exec_frame_execute_dispatch(frame, node->data.if_clause.condition);
+    frame->executor->errexit_ignore_depth--;
     if (cond_result.status != MIGA_EXEC_STATUS_OK)
     {
         result = cond_result;
@@ -1829,8 +1884,10 @@ exec_frame_execute_result_t exec_frame_execute_if_clause(miga_frame_t *frame, as
                 // Assuming elif is also AST_IF_CLAUSE with condition and then_body
                 continue;
             }
+            frame->executor->errexit_ignore_depth++;
             exec_frame_execute_result_t elif_cond_result =
                 exec_frame_execute_dispatch(frame, elif_node->data.if_clause.condition);
+            frame->executor->errexit_ignore_depth--;
             if (elif_cond_result.status != MIGA_EXEC_STATUS_OK)
             {
                 result = elif_cond_result;
@@ -2060,8 +2117,10 @@ exec_frame_execute_result_t exec_frame_execute_condition_loop(miga_frame_t *fram
     while (true)
     {
         // Execute condition
+        frame->executor->errexit_ignore_depth++; /* set -e ignored in the condition */
         exec_frame_execute_result_t cond_result =
             exec_frame_execute_dispatch(frame, params->condition);
+        frame->executor->errexit_ignore_depth--;
         if (cond_result.status != MIGA_EXEC_STATUS_OK)
         {
             return cond_result;
@@ -2350,6 +2409,8 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
     {
         ast_node_t *cmd = commands->nodes[i];
 
+        fflush(stdout);
+        fflush(stderr);
         pid_t pid = fork();
         if (pid == -1)
         {
@@ -2410,6 +2471,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
 
             /* Exit the child with the command's exit status. ("!" is applied
              * once by the parent to the pipeline's status, not per command.) */
+            fflush(NULL);
             _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
         }
 
@@ -2927,6 +2989,14 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
         return MIGA_EXEC_STATUS_EMPTY;
     }
 
+    /* set -n: read and check commands, do not execute them */
+    if (frame->opt_flags && frame->opt_flags->noexec)
+    {
+        ast_node_destroy(&ast);
+        parse_session_reset(session);
+        return MIGA_EXEC_STATUS_OK;
+    }
+
     /* Execute via the dispatch function */
     exec_frame_execute_result_t result = exec_frame_execute_dispatch(frame, ast);
 
@@ -3005,6 +3075,15 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
         if (line_buf)
             xfree(line_buf);
         return MIGA_EXEC_STATUS_EMPTY; /* end of file (or read error) */
+    }
+
+    /* set -v: write the input line to standard error as it is read */
+    if (frame->opt_flags && frame->opt_flags->verbose)
+    {
+        fputs(line_buf, stderr);
+        if (line_len > 0 && line_buf[line_len - 1] != '\n')
+            fputc('\n', stderr);
+        fflush(stderr);
     }
 
     miga_exec_status_t status = exec_frame_string_core(frame, line_buf, session);

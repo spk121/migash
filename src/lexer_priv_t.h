@@ -161,6 +161,19 @@ struct lexer_t
      * survive a LEX_INCOMPLETE return and the next call. */
     string_t *cmd_subst_text; // NULL when no substitution is being collected
     int cmd_subst_depth;      // unmatched '(' inside $( ... )
+    /* $( ) scanner state: quotes, and the paren depth at each open "case" so
+ * that a pattern's ')' is not taken for the closing parenthesis */
+    bool cmd_subst_sq;
+    bool cmd_subst_dq;
+    int cmd_subst_case_depth[16];
+    int cmd_subst_case_count;
+    /* here-documents inside $( ): delimiters announced by "<<" on the current
+     * line (collected until the newline), then the body being skipped */
+    string_t *cmd_subst_hd_delim[4];
+    bool cmd_subst_hd_strip[4];
+    int cmd_subst_hd_count;      /* pending delimiters not yet consumed */
+    int cmd_subst_hd_active;     /* index of the body being copied, or -1 */
+    string_t *cmd_subst_hd_line; /* current line of the body, for the delimiter test */
 
     /* Context for reserved word recognition */
     bool at_command_start; // true if next word could be a reserved word

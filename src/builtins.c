@@ -1494,24 +1494,39 @@ static bool builtin_set_is_valid_o_arg(const char *arg)
 }
 
 /* Print all shell options (set -o) */
+static bool builtin_set_option_value(const miga_frame_t *frame, const char *name)
+{
+    const exec_opt_flags_t *o = frame->opt_flags;
+    if (!o)
+        return false;
+    if (strcmp(name, "allexport") == 0) return o->allexport;
+    if (strcmp(name, "errexit") == 0) return o->errexit;
+    if (strcmp(name, "ignoreeof") == 0) return o->ignoreeof;
+    if (strcmp(name, "noclobber") == 0) return o->noclobber;
+    if (strcmp(name, "noglob") == 0) return o->noglob;
+    if (strcmp(name, "noexec") == 0) return o->noexec;
+    if (strcmp(name, "nounset") == 0) return o->nounset;
+    if (strcmp(name, "pipefail") == 0) return o->pipefail;
+    if (strcmp(name, "verbose") == 0) return o->verbose;
+    if (strcmp(name, "vi") == 0) return o->vi;
+    if (strcmp(name, "xtrace") == 0) return o->xtrace;
+    return false; /* monitor: not implemented */
+}
+
+/* Print the shell options: "set -o" as a table, "set +o" as set commands
+ * that restore the current settings when re-read by the shell. */
 static void builtin_set_print_options(miga_frame_t *frame, bool reusable_format)
 {
     Expects_not_null(frame);
-
-    // TODO: Print actual option values from shell
-    // For now, just print the option names
+    FILE *out = builtin_stdout(frame);
     for (int i = 0; builtin_set_valid_o_args[i]; i++)
     {
+        const char *name = builtin_set_valid_o_args[i];
+        bool on = builtin_set_option_value(frame, name);
         if (reusable_format)
-        {
-            // +o format: set -o name / set +o name
-            fprintf(stdout, "set -o %s\n", builtin_set_valid_o_args[i]);
-        }
+            fprintf(out, "set %co %s\n", on ? '-' : '+', name);
         else
-        {
-            // -o format: name [on/off]
-            fprintf(stdout, "%-12s off\n", builtin_set_valid_o_args[i]);
-        }
+            fprintf(out, "%-15s %s\n", name, on ? "on" : "off");
     }
 }
 
@@ -1573,6 +1588,16 @@ int builtin_set(miga_frame_t *frame, const strlist_t *args)
     bool print_o_options = false;
     bool reusable_format = false;
     bool options_changed = false;
+
+    /* "set -o" / "set +o" with no option name print the settings. getopt
+     * would demand an argument, so handle these forms first. */
+    if (argc == 2 && (string_eq_cstr(strlist_at(args, 1), "-o") ||
+                      string_eq_cstr(strlist_at(args, 1), "+o")))
+    {
+        string_destroy(&optstring_str);
+        builtin_set_print_options(frame, string_eq_cstr(strlist_at(args, 1), "+o"));
+        return 0;
+    }
 
     /* Initialize getopt state for re-entrant parsing */
     struct getopt_state state;
@@ -3568,10 +3593,11 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
  */
 static int wait_for_all(miga_frame_t *frame)
 {
-    if (!frame || !frame->executor || !frame->executor->jobs)
-    {
+    /* Wait for every child, whether or not the job table knows about it:
+     * the table only exists for job control, "wait" must work regardless. */
+    if (!frame || !frame->executor)
         return 0;
-    }
+    job_store_t *jobs = frame->executor->jobs;
 
     int last_exit_status = 0;
 
@@ -3586,14 +3612,14 @@ static int wait_for_all(miga_frame_t *frame)
         {
             if (WIFEXITED(status))
             {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
-                                            WEXITSTATUS(status));
+                if (jobs)
+                    job_store_set_process_state(jobs, result, JOB_DONE, WEXITSTATUS(status));
                 last_exit_status = WEXITSTATUS(status);
             }
             else if (WIFSIGNALED(status))
             {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                            WTERMSIG(status));
+                if (jobs)
+                    job_store_set_process_state(jobs, result, JOB_TERMINATED, WTERMSIG(status));
                 last_exit_status = 128 + WTERMSIG(status);
             }
         }

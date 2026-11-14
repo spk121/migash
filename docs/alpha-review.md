@@ -21,7 +21,8 @@ still open.
 - Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
 - Conformance (D): 27 **fixed**; 28-36 open.
 - Code health (E): 37 partly (all three build systems work and agree on
-  file lists and macros; still three of them); 38-43 open.
+  file lists and macros; still three of them); 38 **fixed** (one owner for
+  the option flags, see `src/executor.md`); 39-43 open.
 
 The shell conformance suite (`test/sh`) passes completely as of
 2026-11-14: 527 assertions, 0 failures, under all three build systems
@@ -72,6 +73,26 @@ an assignment-only command (`st=$?`) reset `$?` before expanding its
 value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
 are not reset in command-substitution or pipeline children (they fork
 without a frame).
+
+Shell options (2026-11-14): `test/sh/19_set_options.sh` (57 assertions
+checked against dash and bash) passes completely. `set -e` with all the
+contexts in which POSIX ignores it, `set -u` (fatal, status 2, with `$@`,
+`$*` and `${var-word}` exempt), `set -C` (devices may be opened), `set -n`
+per command, `set -x` with `PS4`, `set -v`, `set -a`, `set -o`/`+o`
+listing with real values and the `set +o` round trip, `$-`, and `sh -e`
+etc. from the command line now work; the option flags have one owner
+(item 38). Found and fixed on the way: `wait` with no operands returned
+at once because it required a job table that non-interactive shells do
+not have; `2>&1 >file` was a syntax error because the tokenizer promoted
+the `1` to an IO number without checking that it touches the operator;
+and the `$( )` scanner counted parentheses inside quotes, comments and
+here-document bodies and took a `case` pattern's `)` for the closing
+parenthesis, so `$(... case x in a) ...; esac)` and `$(cat <<EOF
+It's ... EOF
+)` broke the parse (the latter silently, with exit status 2: an
+unterminated input in a non-interactive shell prints nothing). The
+runner loop used for local checks now also reports a test file that dies
+without printing its summary.
 
 Lowering (2026-11-14): `src/lowering_rules.md` was rewritten to describe
 `lower.c` as it is. While checking it, one rule turned out to be wrong in

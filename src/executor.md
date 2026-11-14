@@ -216,11 +216,23 @@ command's, negated for `! pipeline`.
    executor; a forked child inherits it, which is what POSIX requires.
 2. **Job control is disabled in subshells**, and a subshell starts with an
    empty job table.
-3. **Two copies of some state exist:** options live in both `executor->opt`
-   and `frame->opt_flags`, and the exit status in both `executor` and
-   `frame`. `set -e` is checked against `executor->opt` by the REPL while the
-   builtin writes `frame->opt_flags`; this is a known inconsistency
-   (`docs/alpha-review.md`, item 38).
+3. **Options have one owner.** Before the top-level frame exists (while
+   `main.c`/`shell.c` apply the command-line flags) they live in
+   `executor->opt`; `exec_frame_push()` copies them into the top frame's
+   `opt_flags`, which is the owner from then on (shared or copied by the
+   frame policy). `exec_get_flag_*()`/`exec_set_flag_*()` go through
+   `exec_opts()`, which picks the right copy. `set -e` is applied per
+   command by `exec_frame_apply_errexit()` (after every simple command, after
+   compound commands in a list, after the last command of an and-or list and
+   after a pipeline); `executor->errexit_ignore_depth` is raised while
+   executing the contexts in which `-e` is ignored (`if`/`while`/`until`
+   conditions, the left side of `&&`/`||`, a pipeline beginning with `!`).
+   `set -u` and `${var:?word}` set `executor->expansion_error`, which the
+   simple-command executor turns into a shell error (status 2). `set -n`
+   is checked in the dispatcher and the list loop, `set -v` in the line
+   reader, `set -x` in the simple-command executor after expansion, `set -a`
+   where variables are assigned, `set -C` in the file-redirection open.
+   The exit status still lives in both `executor` and `frame`.
 4. **Traps.** The signal handler (`trap_store.c`) only sets
    `executor->trap_pending[signo]`. `exec_run_pending_traps()` runs the
    pending actions in an `EXEC_FRAME_TRAP` frame under the current frame;

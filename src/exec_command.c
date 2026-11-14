@@ -103,6 +103,44 @@ static void append_system_quoted(string_t *cmdline, const string_t *word)
 }
 #endif
 
+
+/* An expansion error (set -u, ${var:?word}) aborts the command: the message
+ * is already on the executor. Status 2 like dash; a shell error so that a
+ * non-interactive shell stops (XCU 2.8.1). */
+static bool take_expansion_error(miga_frame_t *frame)
+{
+    if (!frame->executor->expansion_error)
+        return false;
+    frame->executor->expansion_error = false;
+    return true;
+}
+
+/* set -x: write PS4 and the command to standard error after expansion */
+static void xtrace_words(miga_frame_t *frame, const strlist_t *assignments_text,
+                         const strlist_t *words)
+{
+    if (!frame->opt_flags || !frame->opt_flags->xtrace)
+        return;
+    string_t *ps4 = frame_has_variable_cstr(frame, "PS4") ? frame_get_variable_cstr(frame, "PS4")
+                                                           : string_create_from_cstr("+ ");
+    fflush(stdout);
+    fputs(string_cstr(ps4), stderr);
+    string_destroy(&ps4);
+    bool first = true;
+    for (int i = 0; assignments_text && i < strlist_size(assignments_text); i++)
+    {
+        fprintf(stderr, "%s%s", first ? "" : " ", string_cstr(strlist_at(assignments_text, i)));
+        first = false;
+    }
+    for (int i = 0; words && i < strlist_size(words); i++)
+    {
+        fprintf(stderr, "%s%s", first ? "" : " ", string_cstr(strlist_at(words, i)));
+        first = false;
+    }
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
 static void populate_special_variables(variable_store_t *store, const miga_frame_t *frame)
 {
     Expects_not_null(store);
@@ -232,7 +270,8 @@ static miga_exec_status_t apply_prefix_assignments(miga_frame_t *frame, variable
         const token_t *tok = token_list_get(assignments, i);
         string_t *value = expand_assignment_value(frame, tok);
         var_store_error_t err =
-            variable_store_add(frame->variables, tok->assignment_name, value, false, false);
+            variable_store_add(frame->variables, tok->assignment_name, value,
+                               frame->opt_flags && frame->opt_flags->allexport, false);
 
         if (err != VAR_STORE_ERROR_NONE)
         {
@@ -384,20 +423,40 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
          * the frame while the values are expanded and marks it valid; until
          * then $? in the values must still see the previous status. */
         frame->subst_status_valid = false;
+        executor->expansion_error = false;
+        strlist_t *traced = NULL;
         if (assign_tokens)
         {
             for (int i = 0; i < token_list_size(assign_tokens); i++)
             {
                 const token_t *tok = token_list_get(assign_tokens, i);
                 string_t *value = expand_assignment_value(frame, tok);
-                if (!value)
+                if (!value || take_expansion_error(frame))
                 {
-                    exec_set_error_cstr(executor, "assignment expansion failed");
-                    return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_ERROR};
+                    if (value)
+                        string_destroy(&value);
+                    if (traced)
+                        strlist_destroy(&traced);
+                    if (!exec_get_error_cstr(executor))
+                        exec_set_error_cstr(executor, "assignment expansion failed");
+                    return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_ERROR,
+                                                         .has_exit_status = true,
+                                                         .exit_status = 2};
+                }
+                if (frame->opt_flags && frame->opt_flags->xtrace)
+                {
+                    if (!traced)
+                        traced = strlist_create();
+                    string_t *t = string_create_from(tok->assignment_name);
+                    string_append_char(t, '=');
+                    string_append(t, value);
+                    strlist_move_push_back(traced, &t);
                 }
 
+                /* set -a: assigned variables are exported */
+                bool export_it = frame->opt_flags && frame->opt_flags->allexport;
                 var_store_error_t err =
-                    variable_store_add(frame->variables, tok->assignment_name, value, false, false);
+                    variable_store_add(frame->variables, tok->assignment_name, value, export_it, false);
                 string_destroy(&value);
 
                 if (err != VAR_STORE_ERROR_NONE)
@@ -408,6 +467,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
         }
 
+        if (traced)
+        {
+            xtrace_words(frame, traced, NULL);
+            strlist_destroy(&traced);
+        }
         int assign_status = frame->subst_status_valid ? frame->last_exit_status : 0;
         frame->subst_status_valid = false;
         return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK,
@@ -439,6 +503,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         runtime_redirs = exec_redirections_create();
 
     /* Expand command words */
+    executor->expansion_error = false;
     strlist_t *expanded_words =
         has_words ? expand_words(frame, word_tokens) : strlist_create();
     if (has_words && !expanded_words)
@@ -447,6 +512,15 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         cmd_exit_status = 1;
         goto out_destroy_redirs;
     }
+    if (take_expansion_error(frame))
+    {
+        /* set -u / ${var:?}: the command is not run; the shell error stops a
+         * non-interactive shell. */
+        status = MIGA_EXEC_STATUS_ERROR;
+        cmd_exit_status = 2;
+        goto out_cleanup_words_now;
+    }
+    xtrace_words(frame, NULL, expanded_words);
 
     if (has_words)
     {
@@ -652,6 +726,8 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
 
         char *const *envp = variable_store_get_envp(env_store);
 
+        fflush(stdout);
+        fflush(stderr);
         pid_t pid = fork();
         if (pid == -1)
         {
@@ -934,6 +1010,7 @@ done_execution:
         executor->last_argument_set = true;
     }
 
+out_cleanup_words_now:
     strlist_destroy(&expanded_words);
 
 out_destroy_redirs:

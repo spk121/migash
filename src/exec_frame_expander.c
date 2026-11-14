@@ -379,6 +379,12 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
         {
             return v;
         }
+        /* set -u: an unset parameter (other than @ and *) is an error */
+        if (frame && frame->opt_flags && frame->opt_flags->nounset && frame->executor)
+        {
+            frame_set_error_printf(frame, "%s: parameter not set", string_cstr(part->param_name));
+            frame->executor->expansion_error = true;
+        }
         return string_create();
 
     case PARAM_LENGTH:
@@ -421,13 +427,13 @@ static string_t *expand_parameter_with_modifier(miga_frame_t *frame, const part_
                 string_destroy(&v);
             string_t *msg = part->word ? expand_modifier_word(frame, part)
                                        : string_create_from_cstr("parameter null or not set");
-            log_error("Parameter expansion error: %s: %s", string_cstr(part->param_name),
-                      string_cstr(msg));
-            string_destroy(&msg);
-            if (frame)
+            if (frame && frame->executor)
             {
-                frame->last_exit_status = 1;
+                frame_set_error_printf(frame, "%s: %s", string_cstr(part->param_name),
+                                       string_cstr(msg));
+                frame->executor->expansion_error = true;
             }
+            string_destroy(&msg);
             return string_create();
         }
         return v;
@@ -601,10 +607,25 @@ string_t *expand_special_param(const miga_frame_t *frame, const string_t *name)
             }
             return string_create();
 
-        case '-':
-            /* Current option flags */
-            /* TODO: Implement option flags string */
-            return string_create();
+        case '-': {
+            /* Current option flags, in the order of the set utility's letters */
+            string_t *flags = string_create();
+            const exec_opt_flags_t *o = frame ? frame->opt_flags : NULL;
+            if (o)
+            {
+                if (o->allexport) string_append_char(flags, 'a');
+                if (o->noclobber) string_append_char(flags, 'C');
+                if (o->errexit) string_append_char(flags, 'e');
+                if (o->noglob) string_append_char(flags, 'f');
+                if (o->noexec) string_append_char(flags, 'n');
+                if (o->nounset) string_append_char(flags, 'u');
+                if (o->verbose) string_append_char(flags, 'v');
+                if (o->xtrace) string_append_char(flags, 'x');
+            }
+            if (frame && frame->executor && frame->executor->is_interactive)
+                string_append_char(flags, 'i');
+            return flags;
+        }
 
         case '0':
             /* Shell or script name */
@@ -635,7 +656,10 @@ string_t *expand_special_param(const miga_frame_t *frame, const string_t *name)
             else
             {
                 const string_t *param = positional_params_get(frame->positional_params, (int)n_val);
-                return param ? string_create_from(param) : string_create();
+                if (param)
+                    return string_create_from(param);
+                /* Unset positional parameter: NULL lets set -u see it */
+                return NULL;
             }
         }
         return string_create();
@@ -706,6 +730,8 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
     fflush(stdout);
     fflush(stderr);
 
+    fflush(stdout);
+    fflush(stderr);
     pid_t pid = fork();
     if (pid < 0)
     {
@@ -741,6 +767,7 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
 
         fflush(stdout);
         fflush(stderr);
+        fflush(NULL);
         _exit(code);
     }
 

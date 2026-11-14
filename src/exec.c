@@ -310,169 +310,156 @@ bool exec_set_shell_name_cstr(miga_exec_t *executor, const char *shell_name)
 }
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
+/* Before the top-level frame exists (command-line parsing) the flags live in
+ * executor->opt; exec_frame_push() copies them into the top frame, which is
+ * their owner from then on (frames share or copy them by policy). */
+static exec_opt_flags_t *exec_opts(const miga_exec_t *executor)
+{
+    if (executor->top_frame && executor->top_frame->opt_flags)
+        return executor->top_frame->opt_flags;
+    return (exec_opt_flags_t *)&executor->opt;
+}
 
 bool exec_get_flag_allexport(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.allexport;
+    return exec_opts(executor)->allexport;
 }
 
 bool exec_set_flag_allexport(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.allexport = value;
+    exec_opts(executor)->allexport = value;
     return true;
 }
 
 bool exec_get_flag_errexit(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.errexit;
+    return exec_opts(executor)->errexit;
 }
 
 bool exec_set_flag_errexit(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.errexit = value;
+    exec_opts(executor)->errexit = value;
     return true;
 }
 
 bool exec_get_flag_ignoreeof(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.ignoreeof;
+    return exec_opts(executor)->ignoreeof;
 }
 
 bool exec_set_flag_ignoreeof(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.ignoreeof = value;
+    exec_opts(executor)->ignoreeof = value;
     return true;
 }
 
 bool exec_get_flag_noclobber(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noclobber;
+    return exec_opts(executor)->noclobber;
 }
 
 bool exec_set_flag_noclobber(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noclobber = value;
+    exec_opts(executor)->noclobber = value;
     return true;
 }
 
 bool exec_get_flag_noglob(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noglob;
+    return exec_opts(executor)->noglob;
 }
 
 bool exec_set_flag_noglob(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noglob = value;
+    exec_opts(executor)->noglob = value;
     return true;
 }
 
 bool exec_get_flag_noexec(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noexec;
+    return exec_opts(executor)->noexec;
 }
 
 bool exec_set_flag_noexec(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noexec = value;
+    exec_opts(executor)->noexec = value;
     return true;
 }
 
 bool exec_get_flag_nounset(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.nounset;
+    return exec_opts(executor)->nounset;
 }
 
 bool exec_set_flag_nounset(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.nounset = value;
+    exec_opts(executor)->nounset = value;
     return true;
 }
 
 bool exec_get_flag_pipefail(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.pipefail;
+    return exec_opts(executor)->pipefail;
 }
 
 bool exec_set_flag_pipefail(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.pipefail = value;
+    exec_opts(executor)->pipefail = value;
     return true;
 }
 
 bool exec_get_flag_verbose(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.verbose;
+    return exec_opts(executor)->verbose;
 }
 
 bool exec_set_flag_verbose(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.verbose = value;
+    exec_opts(executor)->verbose = value;
     return true;
 }
 
 bool exec_get_flag_vi(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.vi;
+    return exec_opts(executor)->vi;
 }
 
 bool exec_set_flag_vi(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.vi = value;
+    exec_opts(executor)->vi = value;
     return true;
 }
 
 bool exec_get_flag_xtrace(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.xtrace;
+    return exec_opts(executor)->xtrace;
 }
 
 bool exec_set_flag_xtrace(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.xtrace = value;
+    exec_opts(executor)->xtrace = value;
     return true;
 }
 
@@ -1978,7 +1965,7 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
                 break;
             }
 
-            if (interactive && executor->opt.ignoreeof)
+            if (interactive && exec_opts(executor)->ignoreeof)
             {
                 consecutive_eof++;
                 if (consecutive_eof < IGNOREEOF_MAX)
@@ -2038,15 +2025,8 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
                 }
                 /* Interactive shells keep going after errors */
             }
-            else
-            {
-                /* Non-interactive + errexit: abort on non-zero status */
-                if (executor->opt.errexit && executor->last_exit_status != 0)
-                {
-                    final_result = MIGA_EXEC_STATUS_ERROR;
-                    break;
-                }
-            }
+            /* set -e is applied per command by the executor (exec_frame.c),
+             * which knows the contexts in which it is ignored. */
         }
 
         /* ---- 5. Check for exit / top-level return ---- */
@@ -2693,7 +2673,7 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
                 break;
             }
 
-            if (executor->opt.ignoreeof)
+            if (exec_opts(executor)->ignoreeof)
             {
                 consecutive_eof++;
                 if (consecutive_eof < IGNOREEOF_MAX)

@@ -391,7 +391,15 @@ miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec
                 break;
             case REDIR_WRITE:
                 if (frame->opt_flags && frame->opt_flags->noclobber)
-                    flags = O_WRONLY | O_CREAT | O_EXCL;
+                {
+                    /* set -C: refuse to overwrite an existing regular file;
+                     * devices and FIFOs (/dev/null) may be opened. */
+                    struct stat st;
+                    if (stat(fname, &st) == 0 && !S_ISREG(st.st_mode))
+                        flags = O_WRONLY;
+                    else
+                        flags = O_WRONLY | O_CREAT | O_EXCL;
+                }
                 else
                     flags = O_WRONLY | O_CREAT | O_TRUNC;
                 break;

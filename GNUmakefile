@@ -321,17 +321,21 @@ TEST_EXES := $(addprefix $(TEST_DIR)/,$(notdir $(basename $(ALL_TEST_SOURCES))))
 # Compilation rules
 # --------------------------------------------------------------------------
 
+# Header dependencies recorded by -MMD, so that a changed struct or prototype
+# rebuilds every object that includes it (a stale object links but misbehaves).
+-include $(shell find $(OBJ_DIR) -name '*.d' 2>/dev/null)
+
 $(OBJ_DIR)/src/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
-	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(PIC_FLAGS) -MMD -MP -c -o $@ $<
 
 $(OBJ_DIR)/test/ctest/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
-	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(PIC_FLAGS) -MMD -MP -c -o $@ $<
 
 $(OBJ_DIR)/%.o: %.c $(CONFIG_HEADER)
 	$(MKDIR) $(@D)
-	$(CC) $(CFLAGS) $(PIC_FLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(PIC_FLAGS) -MMD -MP -c -o $@ $<
 
 # --------------------------------------------------------------------------
 # Phony targets

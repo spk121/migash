@@ -722,7 +722,13 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
                         }
                     }
 
-                    if (all_digits)
+                    // POSIX 2.7: only digits immediately preceding the
+                    // operator form an IO_NUMBER ("2>&1 >f": the 1 is a word).
+                    bool adjacent =
+                        token_get_first_line(next_token) == token_get_first_line(token) &&
+                        token_get_first_column(next_token) ==
+                            token_get_first_column(token) + (int)strlen(word_text);
+                    if (all_digits && adjacent)
                     {
                         // This word is the IO_NUMBER of the redirection that
                         // follows: convert the word itself (the parser expects

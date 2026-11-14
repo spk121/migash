@@ -65,6 +65,10 @@ miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga
  */
 miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr);
 
+/* Apply set -e to a command's result: when errexit is on and not being
+ * ignored, a non-zero status requests an exit and turns the flow into TOP. */
+void exec_frame_apply_errexit(miga_frame_t *frame, exec_frame_execute_result_t *result);
+
 /**
  * Main entry point: create a frame, execute it, and clean up.
  * Handles forking if required by the frame's policy.
