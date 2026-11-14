@@ -433,11 +433,20 @@ miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga
     init_functions(frame);
     init_aliases(frame);
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
-    if (frame->policy->stdio.inherits_redirected_stdio)
+    if (frame->policy->stdio.inherits_redirected_stdio && parent && parent->stdin_fp)
     {
-        frame->stdin_fp = parent ? parent->stdin_fp : NULL;
-        frame->stdout_fp = parent ? parent->stdout_fp : NULL;
-        frame->stderr_fp = parent ? parent->stderr_fp : NULL;
+        frame->stdin_fp = parent->stdin_fp;
+        frame->stdout_fp = parent->stdout_fp;
+        frame->stderr_fp = parent->stderr_fp;
+    }
+    else
+    {
+        frame->redirected_stdin = NULL;
+        frame->redirected_stdout = NULL;
+        frame->redirected_stderr = NULL;
+        frame->stdin_fp = &frame->redirected_stdin;
+        frame->stdout_fp = &frame->redirected_stdout;
+        frame->stderr_fp = &frame->redirected_stderr;
     }
 #endif
 
@@ -657,21 +666,22 @@ static void cleanup_frame_resources(miga_frame_t *frame)
         string_destroy(&frame->source_name);
     }
 #if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
-    // It is a coding error if these aren't properly closed. They
-    // should have been closed/destroyed when the redirections closed up.
-    if (*frame->stdin_fp && (!frame->parent || *frame->parent->stdin_fp != *frame->stdin_fp))
+    // Only a frame that owns its stream slots closes them. It is a coding
+    // error if they are still open: the redirection that opened them should
+    // have been restored.
+    if (frame->stdin_fp == &frame->redirected_stdin && frame->redirected_stdin)
     {
         log_error("Redirected stdin not closed properly");
-        fclose(*frame->stdin_fp);
-        *frame->stdin_fp = NULL;
+        fclose(frame->redirected_stdin);
+        frame->redirected_stdin = NULL;
     }
-    if (*frame->stdout_fp && (!frame->parent || *frame->parent->stdout_fp != *frame->stdout_fp))
+    if (frame->stdout_fp == &frame->redirected_stdout && frame->redirected_stdout)
     {
         log_error("Redirected stdout not closed properly");
-        fclose(*frame->stdout_fp);
-        *frame->stdout_fp = NULL;
+        fclose(frame->redirected_stdout);
+        frame->redirected_stdout = NULL;
     }
-    if (*frame->stderr_fp && (!frame->parent || *frame->parent->stderr_fp != *frame->stderr_fp))
+    if (frame->stderr_fp == &frame->redirected_stderr && frame->redirected_stderr)
     {
         log_error("Redirected stderr not closed properly");
         fclose(*frame->stderr_fp);

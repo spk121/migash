@@ -178,10 +178,10 @@ static int redirection_default_fd(const exec_redirection_t *r)
     }
 }
 
-#ifdef MIGA_POSIX_API
 /* ============================================================================
- * Save sets (POSIX)
+ * Save sets
  * ============================================================================
+ * (Used by the POSIX implementation; the helpers are plain ISO C.)
  * Every application of a redirection list records what it saved in a set
  * that is pushed on executor->redir_saves. The matching restore (or commit,
  * for "exec") pops that set and undoes (or forgets) exactly those saves, so
@@ -238,6 +238,7 @@ static void save_set_add(struct redir_save_set_t *set, int fd, int backup)
     set->count++;
 }
 
+#ifdef MIGA_POSIX_API
 miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
     Expects_not_null(frame);

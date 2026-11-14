@@ -53,6 +53,21 @@ and were corrected; the rest were real bugs, now fixed:
 Known gaps noticed but not yet addressed: `${x:-~}` does not tilde-expand
 the word (dash does); the `read` builtin is still missing (item 17).
 
+ISO_C configuration (2026-11-14): builds again under CMake, autotools
+(`--enable-configuration=iso_c`) and the GNUmakefile, and its 27 unit
+tests pass. The build had broken on the redirection save-set helpers
+being inside the POSIX-only section, and the arithmetic test crashed
+because a frame's ISO C stream slots were never allocated (each frame now
+owns `redirected_std{in,out,err}` slots unless it inherits the parent's).
+The `system()` fallback for external commands now quotes each argument,
+so `touch "has space.txt"` no longer creates two files. Every library
+symbol the ISO_C objects reference was checked with `nm`: all are ISO C
+(C23 `strdup`, C11 `mtx_*` from `<threads.h>`, which is optional in the
+standard, and `setjmp`/`longjmp` included). The conformance suite is only
+registered for the POSIX configuration, because ISO mode by design has no
+pipelines, no `cd`, no captured command substitution, and runs external
+commands through `system()` where shell functions are invisible.
+
 Item 29 (`${10}`) is **fixed**.
 
 ---

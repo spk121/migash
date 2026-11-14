@@ -60,6 +60,50 @@
  * Populate special shell variables into a variable store.
  * Populates $?, $!, $$, $_, $- from frame state.
  */
+#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
+/* Append one argument to a system(3) command line, quoted for the command
+ * processor: single quotes for a POSIX sh (where ' is written '\''), double
+ * quotes for cmd.exe. A word of safe characters is appended as it is. */
+static void append_system_quoted(string_t *cmdline, const string_t *word)
+{
+    const char *w = string_cstr(word);
+    bool safe = *w != '\0';
+    for (const char *p = w; *p && safe; p++)
+    {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') ||
+              *p == '/' || *p == '.' || *p == '_' || *p == '-' || *p == '+' || *p == ':' ||
+              *p == '=' || *p == ',' || *p == '@' || *p == '%'))
+            safe = false;
+    }
+    if (safe)
+    {
+        string_append(cmdline, word);
+        return;
+    }
+#if defined(_WIN32)
+    string_append_char(cmdline, '"');
+    for (const char *p = w; *p; p++)
+    {
+        if (*p == '"')
+            string_append_cstr(cmdline, "\\\"");
+        else
+            string_append_char(cmdline, *p);
+    }
+    string_append_char(cmdline, '"');
+#else
+    string_append_char(cmdline, '\'');
+    for (const char *p = w; *p; p++)
+    {
+        if (*p == '\'')
+            string_append_cstr(cmdline, "'\\''");
+        else
+            string_append_char(cmdline, *p);
+    }
+    string_append_char(cmdline, '\'');
+#endif
+}
+#endif
+
 static void populate_special_variables(variable_store_t *store, const miga_frame_t *frame)
 {
     Expects_not_null(store);
@@ -831,12 +875,14 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             goto done_execution;
         }
 
+        /* The words have already been expanded and split, so each one must
+         * reach the command processor as a single argument: quote them. */
         string_t *cmdline = string_create();
         for (int i = 0; i < strlist_size(expanded_words); i++)
         {
             if (i > 0)
                 string_append_cstr(cmdline, " ");
-            string_append(cmdline, strlist_at(expanded_words, i));
+            append_system_quoted(cmdline, strlist_at(expanded_words, i));
         }
 
         string_t *env_fname = variable_store_write_env_file(env_store);
