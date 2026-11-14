@@ -68,6 +68,21 @@ registered for the POSIX configuration, because ISO mode by design has no
 pipelines, no `cd`, no captured command substitution, and runs external
 commands through `system()` where shell functions are invisible.
 
+Windows / ISO_C (from the GitHub Actions log of 2026-11-14): the C
+sources compiled, but the shell failed to link with 49 unresolved
+`__imp_*` symbols and 361 "inconsistent dll linkage" warnings. With a
+static library `MIGA_BUILD_SHARED` is not defined, so `api.h` made
+`MIGA_API` expand to `__declspec(dllimport)` everywhere. `api.h` now has
+three states: export when building the shared library, import when
+consuming it (`MIGA_USE_SHARED`, which CMake adds to the shared library's
+interface), and nothing for a static library. The remaining MSVC
+warnings were fixed at the source: `_CRT_SECURE_NO_WARNINGS` is defined
+for MSVC (the `*_s` functions are not portable), `shell_cfg_t` takes
+`const char *`, the tokenizer uses the const token getters, two tests
+were missing declarations, and an unused variable, label and `size_t`
+narrowing were cleaned up. Not verified on Windows itself; the next CI
+run will tell.
+
 Item 29 (`${10}`) is **fixed**.
 
 ---

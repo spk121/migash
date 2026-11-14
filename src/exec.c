@@ -1592,7 +1592,6 @@ static string_t *render_ps1(const miga_exec_t *exec)
         return NULL;
 
     int i = 0;
-    char c;
     while (i < string_length(ps1_raw))
     {
         /* ------------------------------------------------------------------

@@ -517,6 +517,13 @@ ast_node_t *ast_node_list_get(const ast_node_list_t *list, int index);
 bool ast_node_command_list_has_separators(const ast_node_t *node);
 
 /**
+ * Visit every node of a tree in pre-order. The visitor returns false to stop
+ * the traversal; ast_traverse() returns false in that case.
+ */
+typedef bool (*ast_visitor_fn)(const ast_node_t *node, void *user_data);
+bool ast_traverse(const ast_node_t *root, ast_visitor_fn visitor, void *user_data);
+
+/**
  * Get the number of separators in a command list.
  * INVARIANT: Returns the same value as ast_node_list_size() for the items.
  */

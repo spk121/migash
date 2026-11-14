@@ -6,6 +6,9 @@
 #include <string.h>
 #include "ctest.h"
 #include "func_store.h"
+/* The tests look inside the store, so they may use the internal map API. */
+#define FUNC_MAP_INTERNAL
+#include "func_map.h"
 #include "ast.h"
 #include "miga/string_t.h"
 #include "miga/xalloc.h"

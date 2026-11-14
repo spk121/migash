@@ -327,7 +327,7 @@ CTEST(test_token_list_get)
     token_t *tok = token_create(TOKEN_WORD);
     token_list_append(list, tok);
 
-    token_t *retrieved = token_list_get(list, 0);
+    const token_t *retrieved = token_list_get(list, 0);
     CTEST_ASSERT_EQ(ctest, (int)token_get_type(retrieved), (int)TOKEN_WORD, "retrieved token type matches");
 
     token_list_destroy(&list);

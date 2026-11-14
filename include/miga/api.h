@@ -15,8 +15,10 @@
     - put MIGA_EXTERN_C_END just before the #endif of the header guard
     - put MIGA_API before public function declarations
     - put MIGA_LOCAL before internal function declarations (if any) in the header
-    - define MIGA_BUILD_SHARED when compiling the library itself
-    - do not define MIGA_BUILD_SHARED when consuming the library
+    - define MIGA_BUILD_SHARED when compiling the library as a shared library
+    - define MIGA_USE_SHARED when consuming the shared library (this matters
+      on Windows, where a DLL's symbols must be imported)
+    - define neither for a static library, where symbols are plain
 */
 
 /* These macros control symbol visibility; they describe whether a function
@@ -62,9 +64,14 @@
 #if defined(MIGA_BUILD_SHARED)
 /* We are building the shared library -> export symbols */
     #define MIGA_API  MIGA_EXPORT
-#else
+#elif defined(MIGA_USE_SHARED)
 /* We are consuming the shared library -> import symbols (Windows only) */
     #define MIGA_API  MIGA_IMPORT
+#else
+/* Static library, or the library's own objects linked directly: no
+   import/export decoration. (On Windows, dllimport on a symbol that is
+   linked statically is a hard link error.) */
+    #define MIGA_API
 #endif
 
 /* C++ header guards  */

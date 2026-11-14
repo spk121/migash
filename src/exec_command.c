@@ -932,7 +932,6 @@ done_execution:
         executor->last_argument_set = true;
     }
 
-out_cleanup_words:
     strlist_destroy(&expanded_words);
 
 out_destroy_redirs:

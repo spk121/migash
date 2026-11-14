@@ -318,7 +318,7 @@ string_t *lib_getcwd(void)
     }
     else
     {
-        cwd->length = strlen(result);
+        cwd->length = (int)strlen(result);
     }
     return cwd;
 }

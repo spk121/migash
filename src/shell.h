@@ -69,9 +69,9 @@ typedef struct
 {
     // Start-up environment
     shell_mode_t mode;
-    char *command_name; // argv[0]
-    char *command_string; // -c command string (if any)
-    char *command_file;   // command file (if any)
+    const char *command_name;   // argv[0]
+    const char *command_string; // -c command string (if any)
+    const char *command_file;   // command file (if any)
     int argument_count;
     char **arguments;     // argv for the shell
     char **envp;          // environment variables (if any)
