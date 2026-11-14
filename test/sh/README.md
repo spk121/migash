@@ -48,6 +48,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `19_set_options.sh` | `set -e -u -f -C -n -x -v -a`, `set -o`/`+o`, `$-`, and `wait` without operands; needs `TEST_SHELL` |
 | `20_read_builtin.sh` | the `read` utility: IFS splitting, `-r`, line continuation, status at end of file, one line per call |
 | `21_umask.sh` | the `umask` utility: octal and symbolic (`-S`) output, octal and symbolic operands, effect on created files (POSIX configuration) |
+| `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
 
 ## Expected failures
 

@@ -254,7 +254,8 @@ the list is appended to `case_items`:
 - `G_CASE_ITEM`: outer node a = inner item (a = optional `(`,
   b = `G_PATTERN_LIST`, c = `)`, d = optional compound_list), b = the
   terminator token. The pattern list's `G_WORD_NODE`s are cloned, skipping
-  the `|` tokens the parser left in the list. `action` is
+  the `|` separators and the optional leading `(` the parser left in the
+  list. `action` is
   `CASE_ACTION_BREAK` for `;;`, `CASE_ACTION_FALLTHROUGH` for `;&` (the
   terminator token is `TOKEN_SEMIAND`).
 - `G_CASE_ITEM_NS` (the last item, with no terminator) has the inner

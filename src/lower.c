@@ -1598,9 +1598,10 @@ static token_list_t *token_list_from_pattern_list(const gnode_t *g)
         if (w->type != G_WORD_NODE)
             continue;
 
-        /* Skip '|' pipe tokens - only include actual pattern words */
+        /* Skip the '|' separators and an optional leading '(' - only include
+         * actual pattern words */
         token_type_t t = token_get_type(w->data.token);
-        if (t == TOKEN_PIPE)
+        if (t == TOKEN_PIPE || t == TOKEN_LPAREN)
             continue;
 
         /* Clone token - respect silo boundary between gnode and AST */

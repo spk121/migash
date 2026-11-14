@@ -47,6 +47,7 @@
 #include "token.h"
 #include "trap_store.h"
 #include "variable_store.h"
+#include "lib.h"
 #include "miga/xalloc.h"
 
 
@@ -522,6 +523,48 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     }
     xtrace_words(frame, NULL, expanded_words);
 
+    /* "command [-p] name args...": run name with function lookup disabled and
+     * special built-ins treated as regular ones (XCU command). The -v and -V
+     * forms, and a bare "command", are left to the builtin itself. */
+    bool command_skip_functions = false;
+    bool command_special_as_regular = false;
+    bool command_default_path = false;
+    while (has_words && strcmp(string_cstr(strlist_at(expanded_words, 0)), "command") == 0 &&
+           builtin_store_has(executor->builtins, "command") &&
+           !func_store_get_def_cstr(frame->functions, "command"))
+    {
+        int n = strlist_size(expanded_words);
+        int i = 1;
+        bool leave_to_builtin = false;
+        while (i < n)
+        {
+            const char *a = string_cstr(strlist_at(expanded_words, i));
+            if (strcmp(a, "--") == 0)
+            {
+                i++;
+                break;
+            }
+            if (a[0] != '-' || a[1] == '\0')
+                break;
+            for (const char *p = a + 1; *p; p++)
+            {
+                if (*p == 'p')
+                    command_default_path = true;
+                else
+                    leave_to_builtin = true; /* -v, -V, or an option error */
+            }
+            i++;
+        }
+        if (leave_to_builtin || i >= n)
+            break;
+        strlist_t *rest = strlist_create_slice(expanded_words, i, -1);
+        strlist_destroy(&expanded_words);
+        expanded_words = rest;
+        command_skip_functions = true;
+        command_special_as_regular = true;
+    }
+    (void)command_default_path; /* only the POSIX external-command path uses it */
+
     if (has_words)
     {
         const char *cmd_name = string_cstr(strlist_at(expanded_words, 0));
@@ -541,11 +584,13 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
 
         /* POSIX command search order: special builtins, then functions, then
          * regular builtins, then external utilities. */
-        bool is_special = builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL;
-        const ast_node_t *func_body =
-            is_special ? NULL : func_store_get_def_cstr(frame->functions, cmd_name);
-        bool is_regular = !is_special && func_body == NULL && builtin_found &&
-                          builtin_category == MIGA_BUILTIN_CATEGORY_REGULAR;
+        bool is_special = builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL &&
+                          !command_special_as_regular;
+        const ast_node_t *func_body = (is_special || command_skip_functions)
+                                          ? NULL
+                                          : func_store_get_def_cstr(frame->functions, cmd_name);
+        /* through "command", a special builtin runs as a regular one */
+        bool is_regular = !is_special && func_body == NULL && builtin_found;
         bool has_assignments = assign_tokens && token_list_size(assign_tokens) > 0;
 
         if (has_assignments && is_special)
@@ -576,6 +621,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
            Internal commands (builtins + functions)
            ──────────────────────────────────────────────── */
         bool is_internal = false;
+        (void)is_internal; /* kept for the UCRT/ISO branches below */
 
         /* Shell function */
         if (func_body != NULL)
@@ -725,6 +771,20 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         argv[argc] = NULL;
 
         char *const *envp = variable_store_get_envp(env_store);
+        /* The search path for the child: the shell's PATH as the command sees
+         * it (a prefix assignment included), or the default path for
+         * "command -p". The exec functions consult the process environment. */
+        char default_path_buf[1024];
+        const char *search_path = NULL;
+        if (command_default_path)
+            search_path = lib_default_path(default_path_buf, sizeof default_path_buf);
+        else
+            for (char *const *ep = envp; ep && *ep; ++ep)
+                if (strncmp(*ep, "PATH=", 5) == 0)
+                {
+                    search_path = *ep + 5;
+                    break;
+                }
 
         fflush(stdout);
         fflush(stderr);
@@ -756,19 +816,13 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             xfree(cloexec_fds);
 
             /* Exec */
+            if (search_path)
+                setenv("PATH", search_path, 1);
 #if defined(HAVE_EXECVPE)
             execvpe(cmd_name, argv, envp);
 #else
             /* Manual PATH search fallback if execvpe is not available */
-            const char *path_env = NULL;
-            for (char *const *ep = envp; ep && *ep; ++ep)
-            {
-                if (strncmp(*ep, "PATH=", 5) == 0)
-                {
-                    path_env = *ep + 5;
-                    break;
-                }
-            }
+            const char *path_env = search_path;
             if (path_env && strchr(cmd_name, '/') == NULL)
             {
                 char *path = xstrdup(path_env);

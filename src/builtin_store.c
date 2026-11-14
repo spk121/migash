@@ -445,6 +445,8 @@ bool builtins_init_default(builtin_store_t *store)
     ok = ok && builtin_store_set(store, "kill", (miga_builtin_fn_t)builtin_kill, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "wait", (miga_builtin_fn_t)builtin_wait, MIGA_BUILTIN_CATEGORY_REGULAR);
     ok = ok && builtin_store_set(store, "read", (miga_builtin_fn_t)builtin_read, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "command", (miga_builtin_fn_t)builtin_command, MIGA_BUILTIN_CATEGORY_REGULAR);
+    ok = ok && builtin_store_set(store, "type", (miga_builtin_fn_t)builtin_type, MIGA_BUILTIN_CATEGORY_REGULAR);
 #ifdef MIGA_POSIX_API
     ok = ok && builtin_store_set(store, "umask", (miga_builtin_fn_t)builtin_umask, MIGA_BUILTIN_CATEGORY_REGULAR);
 #endif

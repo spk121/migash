@@ -60,6 +60,11 @@ int builtin_unset(miga_frame_t *frame, const strlist_t *args);
 /* read [-r] var... : one line from standard input into variables */
 int builtin_read(miga_frame_t *frame, const strlist_t *args);
 
+/* command [-p] [-v | -V] name... : -v/-V describe a name (the executor runs
+ * "command name args" itself); type name... : describe names */
+int builtin_command(miga_frame_t *frame, const strlist_t *args);
+int builtin_type(miga_frame_t *frame, const strlist_t *args);
+
 #ifdef MIGA_POSIX_API
 /* umask [-S] [mask] : get or set the file mode creation mask */
 int builtin_umask(miga_frame_t *frame, const strlist_t *args);

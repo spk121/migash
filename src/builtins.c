@@ -40,6 +40,7 @@
 #endif
 
 #include "builtin_store.h"
+#include "token.h"
 #include "builtins.h"
 
 #include "miga/exec.h"
@@ -1731,6 +1732,250 @@ int builtin_umask(miga_frame_t *frame, const strlist_t *args)
     return 0;
 }
 #endif /* MIGA_POSIX_API */
+
+/* ============================================================================
+ * command / type - how a name would be interpreted
+ *
+ *   command [-p] [-v | -V] name...     (XCU command)
+ *   type name...                       (XCU type)
+ *
+ * "command name args" (no -v/-V) is handled by the simple-command executor,
+ * which runs name without function lookup and with special built-ins treated
+ * as regular ones; this builtin receives the -v / -V forms and a bare
+ * "command". Search order: reserved word, alias, special built-in, function,
+ * regular built-in, then PATH (the default path with -p).
+ * ============================================================================
+ */
+typedef enum
+{
+    CMD_KIND_NONE,
+    CMD_KIND_KEYWORD,
+    CMD_KIND_ALIAS,
+    CMD_KIND_SPECIAL_BUILTIN,
+    CMD_KIND_FUNCTION,
+    CMD_KIND_BUILTIN,
+    CMD_KIND_FILE
+} command_kind_t;
+
+static bool command_file_is_executable(const char *path)
+{
+#ifdef MIGA_POSIX_API
+    struct stat st;
+    return access(path, X_OK) == 0 && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+#else
+    /* No permission test in ISO C: an existing readable file counts */
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return false;
+    fclose(fp);
+    return true;
+#endif
+}
+
+static string_t *command_search_path(miga_frame_t *frame, const char *name, bool default_path)
+{
+    if (strchr(name, '/'))
+        return command_file_is_executable(name) ? string_create_from_cstr(name) : NULL;
+
+    char buf[1024];
+    string_t *path_var = NULL;
+    const char *path;
+    if (!default_path && frame_has_variable_cstr(frame, "PATH"))
+    {
+        path_var = frame_get_variable_cstr(frame, "PATH");
+        path = string_cstr(path_var);
+    }
+    else
+        path = lib_default_path(buf, sizeof buf);
+
+    string_t *found = NULL;
+    const char *p = path;
+    for (;;)
+    {
+        const char *colon = strchr(p, ':');
+        size_t len = colon ? (size_t)(colon - p) : strlen(p);
+        string_t *candidate = string_create();
+        if (len == 0)
+            string_append_cstr(candidate, "."); /* an empty entry is the current directory */
+        else
+            for (size_t i = 0; i < len; i++)
+                string_append_char(candidate, p[i]);
+        string_append_char(candidate, '/');
+        string_append_cstr(candidate, name);
+        if (command_file_is_executable(string_cstr(candidate)))
+        {
+            found = candidate;
+            break;
+        }
+        string_destroy(&candidate);
+        if (!colon)
+            break;
+        p = colon + 1;
+    }
+    if (path_var)
+        string_destroy(&path_var);
+    return found;
+}
+
+static command_kind_t command_classify(miga_frame_t *frame, const char *name, bool default_path,
+                                       string_t **detail)
+{
+    *detail = NULL;
+    if (token_is_reserved_word(name))
+        return CMD_KIND_KEYWORD;
+    const char *alias = frame_get_alias_cstr(frame, name);
+    if (alias)
+    {
+        *detail = string_create_from_cstr(alias);
+        return CMD_KIND_ALIAS;
+    }
+    miga_builtin_fn_t fn = NULL;
+    miga_builtin_category_t category;
+    bool is_builtin = builtin_store_lookup(frame->executor->builtins, name, &fn, &category);
+    if (is_builtin && category == MIGA_BUILTIN_CATEGORY_SPECIAL)
+        return CMD_KIND_SPECIAL_BUILTIN;
+    if (frame->functions && func_store_get_def_cstr(frame->functions, name))
+        return CMD_KIND_FUNCTION;
+    if (is_builtin)
+        return CMD_KIND_BUILTIN;
+    string_t *path = command_search_path(frame, name, default_path);
+    if (path)
+    {
+        *detail = path;
+        return CMD_KIND_FILE;
+    }
+    return CMD_KIND_NONE;
+}
+
+/* Write the -v (terse) or -V / type (verbose) description. Returns true when
+ * the name was found. */
+static bool command_describe(miga_frame_t *frame, const char *name, bool verbose, bool default_path,
+                             FILE *out)
+{
+    string_t *detail = NULL;
+    command_kind_t kind = command_classify(frame, name, default_path, &detail);
+    switch (kind)
+    {
+    case CMD_KIND_NONE:
+        if (verbose)
+            fprintf(stderr, "%s: not found\n", name);
+        return false;
+    case CMD_KIND_KEYWORD:
+        fprintf(out, verbose ? "%s is a shell keyword\n" : "%s\n", name);
+        break;
+    case CMD_KIND_ALIAS:
+        if (verbose)
+            fprintf(out, "%s is an alias for %s\n", name, string_cstr(detail));
+        else
+        {
+            fprintf(out, "alias %s='", name);
+            for (const char *p = string_cstr(detail); *p; p++)
+            {
+                if (*p == '\'')
+                    fputs("'\\''", out);
+                else
+                    fputc(*p, out);
+            }
+            fputs("'\n", out);
+        }
+        break;
+    case CMD_KIND_SPECIAL_BUILTIN:
+        fprintf(out, verbose ? "%s is a special shell builtin\n" : "%s\n", name);
+        break;
+    case CMD_KIND_FUNCTION:
+        fprintf(out, verbose ? "%s is a shell function\n" : "%s\n", name);
+        break;
+    case CMD_KIND_BUILTIN:
+        fprintf(out, verbose ? "%s is a shell builtin\n" : "%s\n", name);
+        break;
+    case CMD_KIND_FILE:
+        if (verbose)
+            fprintf(out, "%s is %s\n", name, string_cstr(detail));
+        else
+            fprintf(out, "%s\n", string_cstr(detail));
+        break;
+    }
+    if (detail)
+        string_destroy(&detail);
+    return true;
+}
+
+int builtin_command(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    bool default_path = false, terse = false, verbose = false;
+    int first = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'p')
+                default_path = true;
+            else if (*p == 'v')
+                terse = true;
+            else if (*p == 'V')
+                verbose = true;
+            else
+            {
+                fprintf(stderr, "command: -%c: invalid option\n", *p);
+                fprintf(stderr, "command: usage: command [-p] [-v | -V] name [argument...]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+
+    if (!terse && !verbose)
+    {
+        /* "command" alone, or only options: nothing to run. (With a name the
+         * executor intercepts the command before this builtin is reached.) */
+        if (first < argc)
+        {
+            fprintf(stderr, "command: %s: cannot be run from here\n",
+                    string_cstr(strlist_at(args, first)));
+            return 1;
+        }
+        return 0;
+    }
+
+    int status = 0;
+    for (int i = first; i < argc; i++)
+        if (!command_describe(frame, string_cstr(strlist_at(args, i)), verbose, default_path, out))
+            status = 1;
+    return status;
+}
+
+int builtin_type(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    if (first < argc && strcmp(string_cstr(strlist_at(args, first)), "--") == 0)
+        first++;
+    int status = 0;
+    for (int i = first; i < argc; i++)
+        if (!command_describe(frame, string_cstr(strlist_at(args, i)), true, false, out))
+            status = 127;
+    return status;
+}
 
 /* ============================================================================
  * times - Print accumulated user and system times
