@@ -511,6 +511,15 @@ if(UNIX AND API_TYPE STREQUAL "POSIX")
         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh
     )
+    # Interactive SIGINT behaviour, driven through a pseudo-terminal.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME interactive_sigint
+            COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/test/interactive/sigint_pty.py
+                    $<TARGET_FILE:migash>
+        )
+        set_tests_properties(interactive_sigint PROPERTIES TIMEOUT 120)
+    endif()
 endif()
 
 # ============================================================================

@@ -51,6 +51,19 @@ This test suite validates that a shell correctly implements the three quoting me
 | `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
 | `23_hash_ulimit.sh` | `hash` (statuses; the shell keeps no table) and `ulimit -f` (POSIX configuration) |
 
+## Interactive tests
+
+`../interactive/sigint_pty.py <shell>` starts the shell on a pseudo-terminal
+and checks the interactive SIGINT behaviour: Ctrl-C at the prompt, with a
+partial line typed, during a foreground command, a loop and a subshell
+(`$?` is 130 and the shell goes on), a background job surviving Ctrl-C,
+a trapped INT running its action, `trap - INT` restoring the default, and
+`exit` ending the shell with its status. It needs Python 3 and a POSIX
+system; CMake registers it as `interactive_sigint` in the POSIX
+configuration. dash passes all of it; bash fails the trapped-INT check
+because it does not run an INT trap when only the foreground child was
+killed by Ctrl-C.
+
 ## Expected failures
 
 `expected_failures.txt` lists test files that the shell under development is

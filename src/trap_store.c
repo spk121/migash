@@ -359,77 +359,73 @@ bool trap_store_set(trap_store_t *store, int signal_number, string_t *action, bo
     trap->is_ignored = is_ignored;
     trap->is_default = is_default;
 
-    // Install the signal handler or restore default/ignore disposition
+    // Install the signal handler or restore default/ignore disposition.
+    // The first change of a signal's disposition remembers what the shell
+    // had (its interactive handler, SIG_IGN, SIG_DFL); "trap - SIG" restores
+    // that rather than SIG_DFL.
 #ifdef TRAP_USE_POSIX_SIGNALS
     {
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
-
-        if (is_ignored)
+        sigemptyset(&sa.sa_mask);
+        if (is_default)
         {
-            // Ignore this signal
-            sa.sa_handler = SIG_IGN;
-            if (sigaction(signal_number, &sa, NULL) == -1)
-                return false; // sigaction failed
-        }
-        else if (is_default)
-        {
-            // Restore default handler
-            sa.sa_handler = SIG_DFL;
-            if (sigaction(signal_number, &sa, NULL) == -1)
-                return false; // sigaction failed
-        }
-        else if (trap->action)
-        {
-            // Install trap handler
-            sig_act_store_t *sig_act_store = trap_store_get_sig_act_store();
-            if (sig_act_store)
+            if (trap->has_saved)
             {
-                sa.sa_sigaction = trap_handler;
-                sa.sa_flags = SA_SIGINFO | SA_RESTART;
-                sigemptyset(&sa.sa_mask);
-                if (sig_act_store_set_and_save(sig_act_store, signal_number, &sa) == -1)
-                    return false; // sig_act_store_set_and_save failed
+                trap->has_saved = false;
+                if (sigaction(signal_number, &trap->saved_action, NULL) == -1)
+                    return false;
             }
             else
             {
-                // Fallback: just use sigaction directly
-                sa.sa_sigaction = trap_handler;
-                sa.sa_flags = SA_SIGINFO | SA_RESTART;
-                sigemptyset(&sa.sa_mask);
+                sa.sa_handler = SIG_DFL;
                 if (sigaction(signal_number, &sa, NULL) == -1)
-                    return false; // sigaction failed
+                    return false;
             }
+            return true;
+        }
+        if (is_ignored)
+            sa.sa_handler = SIG_IGN;
+        else if (trap->action)
+        {
+            sa.sa_sigaction = trap_handler;
+            sa.sa_flags = SA_SIGINFO | SA_RESTART;
+        }
+        else
+            return true; /* nothing to install */
+        struct sigaction previous;
+        if (sigaction(signal_number, &sa, &previous) == -1)
+            return false;
+        if (!trap->has_saved)
+        {
+            trap->saved_action = previous;
+            trap->has_saved = true;
         }
     }
 #else
     // UCRT and ISO C use signal()
+    if (is_default)
+    {
+        void (*restore)(int) = trap->has_saved ? trap->saved_handler : SIG_DFL;
+        trap->has_saved = false;
+        if (signal(signal_number, restore) == SIG_ERR)
+            return false;
+        return true;
+    }
+    void (*handler)(int) = NULL;
     if (is_ignored)
-    {
-        if (signal(signal_number, SIG_IGN) == SIG_ERR)
-            return false; // signal() failed
-    }
-    else if (is_default)
-    {
-        if (signal(signal_number, SIG_DFL) == SIG_ERR)
-            return false; // signal() failed
-    }
+        handler = SIG_IGN;
     else if (trap->action)
+        handler = (void (*)(int))trap_handler;
+    else
+        return true;
+    void (*previous)(int) = signal(signal_number, handler);
+    if (previous == SIG_ERR)
+        return false;
+    if (!trap->has_saved)
     {
-        // Install trap handler
-        sig_act_store_t *sig_act_store = trap_store_get_sig_act_store();
-        if (sig_act_store)
-        {
-            void (*result)(int) = sig_act_store_set_and_save(sig_act_store, signal_number, trap_handler);
-            if (result == SIG_ERR)
-                return false; // sig_act_store_set_and_save failed
-        }
-        else
-        {
-            // Fallback: just use signal() directly
-            if (signal(signal_number, trap_handler) == SIG_ERR)
-                return false; // signal() failed
-        }
+        trap->saved_handler = previous;
+        trap->has_saved = true;
     }
 #endif
 
@@ -547,17 +543,16 @@ void trap_store_clear(trap_store_t *store, int signal_number)
     trap->is_ignored = false;
     trap->is_default = true;
 
-    // Restore the original signal disposition via sig_act_store
-    sig_act_store_t *sig_act_store = trap_store_get_sig_act_store();
-    if (sig_act_store)
-    {
-        sig_act_store_restore_one(sig_act_store, signal_number);
-    }
+    // Restore the disposition the shell had before the trap
+#ifdef TRAP_USE_POSIX_SIGNALS
+    if (trap->has_saved)
+        sigaction(signal_number, &trap->saved_action, NULL);
     else
-    {
-        // Fallback: restore to default
         signal(signal_number, SIG_DFL);
-    }
+#else
+    signal(signal_number, trap->has_saved ? trap->saved_handler : SIG_DFL);
+#endif
+    trap->has_saved = false;
 }
 
 void trap_store_clear_exit(trap_store_t *store)
@@ -880,6 +875,7 @@ void trap_store_reset_non_ignored(trap_store_t* store)
             string_destroy(&trap->action);
         trap->action = NULL;
         trap->is_default = true;
+        trap->has_saved = false; /* a subshell starts from the defaults */
         if (had_handler)
             signal((int)i, SIG_DFL);
     }

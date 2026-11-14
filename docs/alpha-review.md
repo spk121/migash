@@ -14,11 +14,11 @@ still open.
   17 **fixed** (`test`/`[` implemented, `cd`/`pwd` registered, `read`,
   `command`, `type` and `hash` implemented in every configuration,
   `umask` and `ulimit` for POSIX);
-  18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed** for
-  non-interactive shells (trapped SIGINT runs the action, untrapped kills
-  the shell with 130; the interactive-shell SIGINT behaviour is still
-  open); 22 **open** (interactive prompts) except the banner, which is
-  now interactive-only.
+  18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed**
+  (non-interactive: trapped SIGINT runs the action, untrapped kills the
+  shell with 130; interactive: Ctrl-C returns to the prompt with `$?` 130,
+  see `test/interactive/sigint_pty.py`); 22 **open** (interactive prompts)
+  except the banner, which is now interactive-only.
 - Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
 - Conformance (D): 27 **fixed**; 28-36 open.
 - Code health (E): 37 partly (all three build systems work and agree on
@@ -71,9 +71,24 @@ the input, on `exit`, and when a subshell or background job ends, with
 Subshells reset non-ignored traps (EXIT included); signals ignored on
 entry cannot be trapped; `trap - EXIT` no longer aborts. Along the way:
 an assignment-only command (`st=$?`) reset `$?` before expanding its
-value, so `$?` read 0. Open: SIGINT in an interactive shell, and traps
-are not reset in command-substitution or pipeline children (they fork
-without a frame).
+value, so `$?` read 0. Open: traps other than INT/QUIT/TERM are not
+reset in command-substitution or pipeline children (they fork without a
+frame).
+
+Interactive SIGINT (2026-11-14): an interactive POSIX shell installs a
+SIGINT handler (no `SA_RESTART`) that only sets `sigint_received`, and
+ignores SIGQUIT and SIGTERM. A foreground wait that returns `EINTR` is
+retried; after the interrupted simple command the frame stack unwinds to
+the REPL, which discards the partial line, resets the parser, prints a
+newline and prompts again with `$?` 130. Every forked child restores the
+default dispositions (background jobs ignore INT and QUIT, as POSIX
+requires when job control is off), so Ctrl-C ends `sleep` but not
+`sleep 30 &`. The first `trap` on a signal remembers the disposition the
+shell had, and `trap - SIG` restores it, so an interactive shell goes
+back to its handler rather than to `SIG_DFL` (that was the bug that
+killed the shell after `trap - INT`). `test/interactive/sigint_pty.py`
+drives the shell on a pty with 9 checks; dash and bash pass the same
+script. Item 21 is fixed.
 
 hash and ulimit (2026-11-14): `test/sh/23_hash_ulimit.sh` (16
 assertions checked against dash and bash) passes. The shell searches PATH
@@ -380,8 +395,8 @@ run). **P1** crashes or clear POSIX violations. **P2** code health.
     mechanism that nothing sets. `trap - EXIT; trap` aborts with
     `trap_store_run_exit_trap:961 - store->exit_action is NULL`.
 
-21. **Interactive mode: Ctrl-C kills the shell.** No SIGINT handling is
-    installed (`sig_act_store_install_default_signal_handlers` is commented
+21. **Interactive mode: Ctrl-C kills the shell.** (Fixed, see the status
+    notes above.) No SIGINT handling was installed (`sig_act_store_install_default_signal_handlers` is commented
     out at `src/exec.c:998`); a pty session ended with signal 2 on `^C`.
     Also, when stdin is not a tty, `shell_execute` still calls
     `exec_setup_interactive` for `SHELL_MODE_STDIN` (`src/shell.c:138`), so

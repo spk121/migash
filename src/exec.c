@@ -313,6 +313,10 @@ bool exec_set_shell_name_cstr(miga_exec_t *executor, const char *shell_name)
 /* Before the top-level frame exists (command-line parsing) the flags live in
  * executor->opt; exec_frame_push() copies them into the top frame, which is
  * their owner from then on (frames share or copy them by policy). */
+#ifdef MIGA_POSIX_API
+static void exec_install_interactive_signals(miga_exec_t *e);
+#endif
+
 static exec_opt_flags_t *exec_opts(const miga_exec_t *executor)
 {
     if (executor->top_frame && executor->top_frame->opt_flags)
@@ -1108,6 +1112,18 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
             variable_store_add_cstr(e->top_frame->variables, "IFS", " \t\n", false, false);
     }
 
+    /* Traps: the signal handler records pending signals in trap_pending[];
+     * signals ignored when the shell started cannot be trapped. Must come
+     * before the RC files run (they may set traps) and before the
+     * interactive handlers are installed (which are not "ignored on entry"). */
+    trap_store_set_pending_flags(e->trap_pending, NSIG);
+    if (e->top_frame && e->top_frame->traps)
+        trap_store_record_ignored_on_entry(e->top_frame->traps);
+#ifdef MIGA_POSIX_API
+    if (e->is_interactive)
+        exec_install_interactive_signals(e);
+#endif
+
     /* Source RC files */
     if (!e->inhibit_rc_files && (interactive || e->is_login_shell))
     {
@@ -1119,12 +1135,6 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
             log_debug("RC file loading failed.");
         return ret;
     }
-
-    /* Traps: the signal handler records pending signals in trap_pending[];
-     * signals ignored when the shell started cannot be trapped. */
-    trap_store_set_pending_flags(e->trap_pending, NSIG);
-    if (e->top_frame && e->top_frame->traps)
-        trap_store_record_ignored_on_entry(e->top_frame->traps);
     else
         log_debug("Skipped loading RC files");
 
@@ -1947,6 +1957,25 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 2. Read & execute one line ---- */
         miga_exec_status_t line_status = exec_frame_stream_core(executor->current_frame, fp, session);
 
+        /* ---- 2b. SIGINT (interactive): back to a fresh prompt, $? = 130 ---- */
+        if (interactive && executor->sigint_received)
+        {
+            executor->sigint_received = 0;
+            clearerr(fp); /* the interrupted read left the error flag set */
+            fprintf(stderr, "\n");
+            need_continuation = false;
+            parse_session_hard_reset(session, exec_get_aliases(executor));
+            executor->last_exit_status = 128 + SIGINT;
+            if (executor->current_frame)
+            {
+                executor->current_frame->last_exit_status = 128 + SIGINT;
+                if (!executor->exit_requested)
+                    executor->current_frame->pending_control_flow = MIGA_FRAME_FLOW_NORMAL;
+            }
+            if (!executor->exit_requested)
+                continue;
+        }
+
         /* ---- 3. EOF handling (a read error ends the stream the same way) ---- */
         if (feof(fp) || ferror(fp))
         {
@@ -2032,7 +2061,8 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
             (executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN ||
-             executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP) &&
+             (executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP &&
+              executor->exit_requested)) &&
             executor->current_frame == executor->top_frame)
         {
             /* A top-level 'return' or 'exit' unwind */
@@ -2942,6 +2972,85 @@ void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame)
     executor->exit_requested = was_exit_requested || executor->exit_requested;
     if (executor->current_frame == frame)
         executor->current_frame = saved_current;
+}
+
+/* ============================================================================
+ * Interactive signals (XCU 2.11)
+ * ============================================================================
+ * An interactive shell catches SIGINT: at the prompt the current line is
+ * discarded and a new prompt shown; during a foreground command the command
+ * (which gets the same signal from the terminal) ends and the shell stops
+ * the current command list and returns to the prompt with $? = 130. SIGQUIT
+ * and SIGTERM are ignored. The handler is installed without SA_RESTART so
+ * that a blocking read of the terminal returns and the REPL can react.
+ * Children started afterwards get the default dispositions back, except
+ * that the processes of a background job ignore SIGINT and SIGQUIT, and
+ * signals that were ignored when the shell started stay ignored.
+ */
+#ifdef MIGA_POSIX_API
+static miga_exec_t *g_interactive_executor = NULL;
+
+static void interactive_sigint_handler(int signo)
+{
+    (void)signo;
+    if (g_interactive_executor)
+        g_interactive_executor->sigint_received = 1;
+}
+
+static bool signal_is_ignored(int signo)
+{
+    struct sigaction sa;
+    return sigaction(signo, NULL, &sa) == 0 && sa.sa_handler == SIG_IGN;
+}
+
+static void exec_install_interactive_signals(miga_exec_t *e)
+{
+    e->sigint_ignored_on_entry = signal_is_ignored(SIGINT);
+    e->sigquit_ignored_on_entry = signal_is_ignored(SIGQUIT);
+    e->sigterm_ignored_on_entry = signal_is_ignored(SIGTERM);
+
+    g_interactive_executor = e;
+    if (!e->sigint_ignored_on_entry)
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = interactive_sigint_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0; /* no SA_RESTART: interrupt the read at the prompt */
+        sigaction(SIGINT, &sa, NULL);
+    }
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTERM, SIG_IGN);
+    e->interactive_signals = true;
+}
+#endif
+
+void exec_child_signals(miga_exec_t *executor, bool background)
+{
+    Expects_not_null(executor);
+#ifdef MIGA_POSIX_API
+    if (background)
+        executor->in_background_job = true;
+    bool bg = executor->in_background_job;
+    if (executor->interactive_signals)
+    {
+        if (!executor->sigint_ignored_on_entry)
+            signal(SIGINT, bg ? SIG_IGN : SIG_DFL);
+        if (!executor->sigquit_ignored_on_entry)
+            signal(SIGQUIT, bg ? SIG_IGN : SIG_DFL);
+        if (!executor->sigterm_ignored_on_entry)
+            signal(SIGTERM, SIG_DFL);
+    }
+    else if (bg && executor->job_control_disabled)
+    {
+        /* XCU 2.11: commands of an asynchronous list ignore SIGINT and
+         * SIGQUIT when job control is not active */
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
+    }
+#else
+    (void)background;
+#endif
 }
 
 void exec_request_exit(miga_exec_t *executor, int status)

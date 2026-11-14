@@ -23,6 +23,7 @@
 
 #ifdef MIGA_POSIX_API
 #include <errno.h>
+#include <signal.h>
 #include <fnmatch.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -1221,9 +1222,13 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
             }
             else
             {
-                /* Foreground: wait for child */
-                int status;
-                waitpid(pid, &status, 0);
+                /* Foreground: wait for child (retrying when a signal, e.g. an
+                 * interactive SIGINT, interrupts the wait) */
+                int status = 0;
+                pid_t waited;
+                do
+                    waited = waitpid(pid, &status, 0);
+                while (waited < 0 && errno == EINTR);
                 int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
                 return (exec_frame_execute_result_t){.exit_status = exit_status,
                                                      .has_exit_status = true,
@@ -1232,6 +1237,7 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
             }
         }
         /* Child process continues below */
+        exec_child_signals(exec, policy->classification.is_background);
 #elifdef MIGA_UCRT_API
         /* While POSIX can fork and get a PID before executing a command,
          * in UCRT, we can't get a handle until when the command is spawned.
@@ -1821,6 +1827,18 @@ exec_frame_execute_result_t exec_frame_execute_simple_command(miga_frame_t *fram
     }
 
     exec_frame_apply_errexit(frame, &result);
+
+    /* Interactive SIGINT during the command: the terminal has already ended
+     * the foreground child; stop the current command list too, so that a
+     * loop does not go on to its next iteration. The REPL turns this into a
+     * fresh prompt (it is not an exit). */
+    if (frame->executor->is_interactive && frame->executor->sigint_received &&
+        result.flow == MIGA_FRAME_FLOW_NORMAL)
+    {
+        result.flow = MIGA_FRAME_FLOW_TOP;
+        result.has_exit_status = true;
+        result.exit_status = 128 + SIGINT;
+    }
     return result;
 }
 
@@ -2434,6 +2452,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
         else if (pid == 0)
         {
             /* ---- Child process ---- */
+            exec_child_signals(frame->executor, false);
 
             /*
              * Set up process group (child side).
@@ -3074,6 +3093,12 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
     {
         if (line_buf)
             xfree(line_buf);
+#ifdef MIGA_POSIX_API
+        /* A read interrupted by a signal (SIGINT at an interactive prompt) is
+         * not end of file: clear the error so that the caller can go on. */
+        if (ferror(fp) && errno == EINTR)
+            clearerr(fp);
+#endif
         return MIGA_EXEC_STATUS_EMPTY; /* end of file (or read error) */
     }
 

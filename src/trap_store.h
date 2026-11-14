@@ -28,7 +28,15 @@ typedef struct trap_action_t
     bool is_ignored;   // true if trap is set to ignore (trap '' SIGNAL)
     bool is_default;   // true if trap is set to default (trap - SIGNAL)
     bool ignored_on_entry; // SIG_IGN when the shell started: cannot be trapped or reset
-    char padding[1];
+    /* The disposition the shell had before the first trap on this signal
+     * (its own interactive handler, SIG_IGN, SIG_DFL): "trap - SIG" and
+     * a cleared trap go back to it, not blindly to SIG_DFL. */
+    bool has_saved;
+#ifdef TRAP_USE_POSIX_SIGNALS
+    struct sigaction saved_action;
+#else
+    void (*saved_handler)(int);
+#endif
 } trap_action_t;
 
 typedef struct trap_store_t

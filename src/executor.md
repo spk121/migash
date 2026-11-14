@@ -245,7 +245,18 @@ command's, negated for `! pipeline`.
    `exit`, and in `exec_frame_pop()` for frames whose policy has
    `exit_trap_runs` (top level, subshells, background jobs). Subshells
    reset non-ignored traps, including EXIT, when their frame is created;
-   signals ignored on entry are recorded and cannot be trapped.
+   signals ignored on entry are recorded and cannot be trapped. The first
+   `trap` on a signal saves the disposition the shell had; `trap - SIG`
+   and `trap_store_clear()` restore that, not `SIG_DFL`.
+   **Interactive signals** (POSIX): `exec_install_interactive_signals()`
+   installs a SIGINT handler without `SA_RESTART` that sets
+   `executor->sigint_received`, and ignores SIGQUIT and SIGTERM. Waits
+   retry on `EINTR`; the simple-command wrapper turns a pending
+   `sigint_received` into a `TOP` flow with status 130, and the REPL
+   (step 2b) clears the flag, resets the parser and prompts again.
+   `exec_child_signals(executor, background)` runs in every forked child
+   (subshell, pipeline, command substitution, external command) and
+   restores the defaults, with INT and QUIT ignored in background jobs.
 5. **Arena memory.** Everything allocated with `xmalloc`/`xstrdup` is owned by
    the arena and must be released with `xfree`; mixing `free()` in (as `cd`
    once did) is a double free at `miga_arena_end()`.

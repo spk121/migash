@@ -192,6 +192,15 @@ struct miga_exec_t
     int next_fd;
 #endif
 
+    /* Interactive signal handling (POSIX): the shell catches SIGINT and
+     * ignores SIGQUIT and SIGTERM; children get the defaults back, except
+     * that background children ignore SIGINT and SIGQUIT. */
+    bool interactive_signals;
+    bool sigint_ignored_on_entry;
+    bool sigquit_ignored_on_entry;
+    bool sigterm_ignored_on_entry;
+    bool in_background_job; /* this process is (inside) a background job */
+
     /* set -e bookkeeping: > 0 while executing a context in which errexit is
      * ignored (if/while/until conditions, the left side of && and ||, a
      * pipeline beginning with !). */

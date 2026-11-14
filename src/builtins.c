@@ -8,6 +8,7 @@
 // Need the full power of _GNU_SOURCE for realpath()
 #endif
 
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>

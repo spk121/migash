@@ -796,6 +796,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         }
         else if (pid == 0) /* child */
         {
+            exec_child_signals(executor, false);
             /* Apply redirections in child */
             miga_exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
@@ -868,7 +869,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         else /* parent */
         {
             int wstatus = 0;
-            if (waitpid(pid, &wstatus, 0) < 0)
+            pid_t waited;
+            do
+                waited = waitpid(pid, &wstatus, 0);
+            while (waited < 0 && errno == EINTR);
+            if (waited < 0)
             {
                 cmd_exit_status = 127;
             }

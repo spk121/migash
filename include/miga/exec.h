@@ -777,6 +777,13 @@ MIGA_API bool exec_run_pending_traps(miga_exec_t *executor);
  */
 MIGA_API void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame);
 
+/**
+ * In a freshly forked child: restore the signal dispositions the interactive
+ * shell changed (SIGINT caught, SIGQUIT/SIGTERM ignored). A background job's
+ * processes ignore SIGINT and SIGQUIT instead (XCU 2.11).
+ */
+MIGA_API void exec_child_signals(miga_exec_t *executor, bool background);
+
 /* ── Enumeration ─────────────────────────────────────────────────────────── */
 
 MIGA_API size_t exec_get_job_count(const miga_exec_t *executor);

@@ -745,6 +745,7 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
     if (pid == 0)
     {
         /* Child: stdout goes to the pipe. */
+        exec_child_signals(frame->executor, false);
         close(fds[0]);
         if (fds[1] != STDOUT_FILENO)
         {
