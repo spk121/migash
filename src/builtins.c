@@ -2,7 +2,6 @@
 #include "config.h"
 #endif
 #ifdef MIGA_UCRT_API
-#define _CRT_SECURE_NO_WARNINGS
 #endif
 #ifdef MIGA_POSIX_API
 // #define _POSIX_C_SOURCE 202405L

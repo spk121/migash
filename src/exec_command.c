@@ -2,7 +2,6 @@
 #include "config.h"
 #endif
 #ifdef _MSC_VER
-#define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include <errno.h>
@@ -932,7 +931,6 @@ done_execution:
         executor->last_argument_set = true;
     }
 
-out_cleanup_words:
     strlist_destroy(&expanded_words);
 
 out_destroy_redirs:

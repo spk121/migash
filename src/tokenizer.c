@@ -754,13 +754,13 @@ add_token:
         int output_size = token_list_size(tok->output_tokens);
         if (output_size > 0)
         {
-            token_t *prev_token = token_list_get(tok->output_tokens, output_size - 1);
+            const token_t *prev_token = token_list_get(tok->output_tokens, output_size - 1);
             if (token_get_type(prev_token) == TOKEN_WORD)
             {
                 // Look ahead to see if next token is RPAREN
                 if (tok->input_pos + 1 < token_list_size(tok->input_tokens))
                 {
-                    token_t *next_token = token_list_get(tok->input_tokens, tok->input_pos + 1);
+                    const token_t *next_token = token_list_get(tok->input_tokens, tok->input_pos + 1);
                     if (token_get_type(next_token) == TOKEN_RPAREN)
                     {
                         // This is a function definition pattern: word ( )
@@ -910,7 +910,8 @@ tok_status_t tokenizer_process(tokenizer_t *tok, token_list_t *input_tokens, tok
         // Transfer all buffered tokens to output
         for (int i = 0; i < buffered_count; i++)
         {
-            token_t *buffered_token = token_list_get(tok->buffered_tokens, i);
+            /* Ownership moves from the buffer to the output list */
+            token_t *buffered_token = tok->buffered_tokens->tokens[i];
             token_list_append(tok->output_tokens, buffered_token);
         }
         // Clear the buffer without destroying tokens (they're now in output)

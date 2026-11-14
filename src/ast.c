@@ -1470,7 +1470,6 @@ cmd_separator_t cmd_separator_list_get(const cmd_separator_list_t *list, int ind
  * AST Visitor Pattern Support
  * ============================================================================ */
 
-typedef bool (*ast_visitor_fn)(const ast_node_t *node, void *user_data);
 
 static bool ast_traverse_helper(const ast_node_t *node, ast_visitor_fn visitor, void *user_data)
 {

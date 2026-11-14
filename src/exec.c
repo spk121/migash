@@ -10,7 +10,6 @@
 #endif
 
 #ifdef _MSC_VER
-#define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include <ctype.h>
@@ -1592,7 +1591,6 @@ static string_t *render_ps1(const miga_exec_t *exec)
         return NULL;
 
     int i = 0;
-    char c;
     while (i < string_length(ps1_raw))
     {
         /* ------------------------------------------------------------------

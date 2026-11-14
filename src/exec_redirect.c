@@ -7,7 +7,6 @@
 #endif
 
 #ifdef MIGA_UCRT_API
-#define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include <errno.h>
@@ -1113,7 +1112,7 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
             if (r->target.heredoc.content)
             {
                 if (r->target.heredoc.needs_expansion)
-                    content_str = exec_expand_heredoc(executor, r->target.heredoc.content, false);
+                    content_str = expand_heredoc(frame, r->target.heredoc.content, false);
                 else
                     content_str = string_create_from(r->target.heredoc.content);
             }

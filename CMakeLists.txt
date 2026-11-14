@@ -104,6 +104,10 @@ option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
 
 if(MSVC)
+    # The sources use the ISO C functions (fopen, strerror, ...) on purpose;
+    # the *_s variants are not portable.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
     # MSVC: Maximum useful warnings + treat as errors
     add_compile_options(
         /std:clatest    # Latest C standard (C23-ish)
@@ -401,6 +405,8 @@ target_include_directories(migash_lib PUBLIC
 )
 target_link_libraries(migash_lib PUBLIC $<$<BOOL:${UNIX}>:m>)
 if(MIGA_LIBRARY_TYPE STREQUAL SHARED)
+    # Programs that link the shared library import its symbols (see api.h)
+    target_compile_definitions(migash_lib INTERFACE MIGA_USE_SHARED)
     target_link_options(migash_lib PRIVATE -Wl,--no-undefined)
     message(STATUS "  libmigash: strict linking enabled")
 endif()

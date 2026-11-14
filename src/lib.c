@@ -10,6 +10,9 @@
 #ifdef MIGA_POSIX_API
 #include <unistd.h>
 #endif
+#ifdef MIGA_UCRT_API
+#include <direct.h> /* _getcwd */
+#endif
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -318,7 +321,7 @@ string_t *lib_getcwd(void)
     }
     else
     {
-        cwd->length = strlen(result);
+        cwd->length = (int)strlen(result);
     }
     return cwd;
 }

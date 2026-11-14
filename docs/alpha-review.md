@@ -68,6 +68,30 @@ registered for the POSIX configuration, because ISO mode by design has no
 pipelines, no `cd`, no captured command substitution, and runs external
 commands through `system()` where shell functions are invisible.
 
+Windows / ISO_C (from the GitHub Actions log of 2026-11-14): the C
+sources compiled, but the shell failed to link with 49 unresolved
+`__imp_*` symbols and 361 "inconsistent dll linkage" warnings. With a
+static library `MIGA_BUILD_SHARED` is not defined, so `api.h` made
+`MIGA_API` expand to `__declspec(dllimport)` everywhere. `api.h` now has
+three states: export when building the shared library, import when
+consuming it (`MIGA_USE_SHARED`, which CMake adds to the shared library's
+interface), and nothing for a static library. The remaining MSVC
+warnings were fixed at the source: `_CRT_SECURE_NO_WARNINGS` is defined
+for MSVC (the `*_s` functions are not portable), `shell_cfg_t` takes
+`const char *`, the tokenizer uses the const token getters, two tests
+were missing declarations, and an unused variable, label and `size_t`
+narrowing were cleaned up. The follow-up Windows / UCRT log showed the
+shell itself building and linking; the leftovers were fixed too: the
+per-file `_CRT_SECURE_NO_WARNINGS` defines (now redundant with the CMake
+definition and warned about as redefinitions), the UCRT here-document path
+calling `exec_expand_heredoc()` without a declaration (now
+`expand_heredoc()` like the POSIX path), `_getcwd` needing `<direct.h>`,
+and the job-store test calling `job_store_add_process()` with the POSIX
+argument list where the UCRT signature takes a process handle. A scan of
+the UCRT-only code for calls to undeclared project functions or with the
+wrong argument count found nothing else. Still not verified on Windows
+itself.
+
 Item 29 (`${10}`) is **fixed**.
 
 ---
