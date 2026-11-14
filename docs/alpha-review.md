@@ -51,7 +51,15 @@ and were corrected; the rest were real bugs, now fixed:
   as by the parent.
 
 Known gaps noticed but not yet addressed: `${x:-~}` does not tilde-expand
-the word (dash does); the `read` builtin is still missing (item 17).
+the word (dash does); the `read` builtin is still missing (item 17);
+`wait` with no operands returns at once instead of waiting for the
+background jobs (`wait $!` works).
+
+Lowering (2026-11-14): `src/lowering_rules.md` was rewritten to describe
+`lower.c` as it is. While checking it, one rule turned out to be wrong in
+the code: inside a compound list (`{ }`, `if`, loops, ...) every separator
+was lowered as sequential, so `{ cmd & other; }` ran `cmd` in the
+foreground. Fixed; `&` is now honoured at every level.
 
 ISO_C configuration (2026-11-14): builds again under CMake, autotools
 (`--enable-configuration=iso_c`) and the GNUmakefile, and its 27 unit

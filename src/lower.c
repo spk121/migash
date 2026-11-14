@@ -933,9 +933,14 @@ static ast_node_t *lower_term_as_command_list(const gnode_t *g)
             const gnode_t *sep_node = lst->nodes[i];
             if (sep_node->type == G_SEPARATOR)
             {
-                /* normalize to CMD_EXEC_SEQUENTIAL for ; or newline,
-                   CMD_EXEC_BACKGROUND for &. For now treat all as SEQUENTIAL. */
-                sep = CMD_EXEC_SEQUENTIAL;
+                /* separator: separator_op linebreak | newline_list.
+                 * '&' runs the command in the background; ';' and newlines
+                 * are sequential. */
+                const gnode_t *sep_child = sep_node->data.child;
+                if (sep_child && sep_child->type == G_SEPARATOR_OP)
+                    sep = separator_from_gseparator_op(sep_child);
+                else
+                    sep = CMD_EXEC_SEQUENTIAL;
                 i++;
             }
         }
