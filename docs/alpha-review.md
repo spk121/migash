@@ -55,6 +55,16 @@ the word (dash does); the `read` builtin is still missing (item 17);
 `wait` with no operands returns at once instead of waiting for the
 background jobs (`wait $!` works).
 
+Traps (2026-11-14): `test/sh/18_traps_signals.sh` specifies the trap
+and SIGINT behaviour to implement (33 assertions, checked against dash
+and bash: trap actions and when they run, `$?` around them, expansion
+time, listing, reset and ignore, inheritance of ignored signals, the EXIT
+trap and its exit status, SIGINT with and without a trap). migash fails 19
+of them today and aborts on `trap - EXIT` followed by an EXIT trap run
+(`trap_store_run_exit_trap: store->exit_action is NULL`); the file is in
+`test/sh/expected_failures.txt`, which the runner reports as XFAIL
+instead of failing CI, until items 20-21 are done.
+
 Lowering (2026-11-14): `src/lowering_rules.md` was rewritten to describe
 `lower.c` as it is. While checking it, one rule turned out to be wrong in
 the code: inside a compound list (`{ }`, `if`, loops, ...) every separator

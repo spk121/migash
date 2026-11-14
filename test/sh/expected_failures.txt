@@ -1,0 +1,5 @@
+# Conformance scripts that migash is expected to fail for now. One file name
+# per line. run_tests.sh reports a failure of a listed file as XFAIL and a
+# pass as XPASS (then remove the line). Only applies when the shell under
+# test is migash.
+18_traps_signals.sh

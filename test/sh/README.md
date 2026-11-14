@@ -41,6 +41,20 @@ This test suite validates that a shell correctly implements the three quoting me
 | `12_reserved_words.sh` | Quoting prevents reserved word recognition |
 | `13_edge_cases.sh` | Corner cases and potential pitfalls |
 | `14_conditional_special.sh` | Characters special in certain contexts |
+| `15_case_statement.sh` | `case` patterns and matching |
+| `16_alias_substitution.sh` | Alias substitution (POSIX 2.3.1) |
+| `17_positional_parameters.sh` | Positional and special parameters |
+| `18_traps_signals.sh` | `trap`, the EXIT trap and SIGINT (POSIX 2.11); needs `TEST_SHELL` for child shells |
+
+## Expected failures
+
+`expected_failures.txt` lists test files that the shell under development is
+known to fail. When the shell under test is migash, a failure of a listed
+file is reported as `XFAIL` and does not fail the run, and a pass is reported
+as `XPASS` as a reminder to remove the entry (`MIGASH_STRICT_XFAIL=1` makes
+an XPASS fail the run). The list is ignored for reference shells such as
+dash or bash, so `./run_tests.sh dash` still checks that the tests
+themselves are right.
 
 ## Characters That Must Be Quoted
 
