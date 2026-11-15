@@ -136,11 +136,13 @@ static shell_mode_t compute_shell_mode(int c_flag, int s_flag, int i_flag, const
     /* Upgrade non-interactive stdin to interactive if connected to a terminal */
     if (mode == SHELL_MODE_STDIN)
     {
+        /* POSIX sh: interactive when standard input and standard error are
+         * terminals (standard output may be redirected). */
 #ifdef MIGA_POSIX_API
-        if (isatty(STDIN_FILENO))
+        if (isatty(STDIN_FILENO) && isatty(STDERR_FILENO))
             mode = SHELL_MODE_INTERACTIVE;
 #elif defined(MIGA_UCRT_API)
-        if (_isatty(_fileno(stdin)))
+        if (_isatty(_fileno(stdin)) && _isatty(_fileno(stderr)))
             mode = SHELL_MODE_INTERACTIVE;
 #endif
         /* Else: in pure ISO C, remain SHELL_MODE_STDIN (conservative) */

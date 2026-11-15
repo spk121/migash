@@ -333,7 +333,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
     int argc = strlist_size(args);
     if (argc < 2)
     {
-        fprintf(stderr, "dot: filename argument required\n");
+        frame_set_error_printf(frame, "dot: filename argument required");
         return 2;
     }
 
@@ -362,7 +362,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 #if defined(MIGA_POSIX_API)
         if (errno == EACCES)
         {
-            fprintf(stderr, "dot: %s: permission denied\n", filename);
+            frame_set_error_printf(frame, "dot: %s: permission denied", filename);
             string_destroy(&resolved_path);
             return 1;
         }
@@ -370,12 +370,12 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 #if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
         char *cwd = GETCWD(NULL, 0);
         if (filename[0] == '.' && cwd)
-            fprintf(stderr, "dot: %s: not found relative to '%s'\n", filename, cwd);
+            frame_set_error_printf(frame, "dot: %s: not found relative to '%s'", filename, cwd);
         else
-            fprintf(stderr, "dot: %s: not found\n", filename);
+            frame_set_error_printf(frame, "dot: %s: not found", filename);
         free(cwd);
 #else
-        fprintf(stderr, "dot: %s: not found\n", filename);
+        frame_set_error_printf(frame, "dot: %s: not found", filename);
 #endif
         string_destroy(&resolved_path);
         return 1;

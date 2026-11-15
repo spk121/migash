@@ -64,6 +64,18 @@ configuration. dash passes all of it; bash fails the trapped-INT check
 because it does not run an INT trap when only the foreground child was
 killed by Ctrl-C.
 
+`../interactive/prompt_pty.py <shell>` checks the interactive prompts
+(POSIX 2.5.3 and 2.8.1): the default PS1 (`# ` for root) on standard
+error, parameter expansion of PS1 and PS2, an empty PS1, PS2 for compound
+commands, quotes, here-documents and backslash-newline, end of file at a
+PS2 prompt, that shell errors (special built-in misuse, `${x?}`, a syntax
+error, command not found, a redirection error, a failed `.` or `exec`) do
+not end an interactive shell, `ENV`, `set -o ignoreeof`, end of file at
+the prompt, and that a shell reading a pipe prints no prompt unless
+started with `-i`. CMake registers it as `interactive_prompts`. dash
+fails one check (it exits on a failed `exec`) and bash another (it exits
+at end of file under PS2). Both scripts share `../interactive/ptyshell.py`.
+
 ## Expected failures
 
 `expected_failures.txt` lists test files that the shell under development is

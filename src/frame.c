@@ -244,7 +244,7 @@ string_t *frame_get_ps1(miga_frame_t *frame)
     {
         string_destroy(&value);
     }
-    return string_create_from_cstr("$ ");
+    return string_create_from_cstr(lib_default_ps1());
 }
 
 string_t *frame_get_ps2(miga_frame_t *frame)

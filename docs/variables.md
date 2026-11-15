@@ -447,18 +447,27 @@ PS1="\u@\h:\w$ "             # Common format (bash-specific)
 PS1="[$(whoami)]$ "          # With command substitution
 ```
 
-**Expansion**: Before displaying, `PS1` undergoes:
-- Parameter expansion (always)
-- Exclamation-mark expansion (history numbers)
-- Possibly command substitution and arithmetic expansion (implementation-defined)
+**Expansion**: Before displaying, `PS1` undergoes parameter expansion
+(POSIX requires this): `$NAME`, `${NAME}` with any modifier (`${X:-d}`,
+`${X:+y}`, ...), and the special parameters (`$?`, `$$`, `$#`, `$-`, `$!`,
+`$0`). POSIX leaves command substitution and arithmetic expansion to the
+implementation; migash performs neither, so `$(` and `$((` appear
+literally. An empty `PS1` prints no prompt; only an unset `PS1` gets the
+default. The prompt is written to standard error.
 
-**Exclamation-mark expansion**: `!` is replaced with the next history command number, `!!` becomes `!`.
+**Backslash escapes** (migash extension): `\n`, `\t`, `\r`, `\\`, `\xhh`,
+`\uhhhh` and `\Uhhhhhh` are replaced before the parameter references are
+expanded; any other `\c` is kept as typed.
 
-**Supported only** if the system supports the User Portability Utilities option.
+**History numbers**: migash keeps no command history, so `!` is not
+replaced.
 
 ### `PS2` - Secondary Prompt
 
 **Purpose**: Shown when you need to continue a multi-line command
+(an unfinished compound command, quote, here-document or a line ending
+in a backslash). Like `PS1`, it undergoes parameter expansion and goes to
+standard error.
 
 **Default**: `"> "`
 

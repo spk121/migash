@@ -353,6 +353,15 @@ FILE *lib_fopen_script(const char *path)
 #endif
 }
 
+const char *lib_default_ps1(void)
+{
+#ifdef MIGA_POSIX_API
+    if (geteuid() == 0)
+        return "# ";
+#endif
+    return "$ ";
+}
+
 const char *lib_default_path(char *buf, size_t size)
 {
 #ifdef MIGA_POSIX_API

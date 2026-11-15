@@ -1012,16 +1012,19 @@ lex_status_t lexer_process_one_token(lexer_t *lx)
         // LEX_INCOMPLETE: could mean mode switch or truly need more input
         if (status == LEX_INCOMPLETE)
         {
-            // If we've produced any tokens, that counts as success
-            if (token_list_size(lx->tokens) > initial_token_count)
-            {
-                return LEX_OK;
-            }
-
-            // If we're at end of input and still incomplete, need more input
+            // At the end of the input the lexer really needs more input: a
+            // line that ends in backslash-newline continues on the next one
+            // even when it already produced tokens ("echo back\<newline>").
             if (lexer_at_end(lx))
             {
                 return LEX_INCOMPLETE;
+            }
+
+            // Otherwise a mode switch happened; tokens produced so far count
+            // as success
+            if (token_list_size(lx->tokens) > initial_token_count)
+            {
+                return LEX_OK;
             }
 
             // Otherwise, continue the loop (mode switch happened)

@@ -134,6 +134,9 @@ FILE *lib_fopen_script(const char *path);
  * buf and returns it. */
 const char *lib_default_path(char *buf, size_t size);
 
+/** The default PS1: "$ ", or "# " for the superuser (POSIX XCU 2.5.3). */
+const char *lib_default_ps1(void);
+
 /* POSIX-style file descriptor constants for UCRT (Windows) */
 #ifdef MIGA_UCRT_API
 #ifndef STDIN_FILENO

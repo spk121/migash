@@ -770,6 +770,20 @@ add_token:
     // Track compound command nesting with a stack
     token_type_t type = token_get_type(token);
 
+    /* "for" and "case" must be followed by a name. Reporting that here makes
+     * "for<newline>" a syntax error at once instead of an incomplete command
+     * that swallows input until a "done". */
+    if (tok->compound_stack_size > 0 && token_list_size(tok->buffered_tokens) > 0)
+    {
+        token_type_t prev = token_get_type(
+            token_list_get(tok->buffered_tokens, token_list_size(tok->buffered_tokens) - 1));
+        if ((prev == TOKEN_FOR || prev == TOKEN_CASE) && type != TOKEN_WORD)
+        {
+            tokenizer_set_error(tok, "expected a name after '%s'", prev == TOKEN_FOR ? "for" : "case");
+            return TOK_ERROR;
+        }
+    }
+
     // Determine current buffering state BEFORE processing this token
     bool should_buffer_before = (tok->compound_stack_size > 0 || token_list_size(tok->buffered_tokens) > 0);
 

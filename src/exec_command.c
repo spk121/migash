@@ -703,7 +703,16 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
 
             cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+            /* POSIX XCU 2.8.1: an error in a special built-in (a usage error
+             * it reported, or a failed exec of a command) is a shell error:
+             * a non-interactive shell exits, an interactive one goes on. A
+             * plain non-zero status ("eval false", "return 1") is not one. */
+            bool shell_error = cmd_exit_status != 0 &&
+                               (frame_has_error(frame) ||
+                                (strcmp(cmd_name, "exec") == 0 && strlist_size(expanded_words) > 1));
             report_builtin_error(frame, cmd_exit_status);
+            if (shell_error && !executor->is_interactive)
+                status = MIGA_EXEC_STATUS_ERROR;
 
             if (strcmp(cmd_name, "exec") == 0 && strlist_size(expanded_words) == 1)
             {

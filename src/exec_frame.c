@@ -2744,6 +2744,19 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, 
  * @param session The parse session (maintains lexer, tokenizer, and accumulated tokens)
  * @return Status indicating success, need for more input, or error
  */
+/* A lexer, tokenizer or parser error: the command was not run and, as in
+ * other shells, $? becomes 2. */
+static miga_exec_status_t string_core_syntax_error(miga_frame_t *frame)
+{
+    frame->last_exit_status = 2;
+    if (frame->executor)
+    {
+        frame->executor->last_exit_status = 2;
+        frame->executor->last_exit_status_set = true;
+    }
+    return MIGA_EXEC_STATUS_ERROR;
+}
+
 miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input,
                                      parse_session_t *session)
 {
@@ -2773,7 +2786,7 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
         const char *err = lexer_get_error(lx);
         frame_set_error_printf(frame, "Lexer error: %s", err ? err : "unknown");
         token_list_destroy(&raw_tokens);
-        return MIGA_EXEC_STATUS_ERROR;
+        return string_core_syntax_error(frame);
     }
 
     if (lex_status == LEX_INCOMPLETE || lex_status == LEX_NEED_HEREDOC)
@@ -2797,9 +2810,9 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
                 log_debug("exec_frame_string_core: Tokenizer error on incomplete line %d",
                           session->line_num);
                 const char *err = tokenizer_get_error(tokenizer);
-                frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
+                frame_set_error_printf(frame, "syntax error: %s", err ? err : "unknown");
                 token_list_destroy(&processed_tokens);
-                return MIGA_EXEC_STATUS_ERROR;
+                return string_core_syntax_error(frame);
             }
 
             if (tok_status == TOK_INCOMPLETE)
@@ -2823,7 +2836,7 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
                     0)
                 {
                     log_debug("exec_frame_string_core: Failed to append incomplete tokens");
-                    return MIGA_EXEC_STATUS_ERROR;
+                    return string_core_syntax_error(frame);
                 }
             }
         }
@@ -2845,9 +2858,9 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
     {
         log_debug("exec_frame_string_core: Tokenizer error at line %d", session->line_num);
         const char *err = tokenizer_get_error(tokenizer);
-        frame_set_error_printf(frame, "Tokenizer error: %s", err ? err : "unknown");
+        frame_set_error_printf(frame, "syntax error: %s", err ? err : "unknown");
         token_list_destroy(&processed_tokens);
-        return MIGA_EXEC_STATUS_ERROR;
+        return string_core_syntax_error(frame);
     }
 
     if (tok_status == TOK_INCOMPLETE)
@@ -2879,7 +2892,7 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
         if (token_list_append_list_move(session->accumulated_tokens, &processed_tokens) != 0)
         {
             log_debug("exec_frame_string_core: Failed to append tokens");
-            return MIGA_EXEC_STATUS_ERROR;
+            return string_core_syntax_error(frame);
         }
 
         /* Use the accumulated list for parsing */
@@ -2940,7 +2953,7 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
             }
         }
         parser_destroy(&parser);
-        return MIGA_EXEC_STATUS_ERROR;
+        return string_core_syntax_error(frame);
     }
 
     if (parse_status == PARSE_INCOMPLETE)
@@ -2995,7 +3008,7 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
             string_destroy(&tok_str);
             g_node_destroy(&gnode);
             parser_destroy(&parser);
-            return MIGA_EXEC_STATUS_ERROR;
+            return string_core_syntax_error(frame);
         }
     }
 

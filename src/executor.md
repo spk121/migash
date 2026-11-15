@@ -257,6 +257,17 @@ command's, negated for `! pipeline`.
    `exec_child_signals(executor, background)` runs in every forked child
    (subshell, pipeline, command substitution, external command) and
    restores the defaults, with INT and QUIT ignored in background jobs.
+   **Prompts and errors.** `render_prompt()` (exec.c) renders PS1 and PS2:
+   migash's backslash escapes first, then each `$` reference through
+   `expand_heredoc()` (parameter expansion with every POSIX modifier;
+   `$(` and `$((` are copied literally). The default PS1 comes from
+   `lib_default_ps1()` (`# ` for root). `source_rc_files()` expands `ENV`
+   and runs the file in a `DOT_SCRIPT` frame before the first prompt. In
+   the REPL a `MIGA_EXEC_STATUS_ERROR` line (syntax error, expansion
+   error, special built-in error: the command executor returns `.status`
+   ERROR for those) is reported with the shell name; an interactive shell
+   goes on, a non-interactive one exits with `$?` (2 for a syntax error,
+   set by `string_core_syntax_error()`).
 5. **Arena memory.** Everything allocated with `xmalloc`/`xstrdup` is owned by
    the arena and must be released with `xfree`; mixing `free()` in (as `cd`
    once did) is a double free at `miga_arena_end()`.

@@ -17,8 +17,10 @@ still open.
   18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed**
   (non-interactive: trapped SIGINT runs the action, untrapped kills the
   shell with 130; interactive: Ctrl-C returns to the prompt with `$?` 130,
-  see `test/interactive/sigint_pty.py`); 22 **open** (interactive prompts)
-  except the banner, which is now interactive-only.
+  see `test/interactive/sigint_pty.py`); 22 **fixed** (banner
+  interactive-only; PS1/PS2 parameter expansion, `# ` for root, ENV,
+  interactive shells survive shell errors, see
+  `test/interactive/prompt_pty.py`).
 - Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
 - Conformance (D): 27 **fixed**; 28-36 open.
 - Code health (E): 37 partly (all three build systems work and agree on
@@ -89,6 +91,29 @@ back to its handler rather than to `SIG_DFL` (that was the bug that
 killed the shell after `trap - INT`). `test/interactive/sigint_pty.py`
 drives the shell on a pty with 9 checks; dash and bash pass the same
 script. Item 21 is fixed.
+
+Interactive prompts (2026-11-15): `test/interactive/prompt_pty.py` (24
+checks on a pty, validated against dash and bash, which each fail one
+check where they depart from POSIX: dash exits on a failed `exec`, bash
+exits at end of file under a PS2 prompt). PS1 and PS2 now go through the
+shell's parameter expander (`${x:+y}`, `$?`, the full modifier set; the
+backslash escapes stay as migash's extension; `$(` and `$((` are copied
+literally, which POSIX leaves to the implementation). The default PS1 is
+`# ` for the superuser. An empty PS1 is an empty prompt; only an unset
+one gets the default. `ENV` is parameter-expanded and sourced before the
+first prompt of an interactive shell (not when the real and effective
+IDs differ). A shell is interactive when standard input and standard
+error are terminals, as POSIX says (standard output may be redirected).
+Found along the way and fixed: a line ending in backslash-newline was
+not continued (`echo back\` then `slash` ran two commands; the lexer
+treated "tokens produced" as "line complete"), `for` or `case` followed
+by a newline was an incomplete command that swallowed everything up to a
+`done`, a syntax error left `$?` at 0, and the non-interactive REPL
+(piped stdin, script files) printed nothing and went on after a syntax,
+expansion or special built-in error where POSIX 2.8.1 requires the shell
+to exit; `-c` already did. Special built-in errors (a reported usage
+error, a failed `exec name`) are now shell errors; `eval false` and
+`return 1` are not.
 
 hash and ulimit (2026-11-14): `test/sh/23_hash_ulimit.sh` (16
 assertions checked against dash and bash) passes. The shell searches PATH
@@ -402,7 +427,8 @@ run). **P1** crashes or clear POSIX violations. **P2** code health.
     `exec_setup_interactive` for `SHELL_MODE_STDIN` (`src/shell.c:138`), so
     `echo 'echo hi' | migash` prints `$ ` prompts into the output.
 
-22. **Banner and farewell on stdout in every mode.** `Welcome to Miga Shell...`
+22. **Banner and farewell on stdout in every mode.** (Fixed, see the status
+    notes above.) `Welcome to Miga Shell...`
     and `Goodbye!` are printed by `main` even for `-c` and script files. This
     corrupts `$(migash -c ...)`, breaks use as a `#!` interpreter, and should
     be interactive-only (or stderr, or removed). Also `log_init` is never

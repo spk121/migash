@@ -31,6 +31,7 @@
 #include "builtin_store.h"
 #include "exec_frame.h"
 #include "exec_frame_policy.h"
+#include "exec_frame_expander.h"
 #include "parse_session.h"
 #include "exec_types_internal.h"
 #include "miga/type_pub.h"
@@ -40,6 +41,7 @@
 #include "gnode.h"
 #include "job_store.h"
 #include "lexer.h"
+#include "lib.h"
 #include "lexer_t.h"
 #include "logging.h"
 #include "lower.h"
@@ -92,38 +94,48 @@
 
 static miga_exec_status_t source_rc_files(struct miga_exec_t *e)
 {
-    // FIXME
-    (void)e;
-    return MIGA_EXEC_STATUS_OK;
-#if 0
-#ifdef EXEC_SYSTEM_RC_PATH
-    exec_load_config_file(e, EXEC_SYSTEM_RC_PATH, func_store, alias_store);
-#endif
-#ifdef EXEC_USER_RC_PATH
-    if (e->is_interactive)
-    {
-        /* Check $ENV for a filename. It is subject to pathname expansion.*/
-        const char *env_raw_rc_path = variable_store_get_value_cstr(e->variables, "ENV");
-        if (env_raw_rc_path && *env_raw_rc_path)
-        {
-            char *env_rc_path = exec_expand_pathname(e, env_raw_rc_path);
+    /* POSIX XCU 2.5.3, ENV: when and only when an interactive shell starts,
+     * the value of ENV is subjected to parameter expansion and the file it
+     * names is executed in the current environment, before the first
+     * prompt. ENV is ignored when the real and effective user or group IDs
+     * differ. A missing or unreadable file is reported and otherwise
+     * ignored: it must not keep the shell from starting. */
+    if (!e->is_interactive || !e->top_frame)
+        return MIGA_EXEC_STATUS_OK;
 #ifdef MIGA_POSIX_API
-            if (getuid() == geteuid() && getgid() == getegid() && getuid())
-            {
-                exec_load_config_file(e, env_rc_path, func_store, alias_store);
-            }
+    if (getuid() != geteuid() || getgid() != getegid())
+        return MIGA_EXEC_STATUS_OK;
 #endif
-            exec_load_config_file(e, env_rc_path, func_store, alias_store);
-        }
-        else
-        {
-            exec_load_config_file_from_config_directory(e, EXEC_USER_RC_NAME, func_store,
-                                                        alias_store);
-        }
-    }
-#endif
+    miga_frame_t *frame = e->top_frame;
+    string_t *name = string_create_from_cstr("ENV");
+    const string_t *raw = exec_frame_get_variable(frame, name);
+    string_destroy(&name);
+    if (!raw || string_length(raw) == 0)
+        return MIGA_EXEC_STATUS_OK;
 
-#endif
+    string_t *path = expand_heredoc(frame, raw, false);
+    if (!path || string_length(path) == 0)
+    {
+        string_destroy(&path);
+        return MIGA_EXEC_STATUS_OK;
+    }
+    FILE *fp = lib_fopen_script(string_cstr(path));
+    if (!fp)
+    {
+        fprintf(stderr, "%s: %s: cannot open\n",
+                e->shell_name ? string_cstr(e->shell_name) : "sh", string_cstr(path));
+        string_destroy(&path);
+        return MIGA_EXEC_STATUS_OK;
+    }
+
+    /* Run it like ". file": in the current environment, "return" allowed. */
+    miga_frame_t *rc_frame = exec_frame_push(frame, EXEC_FRAME_DOT_SCRIPT, e, NULL);
+    exec_execute_stream_once(e, fp);
+    fclose(fp);
+    exec_frame_pop(&rc_frame);
+    string_destroy(&path);
+    log_debug("ENV file sourced");
+    return MIGA_EXEC_STATUS_OK;
 }
 
 /* ============================================================================
@@ -1307,9 +1319,9 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
      * -------------------------------------------------------------------------
      */
 #ifdef MIGA_POSIX_API
-    bool default_is_interactive = isatty(STDIN_FILENO);
+    bool default_is_interactive = isatty(STDIN_FILENO) && isatty(STDERR_FILENO);
 #elifdef MIGA_UCRT_API
-    bool default_is_interactive = _isatty(_fileno(stdin));
+    bool default_is_interactive = _isatty(_fileno(stdin)) && _isatty(_fileno(stderr));
 #else
     bool default_is_interactive = false;
 #endif
@@ -1494,17 +1506,17 @@ string_t *exec_get_ps1(const miga_exec_t *executor)
     if (executor->current_frame && executor->current_frame->variables)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->current_frame->variables, "PS1");
-        if (ps1 && *ps1)
+        if (ps1)
             return string_create_from_cstr(ps1);
     }
     else if (executor->variables)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
-        if (ps1 && *ps1)
+        if (ps1)
             return string_create_from_cstr(ps1);
     }
 
-    return string_create_from_cstr("$ ");
+    return string_create_from_cstr(lib_default_ps1());
 }
 
 char *exec_get_ps1_cstr(const miga_exec_t *executor)
@@ -1515,7 +1527,7 @@ char *exec_get_ps1_cstr(const miga_exec_t *executor)
 
 static bool is_valid_ps1_variable_char(char c)
 {
-    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    return isalnum((unsigned char)c) || c == '_';
 }
 
 static bool is_xdigit(char c)
@@ -1526,69 +1538,29 @@ static bool is_xdigit(char c)
 }
 
 /**
- * Render the PS1 prompt string.
+ * Render a prompt string (PS1 or PS2).
  *
- * POSIX (XBD 8.1, XCU 2.5.3) requires that PS1 undergo parameter expansion
- * before being displayed. This implementation performs $VAR / ${VAR}
- * substitution on the raw PS1 value. The special parameters $$ and $? are
- * also expanded, as they are ordinary special parameters defined by POSIX
- * and routinely used in prompts.
+ * POSIX (XBD 8.1, XCU 2.5.3) requires that PS1 and PS2 undergo parameter
+ * expansion before they are written to standard error; whether command
+ * substitution and arithmetic expansion are also performed is unspecified,
+ * and migash deliberately performs neither. Each "$" reference (a name,
+ * "${...}" with any modifier, or a special parameter such as "$?" or "$$")
+ * is handed to the shell's own parameter expander, so the full POSIX
+ * modifier set is available; "$(" and "$((" are copied verbatim.
  *
- * As a non-POSIX extension, the following backslash escape sequences are
- * also recognised and expanded before parameter substitution:
+ * As an extension, backslash escapes ("\n", "\t", "\r", "\\", "\xhh",
+ * "\uhhhh", "\Uhhhhhh") are processed before the parameter references.
  *
- *   \n          Newline
- *   \r          Carriage return
- *   \t          Horizontal tab
- *   \\          Backslash
- *   \xhh        Unicode code point U+00hh encoded as UTF-8 (exactly 2 hex digits)
- *   \uhhhh      Unicode code point U+hhhh encoded as UTF-8 (exactly 4 hex digits)
- *   \Uhhhhhhhh  Unicode code point encoded as UTF-8 (exactly 6 hex digits, full range)
- *
- * An unrecognised escape sequence is passed through literally (backslash
- * and following character both emitted) so that typos are visible.
- *
- * Returns a newly heap-allocated C string. The caller is responsible for
- * freeing it.
+ * Returns a newly allocated string that the caller must destroy.
  */
-static string_t *render_ps1(const miga_exec_t *exec)
+static string_t *render_prompt(const miga_exec_t *exec, const string_t *ps1_raw)
 {
     Expects_not_null(exec);
+    Expects_not_null(ps1_raw);
 
-    if (!exec->top_frame_initialized)
-    {
-        /* No frames at all yet — return the default PS1 value. */
-        return string_create_from_cstr("$ ");
-    }
-
-    const miga_frame_t *frame = exec->current_frame;
+    miga_frame_t *frame = exec->current_frame ? exec->current_frame : exec->top_frame;
     Expects_not_null(frame);
 
-    /* -------------------------------------------------------------------------
-     * 1. Retrieve the raw PS1 value.
-     *
-     * If PS1 is unset or empty, use the POSIX
-     * default of "$ ".
-     * -------------------------------------------------------------------------
-     */
-    string_t *ps1_str = string_create_from_cstr("PS1");
-    const string_t *ps1_raw = exec_frame_get_variable(frame, ps1_str);
-    string_destroy(&ps1_str);
-
-    if (!ps1_raw)
-    {
-        return string_create_from_cstr("$ ");
-    }
-
-    /* -------------------------------------------------------------------------
-     * 2. Expand parameter references in the PS1 string.
-     *
-     * Walk the raw string character by character. On '$', attempt to parse a
-     * parameter reference and substitute its value. Everything else is copied
-     * verbatim. No quoting, no field splitting, no globbing — strict POSIX
-     * prompt expansion only.
-     * -------------------------------------------------------------------------
-     */
     string_t *out = string_create();
     if (!out)
         return NULL;
@@ -1712,88 +1684,94 @@ static string_t *render_ps1(const miga_exec_t *exec)
             continue;
         }
 
-        /* '$' found — identify the parameter reference. */
+        /* '$' found: find the extent of the parameter reference and hand it
+         * to the parameter expander. */
+        int start = i;
         i++; /* consume '$' */
-
-        if (string_at(ps1_raw, i) == '{')
+        if (i >= string_length(ps1_raw))
         {
-            /* ${VAR} form */
-            i++; /* consume '{' */
-            int end = string_find_first_of_cstr_at(ps1_raw, "}", i);
+            string_append_char(out, '$');
+            break;
+        }
+        char d = string_at(ps1_raw, i);
+        int end = -1;
+        if (d == '{')
+        {
+            int depth = 0;
+            for (int j = i; j < string_length(ps1_raw); j++)
+            {
+                char e = string_at(ps1_raw, j);
+                if (e == '{')
+                    depth++;
+                else if (e == '}' && --depth == 0)
+                {
+                    end = j + 1;
+                    break;
+                }
+            }
             if (end == -1)
             {
-                /* No closing '}' found — emit literally. */
-                string_append_cstr(out, "${");
+                /* No closing '}': emit literally. */
+                string_append_char(out, '$');
                 continue;
             }
-            string_t *name_str = string_substring(ps1_raw, i, end);
-            i = end + 1; /* consume up to and including '}' */
-            const string_t *val = exec_frame_get_variable(frame, name_str);
-            if (val)
-                string_append(out, val);
-            else
-            {
-                /* Variable not found - emit literally. */
-                string_append_cstr(out, "${");
-                string_append(out, name_str);
-                string_append_char(out, '}');
-            }
-            string_destroy(&name_str);
         }
-        else if (string_at(ps1_raw, i) == '?')
+        else if (d == '_' || isalpha((unsigned char)d))
         {
-            /* $? — last exit status */
-            i++;
-            string_t *exit_status_str = string_from_int(exec->last_exit_status);
-            string_append(out, exit_status_str);
-            string_destroy(&exit_status_str);
+            end = string_find_first_not_of_predicate_at(ps1_raw, is_valid_ps1_variable_char, i);
+            if (end == -1)
+                end = string_length(ps1_raw);
         }
-        else if (string_at(ps1_raw, i) == '$')
+        else if (strchr("?$#!-@*0123456789", d) != NULL)
         {
-            /* $$ — shell PID */
-            i++;
-            if (exec->shell_pid_valid)
-            {
-                string_t *pid_str = string_from_int(exec->shell_pid);
-                string_append(out, pid_str);
-                string_destroy(&pid_str);
-            }
-            else
-            {
-                /* PID not available — emit literally. */
-                string_append_cstr(out, "$$");
-            }
-        }
-        else if (string_at(ps1_raw, i) == '_' || isalpha((unsigned char)string_at(ps1_raw, i)))
-        {
-            /* $VAR — unbraced name */
-            int end = string_find_first_not_of_predicate_at(ps1_raw, is_valid_ps1_variable_char, i);
-            Expects_ne(end, -1);
-            string_t *name_str = string_substring(ps1_raw, i, end);
-            i = end; /* consume the variable name */
-
-            const string_t *val = exec_frame_get_variable(frame, name_str);
-            if (val)
-                string_append(out, val);
-            else
-            {
-                /* Variable not found - emit literally. */
-                string_append_char(out, '$');
-                string_append(out, name_str);
-            }
-            string_destroy(&name_str);
+            end = i + 1;
         }
         else
         {
-            /* Bare '$' not followed by a recognised parameter — copy literally.
-             * POSIX leaves the result unspecified; copying verbatim is the most
-             * conservative and user-friendly choice. */
+            /* "$(" (command substitution, arithmetic) and a bare "$" are copied
+             * literally; the character after "$" is handled by the next
+             * iteration. */
             string_append_char(out, '$');
-            /* Do not advance p — the character after '$' will be handled by
-             * the next iteration of the loop. */
+            continue;
         }
+
+        string_t *ref = string_substring(ps1_raw, start, end);
+        string_t *val = expand_heredoc(frame, ref, false);
+        if (val)
+        {
+            string_append(out, val);
+            string_destroy(&val);
+        }
+        else
+            string_append(out, ref);
+        string_destroy(&ref);
+        i = end;
     }
 
+    return out;
+}
+
+/* PS1 (or its default) rendered for display */
+static string_t *render_ps1(const miga_exec_t *exec)
+{
+    Expects_not_null(exec);
+    if (!exec->top_frame_initialized || !(exec->current_frame || exec->top_frame))
+        return string_create_from_cstr(lib_default_ps1());
+    string_t *raw = exec_get_ps1(exec);
+    string_t *out = render_prompt(exec, raw);
+    string_destroy(&raw);
+    return out;
+}
+
+/* PS2 (or its default "> ") rendered for display */
+static string_t *render_ps2(const miga_exec_t *exec)
+{
+    Expects_not_null(exec);
+    if (!exec->top_frame_initialized || !(exec->current_frame || exec->top_frame))
+        return string_create_from_cstr("> ");
+    string_t *raw = exec_get_ps2(exec);
+    string_t *out = render_prompt(exec, raw);
+    string_destroy(&raw);
     return out;
 }
 
@@ -1816,14 +1794,14 @@ string_t *exec_get_ps2(const miga_exec_t *executor)
     if (executor->current_frame && executor->current_frame->variables)
     {
         ps2 = variable_store_get_value_cstr(executor->current_frame->variables, "PS2");
-        if (ps2 && *ps2)
+        if (ps2)
             return string_create_from_cstr(ps2);
     }
     if (executor->variables)
     {
         ps2 = variable_store_get_value_cstr(executor->variables, "PS2");
     }
-    return string_create_from_cstr((ps2 && *ps2) ? ps2 : "> ");
+    return string_create_from_cstr(ps2 ? ps2 : "> ");
 }
 
 char *exec_get_ps2_cstr(const miga_exec_t *executor)
@@ -1940,16 +1918,11 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 1. Prompt ---- */
         if (interactive)
         {
-            if (need_continuation)
+            string_t *prompt = need_continuation ? render_ps2(executor) : render_ps1(executor);
+            if (prompt)
             {
-                const char *ps2 = exec_get_ps2_cstr(executor);
-                fprintf(stderr, "%s", ps2);
-            }
-            else
-            {
-                string_t *ps1 = render_ps1(executor);
-                fprintf(stderr, "%s", ps1 ? string_cstr(ps1) : "$ ");
-                string_destroy(&ps1);
+                fputs(string_cstr(prompt), stderr);
+                string_destroy(&prompt);
             }
             fflush(stderr);
         }
@@ -1981,15 +1954,24 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         {
             if (need_continuation)
             {
-                /*
-                 * EOF inside a multi-line construct.  POSIX XCU 2.3:
-                 * "If the shell is not interactive, the shell need not
-                 *  perform this check." Either way, an unterminated
-                 *  construct is a syntax error.
-                 */
+                /* End of file inside a multi-line construct is a syntax
+                 * error. An interactive shell (Ctrl-D at a PS2 prompt)
+                 * discards the construct and prompts again with $? = 2; a
+                 * non-interactive shell exits with status 2. */
+                fflush(stdout);
+                fprintf(stderr, "%s%s: syntax error: unexpected end of file\n",
+                        interactive ? "\n" : "", string_cstr(executor->shell_name));
+                executor->last_exit_status = 2;
+                executor->last_exit_status_set = true;
+                if (executor->current_frame)
+                    executor->current_frame->last_exit_status = 2;
                 if (interactive)
-                    fprintf(stderr, "\n%s: syntax error: unexpected end of file\n",
-                            string_cstr(executor->shell_name));
+                {
+                    clearerr(fp);
+                    need_continuation = false;
+                    parse_session_hard_reset(session, exec_get_aliases(executor));
+                    continue;
+                }
                 final_result = MIGA_EXEC_STATUS_ERROR;
                 break;
             }
@@ -2044,15 +2026,25 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         {
             parse_session_reset(session);
 
-            if (interactive)
+            /* A shell error (XCU 2.8.1): syntax error, expansion error,
+             * special built-in error. Report it; an interactive shell goes
+             * on with the next line, a non-interactive one exits with a
+             * non-zero status. */
+            const char *err = exec_get_error_cstr(executor);
+            if (err && *err)
             {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
-                    exec_clear_error(executor);
-                }
-                /* Interactive shells keep going after errors */
+                fflush(stdout);
+                fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
+            }
+            exec_clear_error(executor);
+            if (!interactive)
+            {
+                int st = executor->current_frame ? executor->current_frame->last_exit_status
+                                                 : executor->last_exit_status;
+                executor->last_exit_status = st ? st : 2;
+                executor->last_exit_status_set = true;
+                final_result = MIGA_EXEC_STATUS_ERROR;
+                break;
             }
             /* set -e is applied per command by the executor (exec_frame.c),
              * which knows the contexts in which it is ignored. */
