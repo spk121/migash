@@ -92,6 +92,22 @@ killed the shell after `trap - INT`). `test/interactive/sigint_pty.py`
 drives the shell on a pty with 9 checks; dash and bash pass the same
 script. Item 21 is fixed.
 
+Command substitution lexing (2026-11-15): `$( ... )` is now lexed
+recursively. The `$(` handler in `src/lexer_cmd_subst.c` saves the
+enclosing word, pushes a here-document context and runs the normal-mode
+lexer on the substitution's text; quotes, comments, parameter and
+arithmetic expansions, backticks, here-documents and nested `$(` are
+handled by the modules that own them, and the handler only counts the
+parentheses the normal lexer hands it (a `)` that ends a `case` pattern
+is recognised from the token stream: `case` and `esac` at a command
+position). At the closing `)` the nested tokens are discarded and the
+word keeps the source text, as before, so the expander and the child
+shell are unchanged. The raw scanner with its own quote, comment,
+`case` and here-document rules is gone. `test_lexer_cmd_subst_ctest`
+grew six cases for the constructs that hide a parenthesis; the output
+of a 13-probe set matches dash exactly, including `$(echo case)`, which
+the old scanner mis-read as the start of a `case`.
+
 Interactive prompts (2026-11-15): `test/interactive/prompt_pty.py` (24
 checks on a pty, validated against dash and bash, which each fail one
 check where they depart from POSIX: dash exits on a failed `exec`, bash

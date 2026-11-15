@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 
 #include "ctest.h"
@@ -633,6 +634,131 @@ CTEST(test_cmd_subst_paren_heredoc_unterminated_reset)
     (void)ctest;
 }
 
+/* ============================================================================
+ * The recursive lex: constructs that hide a ")" are handled by the modes
+ * that own them, so the substitution ends at the right parenthesis
+ * ============================================================================ */
+
+static void check_subst_text(CTest *ctest, const char *input, const char *expected_text,
+                             const char *name)
+{
+    lexer_t *lx = lexer_create();
+    lexer_append_input_cstr(lx, input);
+    token_list_t *tokens = token_list_create();
+    lex_status_t status = lexer_tokenize(lx, tokens, NULL);
+    const part_t *part = status == LEX_OK ? first_cmd_subst_part(tokens) : NULL;
+    bool ok = part && strcmp(string_cstr(part_get_text(part)), expected_text) == 0 &&
+              lexer_heredoc_context_depth(lx) == 0 && lx->cmd_subst_count == 0;
+    if (!ok)
+        printf("# %s: status=%d text=%s\n", name, (int)status,
+               part ? string_cstr(part_get_text(part)) : "(none)");
+    CTEST_ASSERT(ctest, ok, name);
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+}
+
+CTEST(test_cmd_subst_recursive_hidden_parens)
+{
+    check_subst_text(ctest, "$(echo ')' \")\")", "echo ')' \")\"", "quoted parens");
+    check_subst_text(ctest, "$(echo \\))", "echo \\)", "backslashed paren");
+    check_subst_text(ctest, "$(echo a # )\n)", "echo a # )\n", "paren in a comment");
+    check_subst_text(ctest, "$(echo `echo ')'`)", "echo `echo ')'`", "paren in backticks");
+    check_subst_text(ctest, "$(echo ${x:-)})", "echo ${x:-)}", "paren in a parameter expansion");
+    check_subst_text(ctest, "$(echo $((1+2)))", "echo $((1+2))", "arithmetic expansion");
+    check_subst_text(ctest, "$( (echo s) )", " (echo s) ", "subshell inside");
+    check_subst_text(ctest, "$(f() { echo x; }; f)", "f() { echo x; }; f", "function definition");
+    (void)ctest;
+}
+
+CTEST(test_cmd_subst_recursive_nested)
+{
+    check_subst_text(ctest, "$(echo $(echo n) m)", "echo $(echo n) m", "nested $( )");
+    check_subst_text(ctest, "$(echo $(echo $(echo d)))", "echo $(echo $(echo d))", "three deep");
+    check_subst_text(ctest, "$(echo \"$(echo q)\")", "echo \"$(echo q)\"", "nested inside quotes");
+    (void)ctest;
+}
+
+CTEST(test_cmd_subst_recursive_case_patterns)
+{
+    check_subst_text(ctest, "$(case x in a) echo y;; x) echo z;; esac)",
+                     "case x in a) echo y;; x) echo z;; esac", "case patterns");
+    check_subst_text(ctest, "$(case x in (a) echo y;; esac)", "case x in (a) echo y;; esac",
+                     "parenthesised pattern");
+    check_subst_text(ctest, "$(if true; then case y in a) echo c;; esac; fi)",
+                     "if true; then case y in a) echo c;; esac; fi", "case after then");
+    check_subst_text(ctest, "$(case x in\na)\necho y\n;;\nesac)", "case x in\na)\necho y\n;;\nesac",
+                     "case over several lines");
+    check_subst_text(ctest, "$(echo case)", "echo case", "case as an argument is just a word");
+    check_subst_text(ctest, "$(case a in a) case b in b) echo n;; esac;; esac)",
+                     "case a in a) case b in b) echo n;; esac;; esac", "nested case");
+    (void)ctest;
+}
+
+// Inside double quotes the substitution is lexed afresh: its own quotes are
+// ordinary quotes, and the part is marked as quoted.
+CTEST(test_cmd_subst_recursive_in_dquote)
+{
+    lexer_t *lx = lexer_create();
+    lexer_append_input_cstr(lx, "\"$(echo \"a)b\")\"");
+    token_list_t *tokens = token_list_create();
+    lex_status_t status = lexer_tokenize(lx, tokens, NULL);
+    CTEST_ASSERT_EQ(ctest, status, LEX_OK, "tokenize status is LEX_OK");
+    CTEST_ASSERT_EQ(ctest, token_list_size(tokens), 1, "one token");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+    {
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "echo \"a)b\"",
+                            "inner quotes are the substitution's own");
+        CTEST_ASSERT_TRUE(ctest, part_was_double_quoted(part), "part is double-quoted");
+    }
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// A line at a time, with a quote open across lines inside the substitution.
+CTEST(test_cmd_subst_recursive_line_by_line)
+{
+    lexer_t *lx = lexer_create();
+    token_list_t *tokens = token_list_create();
+    lexer_append_input_cstr(lx, "echo $(echo 'a)\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE, "line 1: incomplete");
+    CTEST_ASSERT_EQ(ctest, lx->cmd_subst_count, 1, "line 1: inside the substitution");
+    lexer_append_input_cstr(lx, "b' c)\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_OK, "line 2: complete");
+    CTEST_ASSERT_EQ(ctest, lx->cmd_subst_count, 0, "line 2: substitution closed");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "echo 'a)\nb' c",
+                            "text assembled across the lines");
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// A reset in the middle of a substitution (with a quote open inside it)
+// drops the nested state and leaves a usable lexer.
+CTEST(test_cmd_subst_recursive_reset)
+{
+    lexer_t *lx = lexer_create();
+    token_list_t *tokens = token_list_create();
+    lexer_append_input_cstr(lx, "echo $(echo \"a");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE, "incomplete");
+    CTEST_ASSERT_EQ(ctest, lx->cmd_subst_count, 1, "substitution in progress");
+    lexer_reset(lx);
+    CTEST_ASSERT_EQ(ctest, lx->cmd_subst_count, 0, "reset drops the substitution");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "reset returns to the top level");
+    CTEST_ASSERT_NULL(ctest, lx->current_token, "no word in progress after reset");
+    token_list_clear(tokens);
+    lexer_append_input_cstr(lx, "$(echo ok)");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_OK, "lexing works after reset");
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -668,6 +794,13 @@ int main(int argc, char *argv[])
         CTEST_ENTRY(test_cmd_subst_paren_outer_heredoc_waits),
         CTEST_ENTRY(test_cmd_subst_paren_heredoc_line_by_line),
         CTEST_ENTRY(test_cmd_subst_paren_heredoc_unterminated_reset),
+        // The recursive lex
+        CTEST_ENTRY(test_cmd_subst_recursive_hidden_parens),
+        CTEST_ENTRY(test_cmd_subst_recursive_nested),
+        CTEST_ENTRY(test_cmd_subst_recursive_case_patterns),
+        CTEST_ENTRY(test_cmd_subst_recursive_in_dquote),
+        CTEST_ENTRY(test_cmd_subst_recursive_line_by_line),
+        CTEST_ENTRY(test_cmd_subst_recursive_reset),
         NULL
     };
 

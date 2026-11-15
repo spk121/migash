@@ -286,6 +286,16 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
         char c = lexer_peek(lx);
         char c2 = lexer_peek_ahead(lx, 1);
 
+        /* Inside "$( ... )" the parentheses belong to the substitution's
+         * handler, which counts them to find the closing one: end the word
+         * in progress and hand over without consuming. */
+        if ((c == '(' || c == ')') && lexer_current_mode(lx) == LEX_CMD_SUBST_PAREN)
+        {
+            if (lx->in_word)
+                lexer_finalize_word(lx);
+            return LEX_OK;
+        }
+
         // Backslash-newline splicing (line continuation)
         if (c == '\\' && c2 == '\n')
         {
@@ -432,9 +442,9 @@ lex_status_t lexer_process_one_normal_token(lexer_t *lx)
                 }
                 else if (c2 == '(')
                 {
-                    lexer_push_mode(lx, LEX_CMD_SUBST_PAREN);
                     lexer_advance(lx); // consume $
                     lexer_advance(lx); // consume (
+                    lexer_begin_cmd_subst_paren(lx);
                     return LEX_INCOMPLETE;
                 }
                 else if (is_word_char(c2) || is_special_param_char(c2))

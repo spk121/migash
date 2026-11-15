@@ -54,8 +54,9 @@ lexer_t *lexer_create(void)
     lx->heredoc_saved.capacity = 0;
     lx->heredoc_saved.size = 0;
     lx->cmd_subst_text = NULL;
-    lx->cmd_subst_depth = 0;
-    lx->cmd_subst_hd_line = NULL;
+    lx->cmd_subst_stack = NULL;
+    lx->cmd_subst_count = 0;
+    lx->cmd_subst_capacity = 0;
 
     lx->escaped = false;
     lx->operator_buffer = string_create();
@@ -80,9 +81,7 @@ void lexer_reset(lexer_t *lx)
     lx->pos = 0;
     if (lx->cmd_subst_text)
         string_destroy(&lx->cmd_subst_text);
-    if (lx->cmd_subst_hd_line)
-        string_destroy(&lx->cmd_subst_hd_line);
-    lx->cmd_subst_depth = 0;
+    lexer_abandon_cmd_substs(lx);
     lx->line_no = 1;
     lx->col_no = 1;
     lx->tok_start_line = 1;
@@ -157,12 +156,18 @@ void lexer_drop_processed_input(lexer_t *lx)
     Expects_not_null(lx);
     Expects_not_null(lx->input);
 
-    if (lx->pos > 0)
+    /* The source text of a "$( ... )" in progress is still needed */
+    int drop = lx->pos;
+    if (lx->cmd_subst_count > 0 && lx->cmd_subst_stack[0].start_pos < drop)
+        drop = lx->cmd_subst_stack[0].start_pos;
+    if (drop > 0)
     {
-        string_t *new_input = string_substring(lx->input, lx->pos, string_length(lx->input));
+        string_t *new_input = string_substring(lx->input, drop, string_length(lx->input));
         string_move(lx->input, new_input);
         string_destroy(&new_input);
-        lx->pos = 0;
+        lx->pos -= drop;
+        for (int i = 0; i < lx->cmd_subst_count; i++)
+            lx->cmd_subst_stack[i].start_pos -= drop;
 
         if (string_capacity(lx->input) - string_length(lx->input) >
             LEXER_LARGE_UNUSED_INPUT_THRESHOLD)
@@ -204,8 +209,11 @@ void lexer_destroy(lexer_t **lx)
     // delimiter string_t allocations still in the queue.
     if (l->cmd_subst_text)
         string_destroy(&l->cmd_subst_text);
-    if (l->cmd_subst_hd_line)
-        string_destroy(&l->cmd_subst_hd_line);
+    lexer_abandon_cmd_substs(l);
+    if (l->current_token)
+        token_destroy(&l->current_token);
+    if (l->cmd_subst_stack)
+        xfree(l->cmd_subst_stack);
     while (l->heredoc_saved.size > 0)
         lexer_pop_heredoc_context(l);
     if (l->heredoc_saved.items)
@@ -302,10 +310,15 @@ bool lexer_in_mode(const lexer_t *lx, lex_mode_t mode)
 {
     Expects_not_null(lx);
 
-    for (int i = 0; i < lx->mode_stack.size; i++)
+    /* The text of a "$( ... )" is lexed afresh: the modes of the enclosing
+     * word (double quotes around the substitution, say) do not apply inside
+     * it, so the search stops at the nearest substitution below the top. */
+    for (int i = lx->mode_stack.size - 1; i >= 0; i--)
     {
         if (lx->mode_stack.modes[i] == mode)
             return true;
+        if (lx->mode_stack.modes[i] == LEX_CMD_SUBST_PAREN)
+            return false;
     }
     return false;
 }
@@ -633,11 +646,16 @@ void lexer_finalize_word(lexer_t *lx)
     token_set_location(lx->current_token, lx->tok_start_line, lx->tok_start_col, lx->line_no,
                        lx->col_no);
 
+    /* After "if", "then", "while", "do", "{", "!" and the like another
+     * command begins; after any other word the command position is over. */
+    bool keeps_command_start =
+        lx->at_command_start && lexer_word_keeps_command_start(lx->current_token);
+
     // Transfer ownership of the current token to the token list
     token_list_append(lx->tokens, lx->current_token);
     lx->current_token = NULL;
     lx->in_word = false;
-    lx->at_command_start = false;
+    lx->at_command_start = keeps_command_start;
 }
 
 void lexer_emit_token(lexer_t *lx, token_type_t type)
@@ -651,9 +669,53 @@ void lexer_emit_token(lexer_t *lx, token_type_t type)
     token_set_location(tok, lx->line_no, lx->col_no, lx->line_no, lx->col_no);
     token_list_append(lx->tokens, tok);
 
-    // Is this the logical place for this?
-    lx->at_command_start = (type == TOKEN_SEMI || type == TOKEN_NEWLINE || type == TOKEN_AND_IF ||
-                            type == TOKEN_OR_IF || type == TOKEN_PIPE);
+    /* The next word is at a command position after these operators. Used by
+     * the "$( ... )" lexing to recognise "case" and "esac". An EOF emitted at
+     * the end of a line of input does not change the context. */
+    if (type != TOKEN_EOF)
+        lx->at_command_start = lexer_operator_starts_command(type);
+}
+
+bool lexer_operator_starts_command(token_type_t type)
+{
+    return type == TOKEN_SEMI || type == TOKEN_NEWLINE || type == TOKEN_AND_IF ||
+           type == TOKEN_OR_IF || type == TOKEN_PIPE || type == TOKEN_DSEMI ||
+           type == TOKEN_AMPER || type == TOKEN_LPAREN || type == TOKEN_RPAREN;
+}
+
+const char *lexer_literal_word_text(const token_t *tok)
+{
+    if (!tok || token_get_type(tok) != TOKEN_WORD || token_part_count(tok) != 1)
+        return NULL;
+    const part_t *part = token_get_part(tok, 0);
+    if (part_get_type(part) != PART_LITERAL || !part_get_text(part))
+        return NULL;
+    return string_cstr(part_get_text(part));
+}
+
+bool lexer_word_keeps_command_start(const token_t *tok)
+{
+    const char *w = lexer_literal_word_text(tok);
+    if (!w)
+        return false;
+    return strcmp(w, "if") == 0 || strcmp(w, "then") == 0 || strcmp(w, "else") == 0 ||
+           strcmp(w, "elif") == 0 || strcmp(w, "while") == 0 || strcmp(w, "until") == 0 ||
+           strcmp(w, "do") == 0 || strcmp(w, "{") == 0 || strcmp(w, "!") == 0;
+}
+
+/* Remove and destroy the tokens above count in lx->tokens: the tokens of a
+ * "$( ... )" lex, which only served to find the closing parenthesis. */
+void lexer_discard_tokens_above(lexer_t *lx, int count)
+{
+    Expects_not_null(lx);
+    if (!lx->tokens)
+        return; /* lexer_destroy() has already freed the list */
+    while (lx->tokens->size > count)
+    {
+        token_t *tok = lx->tokens->tokens[--lx->tokens->size];
+        lx->tokens->tokens[lx->tokens->size] = NULL;
+        token_destroy(&tok);
+    }
 }
 
 void lexer_emit_io_number_token(lexer_t *lx, int io_number)
@@ -1049,9 +1111,13 @@ lex_status_t lexer_process_one_token(lexer_t *lx)
         // If we got OK:
         // - Check if we've produced tokens - if yes, we're done
         // - If we're back in normal mode, continue to finalize word or find next token
+        /* While a "$( ... )" is being lexed the tokens are its own and must
+         * not reach the caller: keep going until it is closed. */
+        bool in_cmd_subst = lx->cmd_subst_count > 0;
+
         if (status == LEX_OK)
         {
-            if (token_list_size(lx->tokens) > initial_token_count)
+            if (!in_cmd_subst && token_list_size(lx->tokens) > initial_token_count)
             {
                 return LEX_OK;
             }
@@ -1087,7 +1153,7 @@ lex_status_t lexer_process_one_token(lexer_t *lx)
 
             // Otherwise a mode switch happened; tokens produced so far count
             // as success
-            if (token_list_size(lx->tokens) > initial_token_count)
+            if (!in_cmd_subst && token_list_size(lx->tokens) > initial_token_count)
             {
                 return LEX_OK;
             }

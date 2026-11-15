@@ -201,9 +201,9 @@ lex_status_t lexer_process_dquote(lexer_t *lx)
             else if (c2 == '(')
             {
                 // Command substitution: $(...)
-                lexer_push_mode(lx, LEX_CMD_SUBST_PAREN);
                 lexer_advance(lx); // consume $
                 lexer_advance(lx); // consume (
+                lexer_begin_cmd_subst_paren(lx);
                 return LEX_INCOMPLETE;
             }
             else if (is_name_start_char(c2) || is_special_param_char(c2))

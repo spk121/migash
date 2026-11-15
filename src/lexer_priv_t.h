@@ -112,6 +112,27 @@ typedef struct
     int size;
 } heredoc_context_stack_t;
 
+/* A "$( ... )" command substitution being lexed. The text between the
+ * parentheses is lexed with the normal-mode lexer itself (quotes, comments,
+ * expansions, here-documents and nested substitutions are then handled by
+ * the modules that own them); the tokens it produces are discarded at the
+ * closing ")" and the word gets a PART_COMMAND_SUBST holding the source
+ * text between start_pos and that ")". The enclosing word in progress is
+ * saved here while the substitution is lexed. */
+typedef struct
+{
+    int start_pos;    /* input offset just after "$(" */
+    int depth;        /* unmatched "(" inside the substitution */
+    int token_count;  /* tokens in lx->tokens at entry; the ones above are nested */
+    token_t *saved_token; /* the enclosing word in progress */
+    bool saved_in_word;
+    bool saved_at_command_start;
+    bool saved_after_case_in;
+    /* paren depth at each open "case": a ")" at that depth ends a pattern */
+    int case_depth[16];
+    int case_count;
+} cmd_subst_ctx_t;
+
 /* ============================================================================
  * Forward declarations � internal
  * ============================================================================ */
@@ -179,21 +200,15 @@ struct lexer_t
     /* Operator recognition */
     string_t *operator_buffer; // for multi-char operators like &&, <<, etc.
 
-    /* Command substitution in progress ($(...) or `...`). Input arrives one
-     * line at a time, so the text collected so far and the nesting depth must
-     * survive a LEX_INCOMPLETE return and the next call. */
-    string_t *cmd_subst_text; // NULL when no substitution is being collected
-    int cmd_subst_depth;      // unmatched '(' inside $( ... )
-    /* $( ) scanner state: quotes, and the paren depth at each open "case" so
- * that a pattern's ')' is not taken for the closing parenthesis */
-    bool cmd_subst_sq;
-    bool cmd_subst_dq;
-    int cmd_subst_case_depth[16];
-    int cmd_subst_case_count;
-    /* Here-documents inside the substitution are queued in a pushed
-     * here-document context (see heredoc_context_t); this is the current
-     * line of the body being copied, for the delimiter test. */
-    string_t *cmd_subst_hd_line;
+    /* Backtick command substitution in progress. Input arrives one line at a
+     * time, so the text collected so far must survive a LEX_INCOMPLETE return
+     * and the next call. */
+    string_t *cmd_subst_text; // NULL when no backtick substitution is being collected
+
+    /* "$( ... )" substitutions being lexed, innermost last (see cmd_subst_ctx_t) */
+    cmd_subst_ctx_t *cmd_subst_stack;
+    int cmd_subst_count;
+    int cmd_subst_capacity;
 
     /* Context for reserved word recognition */
     bool at_command_start; // true if next word could be a reserved word
@@ -308,6 +323,26 @@ void lexer_pop_heredoc_context(lexer_t *lx);
 int lexer_heredoc_context_depth(const lexer_t *lx);
 /* True when the current context has here-documents still to read. */
 bool lexer_heredoc_pending(const lexer_t *lx);
+
+/* ============================================================================
+ * Internal: "$( ... )" command substitution (lexer_cmd_subst.c)
+ * ============================================================================ */
+
+/* Start lexing a "$( ... )" substitution: called with the input positioned
+ * just after "$(". Saves the enclosing word, pushes a here-document context
+ * and the LEX_CMD_SUBST_PAREN mode. */
+void lexer_begin_cmd_subst_paren(lexer_t *lx);
+/* Drop every "$( ... )" in progress (reset, destroy): the enclosing word of
+ * the outermost one becomes lx->current_token again. */
+void lexer_abandon_cmd_substs(lexer_t *lx);
+/* Remove and destroy the tokens above count in lx->tokens. */
+void lexer_discard_tokens_above(lexer_t *lx, int count);
+/* The command-position rules (at_command_start): true after these operators;
+ * a word keeps the position when it is "if", "then", "do", "{", "!" ... */
+bool lexer_operator_starts_command(token_type_t type);
+bool lexer_word_keeps_command_start(const token_t *tok);
+/* The text of a word made of one literal part, else NULL. */
+const char *lexer_literal_word_text(const token_t *tok);
 
 /* ============================================================================
  * Internal: Quote Processing
