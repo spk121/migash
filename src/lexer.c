@@ -50,6 +50,9 @@ lexer_t *lexer_create(void)
     lx->heredoc_queue.size = 0;
     lx->reading_heredoc = false;
     lx->heredoc_index = 0;
+    lx->heredoc_saved.items = NULL;
+    lx->heredoc_saved.capacity = 0;
+    lx->heredoc_saved.size = 0;
     lx->cmd_subst_text = NULL;
     lx->cmd_subst_depth = 0;
 
@@ -88,15 +91,12 @@ void lexer_reset(lexer_t *lx)
     if (lx->tokens)
         token_list_clear(lx->tokens);
 
-    if (lx->heredoc_queue.size > 0)
-    {
-        for (int i = 0; i < lx->heredoc_queue.size; i++)
-        {
-            if (lx->heredoc_queue.entries[i].delimiter)
-                string_destroy(&lx->heredoc_queue.entries[i].delimiter);
-        }
-        lx->heredoc_queue.size = 0;
-    }
+    /* Back to the top-level here-document context, then empty it. */
+    while (lx->heredoc_saved.size > 0)
+        lexer_pop_heredoc_context(lx);
+    lexer_empty_heredoc_queue(lx);
+    lx->heredoc_index = 0;
+    lx->reading_heredoc = false;
 
     // Destroy any in-progress token so it isn't leaked if reset is called
     // mid-tokenization (e.g. on a syntax error or interactive line discard).
@@ -201,6 +201,10 @@ void lexer_destroy(lexer_t **lx)
     // delimiter string_t allocations still in the queue.
     if (l->cmd_subst_text)
         string_destroy(&l->cmd_subst_text);
+    while (l->heredoc_saved.size > 0)
+        lexer_pop_heredoc_context(l);
+    if (l->heredoc_saved.items)
+        xfree(l->heredoc_saved.items);
     if (l->heredoc_queue.entries)
     {
         lexer_empty_heredoc_queue(l);
@@ -721,6 +725,62 @@ void lexer_empty_heredoc_queue(lexer_t *lx)
         }
     }
     lx->heredoc_queue.size = 0;
+}
+
+void lexer_push_heredoc_context(lexer_t *lx)
+{
+    Expects_not_null(lx);
+
+    if (lx->heredoc_saved.size >= lx->heredoc_saved.capacity)
+    {
+        int newcap = lx->heredoc_saved.capacity ? lx->heredoc_saved.capacity * 2 : 4;
+        lx->heredoc_saved.items =
+            xrealloc(lx->heredoc_saved.items, (size_t)newcap * sizeof(heredoc_context_t));
+        lx->heredoc_saved.capacity = newcap;
+    }
+
+    /* The queue's entry array moves to the saved context as it is; the
+     * nested context starts with a fresh, empty array. */
+    heredoc_context_t *saved = &lx->heredoc_saved.items[lx->heredoc_saved.size++];
+    saved->queue = lx->heredoc_queue;
+    saved->index = lx->heredoc_index;
+    saved->reading = lx->reading_heredoc;
+
+    lx->heredoc_queue.entries = xcalloc(LEXER_INITIAL_HEREDOC_CAPACITY, sizeof(heredoc_entry_t));
+    lx->heredoc_queue.capacity = LEXER_INITIAL_HEREDOC_CAPACITY;
+    lx->heredoc_queue.size = 0;
+    lx->heredoc_index = 0;
+    lx->reading_heredoc = false;
+}
+
+void lexer_pop_heredoc_context(lexer_t *lx)
+{
+    Expects_not_null(lx);
+    if (lx->heredoc_saved.size == 0)
+        return;
+
+    lexer_empty_heredoc_queue(lx);
+    xfree(lx->heredoc_queue.entries);
+
+    heredoc_context_t *saved = &lx->heredoc_saved.items[--lx->heredoc_saved.size];
+    lx->heredoc_queue = saved->queue;
+    lx->heredoc_index = saved->index;
+    lx->reading_heredoc = saved->reading;
+    saved->queue.entries = NULL;
+    saved->queue.size = 0;
+    saved->queue.capacity = 0;
+}
+
+int lexer_heredoc_context_depth(const lexer_t *lx)
+{
+    Expects_not_null(lx);
+    return lx->heredoc_saved.size;
+}
+
+bool lexer_heredoc_pending(const lexer_t *lx)
+{
+    Expects_not_null(lx);
+    return lx->reading_heredoc || lx->heredoc_index < lx->heredoc_queue.size;
 }
 
 /* ============================================================================

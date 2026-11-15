@@ -90,6 +90,28 @@ typedef struct
     int size;                 // number of pending heredocs
 } heredoc_queue_t;
 
+/* The here-document state of one lexing context: the queue of pending
+ * here-documents, which body is being read and whether one is being read.
+ * A nested lex (the text of a "$( ... )" command substitution) gets a
+ * context of its own: its here-documents are collected and read inside the
+ * substitution, after the newline that ends their line there, while the
+ * enclosing line's own here-documents stay pending until the substitution
+ * is finished. lexer_push_heredoc_context() saves the current state on this
+ * stack and starts an empty one; lexer_pop_heredoc_context() restores it. */
+typedef struct
+{
+    heredoc_queue_t queue;
+    int index;
+    bool reading;
+} heredoc_context_t;
+
+typedef struct
+{
+    heredoc_context_t *items;
+    int capacity;
+    int size;
+} heredoc_context_stack_t;
+
 /* ============================================================================
  * Forward declarations � internal
  * ============================================================================ */
@@ -149,6 +171,7 @@ struct lexer_t
     heredoc_queue_t heredoc_queue; // pending heredocs to read
     int heredoc_index;             // which heredoc we're currently reading
     bool reading_heredoc;          // true when reading heredoc body
+    heredoc_context_stack_t heredoc_saved; // contexts of enclosing lexes
 
     /* Character escape state */
     bool escaped; // next char is escaped by backslash
@@ -276,6 +299,18 @@ void lexer_queue_heredoc(lexer_t *lx, const string_t *delimiter, bool strip_tabs
                          bool delimiter_quoted);
 void lexer_empty_heredoc_queue(lexer_t *lx);
 lex_status_t lexer_read_heredocs(lexer_t *lx);
+
+/* Save the current here-document context (queue, index, reading flag) and
+ * start an empty one, for a nested lex. */
+void lexer_push_heredoc_context(lexer_t *lx);
+/* Discard the current here-document context (any pending here-documents in
+ * it are dropped) and restore the one saved by the matching push. Does
+ * nothing when no context is saved. */
+void lexer_pop_heredoc_context(lexer_t *lx);
+/* Number of saved (enclosing) contexts: 0 at the top level. */
+int lexer_heredoc_context_depth(const lexer_t *lx);
+/* True when the current context has here-documents still to read. */
+bool lexer_heredoc_pending(const lexer_t *lx);
 
 /* ============================================================================
  * Internal: Quote Processing

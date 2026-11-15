@@ -211,6 +211,7 @@ LOGIC_TESTS := \
 	test/mgsh/test_lexer_arith_exp_ctest.c \
 	test/mgsh/test_lexer_cmd_subst_ctest.c \
 	test/mgsh/test_lexer_heredoc_ctest.c \
+	test/mgsh/test_lexer_heredoc_context_ctest.c \
 	test/mgsh/test_lexer_param_exp_ctest.c \
 	test/mgsh/test_lexer_quotes_ctest.c \
 	test/mgsh/test_parser_ctest.c \

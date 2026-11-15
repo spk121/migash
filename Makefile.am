@@ -39,6 +39,7 @@ check_PROGRAMS = \
     test_lexer_arith_exp_ctest \
     test_lexer_cmd_subst_ctest \
     test_lexer_heredoc_ctest \
+    test_lexer_heredoc_context_ctest \
     test_lexer_param_exp_ctest \
     test_lexer_quotes_ctest \
     test_parser_ctest \
@@ -105,6 +106,10 @@ test_lexer_cmd_subst_ctest_LDADD = $(TEST_LDADD)
 test_lexer_heredoc_ctest_SOURCES = test/mgsh/test_lexer_heredoc_ctest.c
 test_lexer_heredoc_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
 test_lexer_heredoc_ctest_LDADD = $(TEST_LDADD)
+
+test_lexer_heredoc_context_ctest_SOURCES = test/mgsh/test_lexer_heredoc_context_ctest.c
+test_lexer_heredoc_context_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
+test_lexer_heredoc_context_ctest_LDADD = $(TEST_LDADD)
 
 test_lexer_param_exp_ctest_SOURCES = test/mgsh/test_lexer_param_exp_ctest.c
 test_lexer_param_exp_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
