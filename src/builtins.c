@@ -8,6 +8,7 @@
 // Need the full power of _GNU_SOURCE for realpath()
 #endif
 
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -18,6 +19,7 @@
 
 #ifdef MIGA_POSIX_API
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -40,6 +42,7 @@
 #endif
 
 #include "builtin_store.h"
+#include "token.h"
 #include "builtins.h"
 
 #include "miga/exec.h"
@@ -330,7 +333,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
     int argc = strlist_size(args);
     if (argc < 2)
     {
-        fprintf(stderr, "dot: filename argument required\n");
+        frame_set_error_printf(frame, "dot: filename argument required");
         return 2;
     }
 
@@ -359,7 +362,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 #if defined(MIGA_POSIX_API)
         if (errno == EACCES)
         {
-            fprintf(stderr, "dot: %s: permission denied\n", filename);
+            frame_set_error_printf(frame, "dot: %s: permission denied", filename);
             string_destroy(&resolved_path);
             return 1;
         }
@@ -367,12 +370,12 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 #if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
         char *cwd = GETCWD(NULL, 0);
         if (filename[0] == '.' && cwd)
-            fprintf(stderr, "dot: %s: not found relative to '%s'\n", filename, cwd);
+            frame_set_error_printf(frame, "dot: %s: not found relative to '%s'", filename, cwd);
         else
-            fprintf(stderr, "dot: %s: not found\n", filename);
+            frame_set_error_printf(frame, "dot: %s: not found", filename);
         free(cwd);
 #else
-        fprintf(stderr, "dot: %s: not found\n", filename);
+        frame_set_error_printf(frame, "dot: %s: not found", filename);
 #endif
         string_destroy(&resolved_path);
         return 1;
@@ -585,8 +588,12 @@ int builtin_exit(miga_frame_t *frame, const strlist_t *args)
         return 1;
     }
 
-    // Run EXIT trap if set
+    // Run the EXIT trap, if set. $? inside it is the exit status; an exit
+    // inside the trap action replaces that status.
+    frame->last_exit_status = exit_status;
     frame_run_exit_traps(frame);
+    if (frame->executor && frame->executor->exit_requested)
+        exit_status = frame->executor->last_exit_status;
 
     // Reap background jobs
     if (frame->executor)
@@ -1310,6 +1317,837 @@ int builtin_trap(miga_frame_t *frame, const strlist_t *args)
 }
 
 /* ============================================================================
+ * read - read a line from standard input into variables
+ *
+ *   read [-r] var...
+ *
+ * The logic is portable; only the byte source differs by configuration:
+ *   - POSIX: read(2) on descriptor 0, one byte at a time, so that a loop such
+ *     as "while read line; do ...; done < file" or a pipeline feeding several
+ *     reads consumes exactly one line per call;
+ *   - otherwise: getc() on the builtin's standard input stream (the stream a
+ *     redirection installed, or stdin). main() makes stdin unbuffered in
+ *     those configurations so that the shell does not swallow input that a
+ *     later command should see.
+ *
+ * Without -r a backslash escapes the next character (which then cannot act as
+ * an IFS separator) and backslash-newline continues the line. The line is
+ * split with IFS: leading IFS whitespace is dropped, each variable but the
+ * last gets one field, the last gets the rest with trailing IFS whitespace
+ * removed. An empty IFS means no splitting. Status: 0, 1 at end of file (what
+ * was read is still assigned), 2 for a usage error, an invalid name or a
+ * read-only variable.
+ * ============================================================================
+ */
+
+/* A byte source: returns the byte (0..255), READ_BYTE_EOF or READ_BYTE_ERROR. */
+#define READ_BYTE_EOF (-1)
+#define READ_BYTE_ERROR (-2)
+typedef int (*read_byte_fn)(void *ctx);
+
+#ifdef MIGA_POSIX_API
+static int read_byte_from_fd(void *ctx)
+{
+    int fd = *(int *)ctx;
+    unsigned char c;
+    ssize_t n;
+    do
+        n = read(fd, &c, 1);
+    while (n < 0 && errno == EINTR);
+    if (n == 1)
+        return c;
+    return n == 0 ? READ_BYTE_EOF : READ_BYTE_ERROR;
+}
+#else
+static int read_byte_from_stream(void *ctx)
+{
+    FILE *fp = ctx;
+    int c = getc(fp);
+    if (c != EOF)
+        return c;
+    if (ferror(fp))
+    {
+        clearerr(fp);
+        return READ_BYTE_ERROR;
+    }
+    clearerr(fp); /* a terminal may deliver more input after an end-of-file */
+    return READ_BYTE_EOF;
+}
+#endif
+
+static bool read_char_is_ifs(char c, const char *ifs)
+{
+    return c != '\0' && strchr(ifs, c) != NULL;
+}
+
+static bool read_char_is_ifs_white(char c, const char *ifs)
+{
+    return (c == ' ' || c == '\t' || c == '\n') && read_char_is_ifs(c, ifs);
+}
+
+/* Collect one line from the byte source. literal gets '1' for each byte that a
+ * backslash protected, '0' otherwise. Returns 0, 1 at end of file, 2 on a read
+ * error (reported). */
+static int read_collect_line(read_byte_fn get_byte, void *ctx, bool raw, string_t *line,
+                             string_t *literal)
+{
+    for (;;)
+    {
+        int b = get_byte(ctx);
+        if (b == READ_BYTE_ERROR)
+        {
+            fprintf(stderr, "read: read error\n");
+            return 2;
+        }
+        if (b == READ_BYTE_EOF)
+            return 1;
+        if (!raw && b == '\\')
+        {
+            b = get_byte(ctx);
+            if (b < 0)
+                return 1; /* a trailing backslash at end of file is dropped */
+            if (b == '\n')
+                continue; /* line continuation */
+            string_append_char(line, (char)b);
+            string_append_char(literal, '1');
+            continue;
+        }
+        if (b == '\n')
+            return 0;
+        string_append_char(line, (char)b);
+        string_append_char(literal, '0');
+    }
+}
+
+/* Split the line with IFS and assign the fields to the variables. Returns 0,
+ * or 2 if a variable could not be assigned (reported). */
+static int read_assign_fields(miga_frame_t *frame, const strlist_t *args, int first_name,
+                              const string_t *line, const string_t *literal)
+{
+    string_t *ifs_var = frame_has_variable_cstr(frame, "IFS") ? frame_get_variable_cstr(frame, "IFS")
+                                                               : string_create_from_cstr(" \t\n");
+    const char *ifs = string_cstr(ifs_var);
+    const char *text = string_cstr(line);
+    const char *lit = string_cstr(literal);
+    int len = string_length(line);
+    int nvars = strlist_size(args) - first_name;
+    bool allexport = frame->opt_flags && frame->opt_flags->allexport;
+    int status = 0;
+
+    int pos = 0;
+    if (*ifs)
+        while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+            pos++;
+
+    for (int k = 0; k < nvars; k++)
+    {
+        const string_t *name = strlist_at(args, first_name + k);
+        string_t *value = string_create();
+
+        if (k == nvars - 1)
+        {
+            /* the rest of the line, minus trailing IFS whitespace */
+            int end = len;
+            if (*ifs)
+                while (end > pos && lit[end - 1] == '0' && read_char_is_ifs_white(text[end - 1], ifs))
+                    end--;
+            for (int j = pos; j < end; j++)
+                string_append_char(value, text[j]);
+            pos = len;
+        }
+        else if (*ifs)
+        {
+            /* one field, then the delimiter: an IFS whitespace run, optionally
+             * followed by one non-whitespace IFS character and more whitespace */
+            while (pos < len && !(lit[pos] == '0' && read_char_is_ifs(text[pos], ifs)))
+                string_append_char(value, text[pos++]);
+            if (pos < len)
+            {
+                if (read_char_is_ifs_white(text[pos], ifs))
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                if (pos < len && lit[pos] == '0' && read_char_is_ifs(text[pos], ifs) &&
+                    !read_char_is_ifs_white(text[pos], ifs))
+                {
+                    pos++;
+                    while (pos < len && lit[pos] == '0' && read_char_is_ifs_white(text[pos], ifs))
+                        pos++;
+                }
+            }
+        }
+        else if (k == 0)
+        {
+            string_append_cstr(value, text);
+            pos = len;
+        }
+
+        var_store_error_t err = variable_store_add(frame->variables, name, value, allexport, false);
+        string_destroy(&value);
+        if (err == VAR_STORE_ERROR_READ_ONLY)
+        {
+            fprintf(stderr, "read: %s: is read only\n", string_cstr(name));
+            status = 2;
+        }
+        else if (err != VAR_STORE_ERROR_NONE)
+        {
+            fprintf(stderr, "read: %s: not a valid identifier\n", string_cstr(name));
+            status = 2;
+        }
+    }
+
+    string_destroy(&ifs_var);
+    return status;
+}
+
+int builtin_read(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+
+    int argc = strlist_size(args);
+    bool raw = false;
+    int first_name = 1;
+
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first_name = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first_name = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'r')
+                raw = true;
+            else
+            {
+                fprintf(stderr, "read: -%c: invalid option\n", *p);
+                fprintf(stderr, "read: usage: read [-r] var...\n");
+                return 2;
+            }
+        }
+        first_name = i + 1;
+    }
+
+    if (first_name >= argc)
+    {
+        fprintf(stderr, "read: usage: read [-r] var...\n");
+        return 2;
+    }
+
+    fflush(stdout); /* a prompt written just before read must appear first */
+
+#ifdef MIGA_POSIX_API
+    int fd = STDIN_FILENO;
+    read_byte_fn get_byte = read_byte_from_fd;
+    void *ctx = &fd;
+#else
+    FILE *in = builtin_stdin(frame);
+    if (!in)
+    {
+        fprintf(stderr, "read: standard input is not available\n");
+        return 1;
+    }
+    read_byte_fn get_byte = read_byte_from_stream;
+    void *ctx = in;
+#endif
+
+    string_t *line = string_create();
+    string_t *literal = string_create(); /* '1' or '0' per byte of line */
+    int read_status = read_collect_line(get_byte, ctx, raw, line, literal);
+    int assign_status = read_assign_fields(frame, args, first_name, line, literal);
+    string_destroy(&line);
+    string_destroy(&literal);
+
+    if (assign_status != 0)
+        return assign_status;
+    return read_status; /* 0, or 1 at end of file */
+}
+
+#ifdef MIGA_POSIX_API
+/* ============================================================================
+ * umask - get or set the file mode creation mask (POSIX)
+ *
+ *   umask [-S] [mask]
+ *
+ * Without an operand the mask is written in octal, or with -S as the
+ * permissions it allows ("u=rwx,g=rx,o=rx"). The operand is an octal number
+ * or a symbolic mode of the chmod kind, applied to the permissions the
+ * current mask allows: clauses separated by commas, each a who list (u, g,
+ * o, a; empty means all) followed by one or more actions, where an action
+ * is =, + or - and a list of r, w, x (X is accepted as x). The new mask is
+ * the complement of the resulting permissions. Status 1 for a bad operand.
+ * ============================================================================
+ */
+static bool umask_parse_symbolic(const char *spec, mode_t current_mask, mode_t *out_mask)
+{
+    unsigned perms = (~(unsigned)current_mask) & 0777u;
+    const char *p = spec;
+    while (*p)
+    {
+        unsigned who = 0;
+        while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a')
+        {
+            if (*p == 'u') who |= 0700u;
+            else if (*p == 'g') who |= 0070u;
+            else if (*p == 'o') who |= 0007u;
+            else who |= 0777u;
+            p++;
+        }
+        if (who == 0)
+            who = 0777u;
+        if (*p != '=' && *p != '+' && *p != '-')
+            return false;
+        while (*p == '=' || *p == '+' || *p == '-')
+        {
+            char op = *p++;
+            unsigned bits = 0;
+            while (*p == 'r' || *p == 'w' || *p == 'x' || *p == 'X')
+            {
+                if (*p == 'r') bits |= 0444u;
+                else if (*p == 'w') bits |= 0222u;
+                else bits |= 0111u;
+                p++;
+            }
+            bits &= who;
+            if (op == '=')
+                perms = (perms & ~who) | bits;
+            else if (op == '+')
+                perms |= bits;
+            else
+                perms &= ~bits;
+        }
+        if (*p == ',')
+        {
+            p++;
+            if (*p == '\0')
+                return false;
+        }
+        else if (*p != '\0')
+            return false;
+    }
+    *out_mask = (mode_t)((~perms) & 0777u);
+    return true;
+}
+
+static void umask_print_symbolic(FILE *out, mode_t mask)
+{
+    unsigned perms = (~(unsigned)mask) & 0777u;
+    const char *names = "ugo";
+    for (int i = 0; i < 3; i++)
+    {
+        unsigned shift = (unsigned)(6 - 3 * i);
+        fprintf(out, "%s%c=", i ? "," : "", names[i]);
+        if (perms & (04u << shift)) fputc('r', out);
+        if (perms & (02u << shift)) fputc('w', out);
+        if (perms & (01u << shift)) fputc('x', out);
+    }
+    fputc('\n', out);
+}
+
+int builtin_umask(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    bool symbolic = false;
+    int first_operand = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first_operand = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
+        {
+            first_operand = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'S')
+                symbolic = true;
+            else
+            {
+                fprintf(stderr, "umask: -%c: invalid option\n", *p);
+                fprintf(stderr, "umask: usage: umask [-S] [mask]\n");
+                return 2;
+            }
+        }
+        first_operand = i + 1;
+    }
+
+    /* The process mask is authoritative; the frame keeps a copy for $-style
+     * bookkeeping and for subshell policies. */
+    mode_t current = umask(0);
+    umask(current);
+
+    if (first_operand >= argc)
+    {
+        if (symbolic)
+            umask_print_symbolic(out, current);
+        else
+            fprintf(out, "%04o\n", (unsigned)current);
+        return 0;
+    }
+    if (first_operand + 1 < argc)
+    {
+        fprintf(stderr, "umask: too many arguments\n");
+        return 2;
+    }
+
+    const char *spec = string_cstr(strlist_at(args, first_operand));
+    mode_t new_mask;
+    bool all_octal = *spec != '\0';
+    for (const char *p = spec; *p; p++)
+        if (*p < '0' || *p > '7')
+            all_octal = false;
+    if (all_octal)
+    {
+        unsigned long v = strtoul(spec, NULL, 8);
+        if (v > 0777)
+        {
+            fprintf(stderr, "umask: %s: octal number out of range\n", spec);
+            return 1;
+        }
+        new_mask = (mode_t)v;
+    }
+    else if (!umask_parse_symbolic(spec, current, &new_mask))
+    {
+        fprintf(stderr, "umask: %s: invalid symbolic mode\n", spec);
+        return 1;
+    }
+
+    umask(new_mask);
+    if (frame->umask)
+        *frame->umask = new_mask;
+    return 0;
+}
+#endif /* MIGA_POSIX_API */
+
+/* ============================================================================
+ * command / type - how a name would be interpreted
+ *
+ *   command [-p] [-v | -V] name...     (XCU command)
+ *   type name...                       (XCU type)
+ *
+ * "command name args" (no -v/-V) is handled by the simple-command executor,
+ * which runs name without function lookup and with special built-ins treated
+ * as regular ones; this builtin receives the -v / -V forms and a bare
+ * "command". Search order: reserved word, alias, special built-in, function,
+ * regular built-in, then PATH (the default path with -p).
+ * ============================================================================
+ */
+typedef enum
+{
+    CMD_KIND_NONE,
+    CMD_KIND_KEYWORD,
+    CMD_KIND_ALIAS,
+    CMD_KIND_SPECIAL_BUILTIN,
+    CMD_KIND_FUNCTION,
+    CMD_KIND_BUILTIN,
+    CMD_KIND_FILE
+} command_kind_t;
+
+static bool command_file_is_executable(const char *path)
+{
+#ifdef MIGA_POSIX_API
+    struct stat st;
+    return access(path, X_OK) == 0 && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+#else
+    /* No permission test in ISO C: an existing readable file counts */
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return false;
+    fclose(fp);
+    return true;
+#endif
+}
+
+static string_t *command_search_path(miga_frame_t *frame, const char *name, bool default_path)
+{
+    if (strchr(name, '/'))
+        return command_file_is_executable(name) ? string_create_from_cstr(name) : NULL;
+
+    char buf[1024];
+    string_t *path_var = NULL;
+    const char *path;
+    if (!default_path && frame_has_variable_cstr(frame, "PATH"))
+    {
+        path_var = frame_get_variable_cstr(frame, "PATH");
+        path = string_cstr(path_var);
+    }
+    else
+        path = lib_default_path(buf, sizeof buf);
+
+    string_t *found = NULL;
+    const char *p = path;
+    for (;;)
+    {
+        const char *colon = strchr(p, ':');
+        size_t len = colon ? (size_t)(colon - p) : strlen(p);
+        string_t *candidate = string_create();
+        if (len == 0)
+            string_append_cstr(candidate, "."); /* an empty entry is the current directory */
+        else
+            for (size_t i = 0; i < len; i++)
+                string_append_char(candidate, p[i]);
+        string_append_char(candidate, '/');
+        string_append_cstr(candidate, name);
+        if (command_file_is_executable(string_cstr(candidate)))
+        {
+            found = candidate;
+            break;
+        }
+        string_destroy(&candidate);
+        if (!colon)
+            break;
+        p = colon + 1;
+    }
+    if (path_var)
+        string_destroy(&path_var);
+    return found;
+}
+
+static command_kind_t command_classify(miga_frame_t *frame, const char *name, bool default_path,
+                                       string_t **detail)
+{
+    *detail = NULL;
+    if (token_is_reserved_word(name))
+        return CMD_KIND_KEYWORD;
+    const char *alias = frame_get_alias_cstr(frame, name);
+    if (alias)
+    {
+        *detail = string_create_from_cstr(alias);
+        return CMD_KIND_ALIAS;
+    }
+    miga_builtin_fn_t fn = NULL;
+    miga_builtin_category_t category;
+    bool is_builtin = builtin_store_lookup(frame->executor->builtins, name, &fn, &category);
+    if (is_builtin && category == MIGA_BUILTIN_CATEGORY_SPECIAL)
+        return CMD_KIND_SPECIAL_BUILTIN;
+    if (frame->functions && func_store_get_def_cstr(frame->functions, name))
+        return CMD_KIND_FUNCTION;
+    if (is_builtin)
+        return CMD_KIND_BUILTIN;
+    string_t *path = command_search_path(frame, name, default_path);
+    if (path)
+    {
+        *detail = path;
+        return CMD_KIND_FILE;
+    }
+    return CMD_KIND_NONE;
+}
+
+/* Write the -v (terse) or -V / type (verbose) description. Returns true when
+ * the name was found. */
+static bool command_describe(miga_frame_t *frame, const char *name, bool verbose, bool default_path,
+                             FILE *out)
+{
+    string_t *detail = NULL;
+    command_kind_t kind = command_classify(frame, name, default_path, &detail);
+    switch (kind)
+    {
+    case CMD_KIND_NONE:
+        if (verbose)
+            fprintf(stderr, "%s: not found\n", name);
+        return false;
+    case CMD_KIND_KEYWORD:
+        fprintf(out, verbose ? "%s is a shell keyword\n" : "%s\n", name);
+        break;
+    case CMD_KIND_ALIAS:
+        if (verbose)
+            fprintf(out, "%s is an alias for %s\n", name, string_cstr(detail));
+        else
+        {
+            fprintf(out, "alias %s='", name);
+            for (const char *p = string_cstr(detail); *p; p++)
+            {
+                if (*p == '\'')
+                    fputs("'\\''", out);
+                else
+                    fputc(*p, out);
+            }
+            fputs("'\n", out);
+        }
+        break;
+    case CMD_KIND_SPECIAL_BUILTIN:
+        fprintf(out, verbose ? "%s is a special shell builtin\n" : "%s\n", name);
+        break;
+    case CMD_KIND_FUNCTION:
+        fprintf(out, verbose ? "%s is a shell function\n" : "%s\n", name);
+        break;
+    case CMD_KIND_BUILTIN:
+        fprintf(out, verbose ? "%s is a shell builtin\n" : "%s\n", name);
+        break;
+    case CMD_KIND_FILE:
+        if (verbose)
+            fprintf(out, "%s is %s\n", name, string_cstr(detail));
+        else
+            fprintf(out, "%s\n", string_cstr(detail));
+        break;
+    }
+    if (detail)
+        string_destroy(&detail);
+    return true;
+}
+
+int builtin_command(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    bool default_path = false, terse = false, verbose = false;
+    int first = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'p')
+                default_path = true;
+            else if (*p == 'v')
+                terse = true;
+            else if (*p == 'V')
+                verbose = true;
+            else
+            {
+                fprintf(stderr, "command: -%c: invalid option\n", *p);
+                fprintf(stderr, "command: usage: command [-p] [-v | -V] name [argument...]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+
+    if (!terse && !verbose)
+    {
+        /* "command" alone, or only options: nothing to run. (With a name the
+         * executor intercepts the command before this builtin is reached.) */
+        if (first < argc)
+        {
+            fprintf(stderr, "command: %s: cannot be run from here\n",
+                    string_cstr(strlist_at(args, first)));
+            return 1;
+        }
+        return 0;
+    }
+
+    int status = 0;
+    for (int i = first; i < argc; i++)
+        if (!command_describe(frame, string_cstr(strlist_at(args, i)), verbose, default_path, out))
+            status = 1;
+    return status;
+}
+
+int builtin_type(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    if (first < argc && strcmp(string_cstr(strlist_at(args, first)), "--") == 0)
+        first++;
+    int status = 0;
+    for (int i = first; i < argc; i++)
+        if (!command_describe(frame, string_cstr(strlist_at(args, i)), true, false, out))
+            status = 127;
+    return status;
+}
+
+/* ============================================================================
+ * hash - remembered utility locations (XCU hash)
+ *
+ *   hash [utility...]
+ *   hash -r
+ *
+ * This shell searches PATH on every invocation and keeps no table of
+ * remembered locations, so the table hash reports is always empty and -r has
+ * nothing to forget. Operands are still looked up, as POSIX requires: a
+ * utility that is not found is a diagnosed error (status 1); built-ins and
+ * functions are accepted silently (POSIX says they are not reported). In an
+ * interactive shell a bare "hash" explains why nothing is listed.
+ * ============================================================================
+ */
+int builtin_hash(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    bool forget = false;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0')
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p == 'r')
+                forget = true;
+            else
+            {
+                fprintf(stderr, "hash: -%c: invalid option\n", *p);
+                fprintf(stderr, "hash: usage: hash [-r] [utility...]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+
+    if (first >= argc)
+    {
+        /* Nothing is remembered, so there is nothing to list or to forget */
+        if (!forget && frame->executor && frame->executor->is_interactive)
+            fprintf(stderr, "hash: this shell does not remember utility locations; "
+                            "PATH is searched for every command\n");
+        return 0;
+    }
+
+    int status = 0;
+    for (int i = first; i < argc; i++)
+    {
+        const char *name = string_cstr(strlist_at(args, i));
+        string_t *detail = NULL;
+        command_kind_t kind = command_classify(frame, name, false, &detail);
+        if (detail)
+            string_destroy(&detail);
+        if (kind == CMD_KIND_NONE)
+        {
+            fprintf(stderr, "hash: %s: not found\n", name);
+            status = 1;
+        }
+    }
+    return status;
+}
+
+#ifdef MIGA_POSIX_API
+/* ============================================================================
+ * ulimit - file size limit (XCU ulimit)
+ *
+ *   ulimit [-f] [blocks]
+ *
+ * POSIX defines only -f, the maximum size of files the shell and its children
+ * may write, in 512-byte blocks; it is the default. Without a value the limit
+ * is printed ("unlimited" or the number of blocks); with a value (a number or
+ * "unlimited") both the soft and the hard limit are set. Status 1 for a
+ * value the system refuses, 2 for a usage error.
+ * ============================================================================
+ */
+int builtin_ulimit(miga_frame_t *frame, const strlist_t *args)
+{
+    Expects_not_null(frame);
+    Expects_not_null(args);
+    FILE *out = builtin_stdout(frame);
+
+    int argc = strlist_size(args);
+    int first = 1;
+    for (int i = 1; i < argc; i++)
+    {
+        const char *arg = string_cstr(strlist_at(args, i));
+        if (strcmp(arg, "--") == 0)
+        {
+            first = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
+        {
+            first = i;
+            break;
+        }
+        for (const char *p = arg + 1; *p; p++)
+        {
+            if (*p != 'f')
+            {
+                fprintf(stderr, "ulimit: -%c: invalid option\n", *p);
+                fprintf(stderr, "ulimit: usage: ulimit [-f] [blocks]\n");
+                return 2;
+            }
+        }
+        first = i + 1;
+    }
+    if (first + 1 < argc)
+    {
+        fprintf(stderr, "ulimit: too many arguments\n");
+        return 2;
+    }
+
+    struct rlimit rl;
+    if (first >= argc)
+    {
+        if (getrlimit(RLIMIT_FSIZE, &rl) != 0)
+        {
+            fprintf(stderr, "ulimit: %s\n", strerror(errno));
+            return 1;
+        }
+        if (rl.rlim_cur == RLIM_INFINITY)
+            fputs("unlimited\n", out);
+        else
+            fprintf(out, "%llu\n", (unsigned long long)(rl.rlim_cur / 512));
+        return 0;
+    }
+
+    const char *value = string_cstr(strlist_at(args, first));
+    rlim_t limit;
+    if (strcmp(value, "unlimited") == 0)
+        limit = RLIM_INFINITY;
+    else
+    {
+        char *end = NULL;
+        errno = 0;
+        unsigned long long blocks = strtoull(value, &end, 10);
+        if (*value == '\0' || *end != '\0' || errno != 0 || *value == '-')
+        {
+            fprintf(stderr, "ulimit: %s: invalid number\n", value);
+            return 2;
+        }
+        limit = (rlim_t)blocks * 512;
+    }
+    rl.rlim_cur = limit;
+    rl.rlim_max = limit;
+    if (setrlimit(RLIMIT_FSIZE, &rl) != 0)
+    {
+        fprintf(stderr, "ulimit: %s\n", strerror(errno));
+        return 1;
+    }
+    return 0;
+}
+#endif /* MIGA_POSIX_API */
+
+/* ============================================================================
  * times - Print accumulated user and system times
  *
  * POSIX Synopsis:
@@ -1490,24 +2328,39 @@ static bool builtin_set_is_valid_o_arg(const char *arg)
 }
 
 /* Print all shell options (set -o) */
+static bool builtin_set_option_value(const miga_frame_t *frame, const char *name)
+{
+    const exec_opt_flags_t *o = frame->opt_flags;
+    if (!o)
+        return false;
+    if (strcmp(name, "allexport") == 0) return o->allexport;
+    if (strcmp(name, "errexit") == 0) return o->errexit;
+    if (strcmp(name, "ignoreeof") == 0) return o->ignoreeof;
+    if (strcmp(name, "noclobber") == 0) return o->noclobber;
+    if (strcmp(name, "noglob") == 0) return o->noglob;
+    if (strcmp(name, "noexec") == 0) return o->noexec;
+    if (strcmp(name, "nounset") == 0) return o->nounset;
+    if (strcmp(name, "pipefail") == 0) return o->pipefail;
+    if (strcmp(name, "verbose") == 0) return o->verbose;
+    if (strcmp(name, "vi") == 0) return o->vi;
+    if (strcmp(name, "xtrace") == 0) return o->xtrace;
+    return false; /* monitor: not implemented */
+}
+
+/* Print the shell options: "set -o" as a table, "set +o" as set commands
+ * that restore the current settings when re-read by the shell. */
 static void builtin_set_print_options(miga_frame_t *frame, bool reusable_format)
 {
     Expects_not_null(frame);
-
-    // TODO: Print actual option values from shell
-    // For now, just print the option names
+    FILE *out = builtin_stdout(frame);
     for (int i = 0; builtin_set_valid_o_args[i]; i++)
     {
+        const char *name = builtin_set_valid_o_args[i];
+        bool on = builtin_set_option_value(frame, name);
         if (reusable_format)
-        {
-            // +o format: set -o name / set +o name
-            fprintf(stdout, "set -o %s\n", builtin_set_valid_o_args[i]);
-        }
+            fprintf(out, "set %co %s\n", on ? '-' : '+', name);
         else
-        {
-            // -o format: name [on/off]
-            fprintf(stdout, "%-12s off\n", builtin_set_valid_o_args[i]);
-        }
+            fprintf(out, "%-15s %s\n", name, on ? "on" : "off");
     }
 }
 
@@ -1569,6 +2422,16 @@ int builtin_set(miga_frame_t *frame, const strlist_t *args)
     bool print_o_options = false;
     bool reusable_format = false;
     bool options_changed = false;
+
+    /* "set -o" / "set +o" with no option name print the settings. getopt
+     * would demand an argument, so handle these forms first. */
+    if (argc == 2 && (string_eq_cstr(strlist_at(args, 1), "-o") ||
+                      string_eq_cstr(strlist_at(args, 1), "+o")))
+    {
+        string_destroy(&optstring_str);
+        builtin_set_print_options(frame, string_eq_cstr(strlist_at(args, 1), "+o"));
+        return 0;
+    }
 
     /* Initialize getopt state for re-entrant parsing */
     struct getopt_state state;
@@ -3564,10 +4427,12 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
  */
 static int wait_for_all(miga_frame_t *frame)
 {
-    if (!frame || !frame->executor || !frame->executor->jobs)
-    {
+    /* Wait for every child, whether or not the job table knows about it:
+     * the table only exists for job control, "wait" must work regardless. */
+    if (!frame || !frame->executor)
         return 0;
-    }
+    job_store_t *jobs = frame->executor->jobs;
+    (void)jobs; /* only the POSIX implementation records job states */
 
     int last_exit_status = 0;
 
@@ -3582,14 +4447,14 @@ static int wait_for_all(miga_frame_t *frame)
         {
             if (WIFEXITED(status))
             {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
-                                            WEXITSTATUS(status));
+                if (jobs)
+                    job_store_set_process_state(jobs, result, JOB_DONE, WEXITSTATUS(status));
                 last_exit_status = WEXITSTATUS(status);
             }
             else if (WIFSIGNALED(status))
             {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                            WTERMSIG(status));
+                if (jobs)
+                    job_store_set_process_state(jobs, result, JOB_TERMINATED, WTERMSIG(status));
                 last_exit_status = 128 + WTERMSIG(status);
             }
         }
@@ -4521,6 +5386,7 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
+    FILE *out = builtin_stdout(frame); /* honours redirections in every configuration */
 
 
     int flag_n = 0; /* suppress newline */
@@ -4567,7 +5433,7 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
     {
         if (i > state.optind)
         {
-            putchar(' ');
+            fputc(' ', out);
         }
 
         const char *arg = string_cstr(strlist_at(args, i));
@@ -4583,33 +5449,33 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
                     switch (*p)
                     {
                     case 'a':
-                        putchar('\a');
+                        fputc('\a', out);
                         break;
                     case 'b':
-                        putchar('\b');
+                        fputc('\b', out);
                         break;
                     case 'c':
                         return 0; /* Stop printing */
                     case 'e':
-                        putchar('\033');
+                        fputc('\033', out);
                         break; /* ESC */
                     case 'f':
-                        putchar('\f');
+                        fputc('\f', out);
                         break;
                     case 'n':
-                        putchar('\n');
+                        fputc('\n', out);
                         break;
                     case 'r':
-                        putchar('\r');
+                        fputc('\r', out);
                         break;
                     case 't':
-                        putchar('\t');
+                        fputc('\t', out);
                         break;
                     case 'v':
-                        putchar('\v');
+                        fputc('\v', out);
                         break;
                     case '\\':
-                        putchar('\\');
+                        fputc('\\', out);
                         break;
                     case '0': /* Octal */
                     {
@@ -4619,32 +5485,32 @@ int builtin_echo(miga_frame_t *frame, const strlist_t *args)
                             p++;
                             val = val * 8 + (*p - '0');
                         }
-                        putchar(val);
+                        fputc(val, out);
                         break;
                     }
                     default:
                         /* Unknown escape - print literally */
-                        putchar('\\');
-                        putchar(*p);
+                        fputc('\\', out);
+                        fputc(*p, out);
                         break;
                     }
                 }
                 else
                 {
-                    putchar(*p);
+                    fputc(*p, out);
                 }
             }
         }
         else
         {
             /* No escape interpretation - print as-is */
-            fputs(arg, stdout);
+            fputs(arg, out);
         }
     }
 
     if (!flag_n)
     {
-        putchar('\n');
+        fputc('\n', out);
     }
 
     fflush(stdout);
@@ -5054,6 +5920,7 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
+    FILE *out = builtin_stdout(frame); /* honours redirections in every configuration */
 
     int argc = strlist_size(args);
 
@@ -5114,34 +5981,34 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
                 switch (*f)
                 {
                 case 'a':
-                    putchar('\a');
+                    fputc('\a', out);
                     break;
                 case 'b':
-                    putchar('\b');
+                    fputc('\b', out);
                     break;
                 case 'c':
                     stop_output = 1;
                     break;
                 case 'e':
-                    putchar('\033');
+                    fputc('\033', out);
                     break;
                 case 'f':
-                    putchar('\f');
+                    fputc('\f', out);
                     break;
                 case 'n':
-                    putchar('\n');
+                    fputc('\n', out);
                     break;
                 case 'r':
-                    putchar('\r');
+                    fputc('\r', out);
                     break;
                 case 't':
-                    putchar('\t');
+                    fputc('\t', out);
                     break;
                 case 'v':
-                    putchar('\v');
+                    fputc('\v', out);
                     break;
                 case '\\':
-                    putchar('\\');
+                    fputc('\\', out);
                     break;
                 case '0': /* Octal */
                 {
@@ -5155,18 +6022,18 @@ int builtin_printf(miga_frame_t *frame, const strlist_t *args)
                         count++;
                     }
                     f--;
-                    putchar(val);
+                    fputc(val, out);
                     break;
                 }
                 default:
-                    putchar(*f);
+                    fputc(*f, out);
                     break;
                 }
                 f++;
             }
             else
             {
-                putchar(*f);
+                fputc(*f, out);
                 f++;
             }
         }

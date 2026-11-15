@@ -244,7 +244,7 @@ string_t *frame_get_ps1(miga_frame_t *frame)
     {
         string_destroy(&value);
     }
-    return string_create_from_cstr("$ ");
+    return string_create_from_cstr(lib_default_ps1());
 }
 
 string_t *frame_get_ps2(miga_frame_t *frame)
@@ -1449,23 +1449,8 @@ static trap_store_t *get_trap_store(miga_frame_t *frame)
 void frame_run_exit_traps(miga_frame_t *frame)
 {
     Expects_not_null(frame);
-
-    trap_store_t *traps = get_trap_store(frame);
-    if (!traps)
-        return;
-
-    if (!trap_store_is_exit_set(traps))
-    {
-        return;
-    }
-
-    const string_t *exit_action = trap_store_get_exit(traps);
-    if (!exit_action || string_length(exit_action) == 0)
-    {
-        return;
-    }
-
-    trap_store_run_exit_trap(traps, (void *)frame);
+    Expects_not_null(frame->executor);
+    exec_run_exit_trap(frame->executor, frame);
 }
 
 /* Callback adapter for frame_for_each_set_trap */

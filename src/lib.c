@@ -352,3 +352,23 @@ FILE *lib_fopen_script(const char *path)
     return fopen(path, "r");
 #endif
 }
+
+const char *lib_default_ps1(void)
+{
+#ifdef MIGA_POSIX_API
+    if (geteuid() == 0)
+        return "# ";
+#endif
+    return "$ ";
+}
+
+const char *lib_default_path(char *buf, size_t size)
+{
+#ifdef MIGA_POSIX_API
+    size_t n = confstr(_CS_PATH, buf, size);
+    if (n > 0 && n <= size)
+        return buf;
+#endif
+    snprintf(buf, size, "%s", "/bin:/usr/bin");
+    return buf;
+}

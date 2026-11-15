@@ -41,6 +41,50 @@ This test suite validates that a shell correctly implements the three quoting me
 | `12_reserved_words.sh` | Quoting prevents reserved word recognition |
 | `13_edge_cases.sh` | Corner cases and potential pitfalls |
 | `14_conditional_special.sh` | Characters special in certain contexts |
+| `15_case_statement.sh` | `case` patterns and matching |
+| `16_alias_substitution.sh` | Alias substitution (POSIX 2.3.1) |
+| `17_positional_parameters.sh` | Positional and special parameters |
+| `18_traps_signals.sh` | `trap`, the EXIT trap and SIGINT (POSIX 2.11); needs `TEST_SHELL` for child shells |
+| `19_set_options.sh` | `set -e -u -f -C -n -x -v -a`, `set -o`/`+o`, `$-`, and `wait` without operands; needs `TEST_SHELL` |
+| `20_read_builtin.sh` | the `read` utility: IFS splitting, `-r`, line continuation, status at end of file, one line per call |
+| `21_umask.sh` | the `umask` utility: octal and symbolic (`-S`) output, octal and symbolic operands, effect on created files (POSIX configuration) |
+| `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
+| `23_hash_ulimit.sh` | `hash` (statuses; the shell keeps no table) and `ulimit -f` (POSIX configuration) |
+
+## Interactive tests
+
+`../interactive/sigint_pty.py <shell>` starts the shell on a pseudo-terminal
+and checks the interactive SIGINT behaviour: Ctrl-C at the prompt, with a
+partial line typed, during a foreground command, a loop and a subshell
+(`$?` is 130 and the shell goes on), a background job surviving Ctrl-C,
+a trapped INT running its action, `trap - INT` restoring the default, and
+`exit` ending the shell with its status. It needs Python 3 and a POSIX
+system; CMake registers it as `interactive_sigint` in the POSIX
+configuration. dash passes all of it; bash fails the trapped-INT check
+because it does not run an INT trap when only the foreground child was
+killed by Ctrl-C.
+
+`../interactive/prompt_pty.py <shell>` checks the interactive prompts
+(POSIX 2.5.3 and 2.8.1): the default PS1 (`# ` for root) on standard
+error, parameter expansion of PS1 and PS2, an empty PS1, PS2 for compound
+commands, quotes, here-documents and backslash-newline, end of file at a
+PS2 prompt, that shell errors (special built-in misuse, `${x?}`, a syntax
+error, command not found, a redirection error, a failed `.` or `exec`) do
+not end an interactive shell, `ENV`, `set -o ignoreeof`, end of file at
+the prompt, and that a shell reading a pipe prints no prompt unless
+started with `-i`. CMake registers it as `interactive_prompts`. dash
+fails one check (it exits on a failed `exec`) and bash another (it exits
+at end of file under PS2). Both scripts share `../interactive/ptyshell.py`.
+
+## Expected failures
+
+`expected_failures.txt` lists test files that the shell under development is
+known to fail. When the shell under test is migash, a failure of a listed
+file is reported as `XFAIL` and does not fail the run, and a pass is reported
+as `XPASS` as a reminder to remove the entry (`MIGASH_STRICT_XFAIL=1` makes
+an XPASS fail the run). The list is ignored for reference shells such as
+dash or bash, so `./run_tests.sh dash` still checks that the tests
+themselves are right.
 
 ## Characters That Must Be Quoted
 

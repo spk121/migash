@@ -11,14 +11,21 @@ still open.
   the shell conformance scripts really run their assertions now.
 - Core execution (B): 7-13 **fixed**; 14 **fixed** (exit status, silent
   errors, builtin diagnostics, leftover tokens); 15 **fixed**; 16 **fixed**;
-  17 **partly fixed** (`test`/`[` implemented, `cd`/`pwd` registered;
-  `read`, `type`, `command`, `umask`, `hash`, `ulimit` still missing);
-  18 **fixed**; 19 **fixed**; 20-22 **open** (traps, SIGINT, interactive
-  prompts) except the banner, which is now interactive-only.
+  17 **fixed** (`test`/`[` implemented, `cd`/`pwd` registered, `read`,
+  `command`, `type` and `hash` implemented in every configuration,
+  `umask` and `ulimit` for POSIX);
+  18 **fixed**; 19 **fixed**; 20 **fixed** (traps run); 21 **fixed**
+  (non-interactive: trapped SIGINT runs the action, untrapped kills the
+  shell with 130; interactive: Ctrl-C returns to the prompt with `$?` 130,
+  see `test/interactive/sigint_pty.py`); 22 **fixed** (banner
+  interactive-only; PS1/PS2 parameter expansion, `# ` for root, ENV,
+  interactive shells survive shell errors, see
+  `test/interactive/prompt_pty.py`).
 - Crashes (C): 23-25 **fixed**; 26 open (contract aborts on user input).
 - Conformance (D): 27 **fixed**; 28-36 open.
 - Code health (E): 37 partly (all three build systems work and agree on
-  file lists and macros; still three of them); 38-43 open.
+  file lists and macros; still three of them); 38 **fixed** (one owner for
+  the option flags, see `src/executor.md`); 39-43 open.
 
 The shell conformance suite (`test/sh`) passes completely as of
 2026-11-14: 527 assertions, 0 failures, under all three build systems
@@ -54,6 +61,141 @@ Known gaps noticed but not yet addressed: `${x:-~}` does not tilde-expand
 the word (dash does); the `read` builtin is still missing (item 17);
 `wait` with no operands returns at once instead of waiting for the
 background jobs (`wait $!` works).
+
+Traps (2026-11-14): implemented; `test/sh/18_traps_signals.sh` (33
+assertions checked against dash and bash) passes completely and is no
+longer in `expected_failures.txt`. The signal handler only sets a pending
+flag; the executor runs the action after the current simple command
+(XCU 2.11) in a TRAP frame, preserving `$?`; `exit` inside an action
+unwinds with the action's status. The EXIT trap runs once, at the end of
+the input, on `exit`, and when a subshell or background job ends, with
+`$?` set to the exit status and `exit` inside it replacing that status.
+Subshells reset non-ignored traps (EXIT included); signals ignored on
+entry cannot be trapped; `trap - EXIT` no longer aborts. Along the way:
+an assignment-only command (`st=$?`) reset `$?` before expanding its
+value, so `$?` read 0. Open: traps other than INT/QUIT/TERM are not
+reset in command-substitution or pipeline children (they fork without a
+frame).
+
+Interactive SIGINT (2026-11-14): an interactive POSIX shell installs a
+SIGINT handler (no `SA_RESTART`) that only sets `sigint_received`, and
+ignores SIGQUIT and SIGTERM. A foreground wait that returns `EINTR` is
+retried; after the interrupted simple command the frame stack unwinds to
+the REPL, which discards the partial line, resets the parser, prints a
+newline and prompts again with `$?` 130. Every forked child restores the
+default dispositions (background jobs ignore INT and QUIT, as POSIX
+requires when job control is off), so Ctrl-C ends `sleep` but not
+`sleep 30 &`. The first `trap` on a signal remembers the disposition the
+shell had, and `trap - SIG` restores it, so an interactive shell goes
+back to its handler rather than to `SIG_DFL` (that was the bug that
+killed the shell after `trap - INT`). `test/interactive/sigint_pty.py`
+drives the shell on a pty with 9 checks; dash and bash pass the same
+script. Item 21 is fixed.
+
+Interactive prompts (2026-11-15): `test/interactive/prompt_pty.py` (24
+checks on a pty, validated against dash and bash, which each fail one
+check where they depart from POSIX: dash exits on a failed `exec`, bash
+exits at end of file under a PS2 prompt). PS1 and PS2 now go through the
+shell's parameter expander (`${x:+y}`, `$?`, the full modifier set; the
+backslash escapes stay as migash's extension; `$(` and `$((` are copied
+literally, which POSIX leaves to the implementation). The default PS1 is
+`# ` for the superuser. An empty PS1 is an empty prompt; only an unset
+one gets the default. `ENV` is parameter-expanded and sourced before the
+first prompt of an interactive shell (not when the real and effective
+IDs differ). A shell is interactive when standard input and standard
+error are terminals, as POSIX says (standard output may be redirected).
+Found along the way and fixed: a line ending in backslash-newline was
+not continued (`echo back\` then `slash` ran two commands; the lexer
+treated "tokens produced" as "line complete"), `for` or `case` followed
+by a newline was an incomplete command that swallowed everything up to a
+`done`, a syntax error left `$?` at 0, and the non-interactive REPL
+(piped stdin, script files) printed nothing and went on after a syntax,
+expansion or special built-in error where POSIX 2.8.1 requires the shell
+to exit; `-c` already did. Special built-in errors (a reported usage
+error, a failed `exec name`) are now shell errors; `eval false` and
+`return 1` are not.
+
+hash and ulimit (2026-11-14): `test/sh/23_hash_ulimit.sh` (16
+assertions checked against dash and bash) passes. The shell searches PATH
+for every command and keeps no table of remembered locations, so `hash`
+is a no-op that still does what POSIX requires of it: operands are looked
+up and a utility that is not found is a diagnosed error (status 1),
+built-ins and functions are accepted, `-r` has nothing to forget, and
+unknown options are rejected. In an interactive shell a bare `hash` says
+on stderr that nothing is remembered. `ulimit` implements what POSIX
+defines, `-f` (the default) to report or set the file size limit in
+512-byte blocks, and is POSIX-only. With this the builtin list of item 17
+is complete.
+
+command and type (2026-11-14): `test/sh/22_command_type.sh` (26
+assertions checked against dash and bash) passes. `command name args` is
+handled by the simple-command executor, which resolves the name without
+function lookup and treats a special built-in as a regular one (its
+errors no longer end the shell); `command -p` runs the external with the
+default path from confstr(_CS_PATH), and the child now exports the
+shell's PATH (a prefix assignment included) before exec, so `PATH=x cmd`
+is honoured. `command -v`/`-V` and `type` share one classifier: reserved
+word, alias, special built-in, function, regular built-in, then a PATH
+search (an existence test in ISO C, which has no access(2)). Found by
+the test: the word after `case` (the subject) and assignment-shaped case
+patterns (`st=0)`) were tokenized as assignment words, which made
+`case st=1 in st=0|"") ...` a syntax error; and a `(`-prefixed pattern
+list kept the parenthesis as a pattern.
+
+umask (2026-11-14): implemented for the POSIX configuration (ISO C has
+no file mode creation mask, so it is not registered there);
+`test/sh/21_umask.sh` (26 assertions checked against dash and bash)
+passes: octal and `-S` output, octal operands, symbolic clauses of the
+chmod kind applied to the permissions the current mask allows, the
+effect on files created by utilities and by redirections, subshell
+isolation, and the status for bad operands. `umask -S` with an operand is
+not tested: POSIX leaves its output unspecified and dash and bash differ.
+
+read, all configurations (2026-11-14): the builtin is a portable core
+(line collection, backslash handling, IFS splitting, assignment) over a
+byte source: read(2) on descriptor 0 for POSIX, getc() on the builtin's
+standard-input stream otherwise, with stdin made unbuffered at startup in
+the non-POSIX configurations so that the shell never consumes input a
+later command should see. Exercising it in ISO mode found two ISO-only
+bugs, both fixed: the ISO redirection restore closed every redirected
+stream of the frame after any command (so the second iteration of
+`while read line; do ...; done < file` read the terminal), and `echo` and
+`printf` wrote to stdout directly instead of the frame's redirected
+stream. ISO redirections now use the same save-set mechanism as the
+POSIX ones. Still ISO-only limits: `<&-` cannot close a descriptor, and
+externals run through system() never see shell redirections.
+
+read (2026-11-14): implemented for the POSIX configuration;
+`test/sh/20_read_builtin.sh` (37 assertions checked against dash and
+bash) passes. It reads a byte at a time with read(2) so that a loop or a
+pipeline consumes exactly one line per call, handles backslash escapes
+and backslash-newline continuation unless `-r` is given, splits with IFS
+(remainder in the last variable, trailing IFS whitespace removed, empty
+IFS means no splitting), honours `set -a`, and returns 1 at end of file
+with what was read still assigned, 2 for a usage error, an invalid name
+or a read-only variable. Found by the test: `<&-` (and `<&n`) acted on
+standard output, because the default descriptor of input duplication was
+1; `read x <&-` therefore blocked on the terminal under ctest.
+
+Shell options (2026-11-14): `test/sh/19_set_options.sh` (57 assertions
+checked against dash and bash) passes completely. `set -e` with all the
+contexts in which POSIX ignores it, `set -u` (fatal, status 2, with `$@`,
+`$*` and `${var-word}` exempt), `set -C` (devices may be opened), `set -n`
+per command, `set -x` with `PS4`, `set -v`, `set -a`, `set -o`/`+o`
+listing with real values and the `set +o` round trip, `$-`, and `sh -e`
+etc. from the command line now work; the option flags have one owner
+(item 38). Found and fixed on the way: `wait` with no operands returned
+at once because it required a job table that non-interactive shells do
+not have; `2>&1 >file` was a syntax error because the tokenizer promoted
+the `1` to an IO number without checking that it touches the operator;
+and the `$( )` scanner counted parentheses inside quotes, comments and
+here-document bodies and took a `case` pattern's `)` for the closing
+parenthesis, so `$(... case x in a) ...; esac)` and `$(cat <<EOF
+It's ... EOF
+)` broke the parse (the latter silently, with exit status 2: an
+unterminated input in a non-interactive shell prints nothing). The
+runner loop used for local checks now also reports a test file that dies
+without printing its summary.
 
 Lowering (2026-11-14): `src/lowering_rules.md` was rewritten to describe
 `lower.c` as it is. While checking it, one rule turned out to be wrong in
@@ -278,14 +420,15 @@ run). **P1** crashes or clear POSIX violations. **P2** code health.
     mechanism that nothing sets. `trap - EXIT; trap` aborts with
     `trap_store_run_exit_trap:961 - store->exit_action is NULL`.
 
-21. **Interactive mode: Ctrl-C kills the shell.** No SIGINT handling is
-    installed (`sig_act_store_install_default_signal_handlers` is commented
+21. **Interactive mode: Ctrl-C kills the shell.** (Fixed, see the status
+    notes above.) No SIGINT handling was installed (`sig_act_store_install_default_signal_handlers` is commented
     out at `src/exec.c:998`); a pty session ended with signal 2 on `^C`.
     Also, when stdin is not a tty, `shell_execute` still calls
     `exec_setup_interactive` for `SHELL_MODE_STDIN` (`src/shell.c:138`), so
     `echo 'echo hi' | migash` prints `$ ` prompts into the output.
 
-22. **Banner and farewell on stdout in every mode.** `Welcome to Miga Shell...`
+22. **Banner and farewell on stdout in every mode.** (Fixed, see the status
+    notes above.) `Welcome to Miga Shell...`
     and `Goodbye!` are printed by `main` even for `-c` and script files. This
     corrupts `$(migash -c ...)`, breaks use as a `#!` interpreter, and should
     be interactive-only (or stderr, or removed). Also `log_init` is never

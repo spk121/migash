@@ -42,6 +42,12 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
     {
         lx->cmd_subst_text = string_create();
         lx->cmd_subst_depth = 1;
+        lx->cmd_subst_sq = false;
+        lx->cmd_subst_dq = false;
+        lx->cmd_subst_case_count = 0;
+        lx->cmd_subst_hd_count = 0;
+        lx->cmd_subst_hd_active = -1;
+        lx->cmd_subst_hd_line = NULL;
     }
     string_t *cmd_text = lx->cmd_subst_text;
 
@@ -49,8 +55,177 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
     {
         char c = lexer_peek(lx);
 
+        /* Inside a here-document body: copy lines verbatim until the
+         * delimiter line. Quotes and parentheses mean nothing there. */
+        if (lx->cmd_subst_hd_active >= 0)
+        {
+            int a = lx->cmd_subst_hd_active;
+            if (!lx->cmd_subst_hd_line)
+                lx->cmd_subst_hd_line = string_create();
+            string_append_char(cmd_text, c);
+            if (c == '\n')
+            {
+                const char *line = string_cstr(lx->cmd_subst_hd_line);
+                if (lx->cmd_subst_hd_strip[a])
+                    while (*line == '\t')
+                        line++;
+                if (strcmp(line, string_cstr(lx->cmd_subst_hd_delim[a])) == 0)
+                {
+                    string_destroy(&lx->cmd_subst_hd_delim[a]);
+                    lx->cmd_subst_hd_active = -1;
+                    if (a + 1 < lx->cmd_subst_hd_count)
+                        lx->cmd_subst_hd_active = a + 1; /* next body follows at once */
+                    else
+                        lx->cmd_subst_hd_count = 0;
+                }
+                string_clear(lx->cmd_subst_hd_line);
+            }
+            else
+                string_append_char(lx->cmd_subst_hd_line, c);
+            lexer_advance(lx);
+            continue;
+        }
+
+        /* A newline after one or more "<<" operators starts their bodies */
+        if (c == '\n' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lx->cmd_subst_hd_count > 0)
+        {
+            string_append_char(cmd_text, lexer_advance(lx));
+            lx->cmd_subst_hd_active = 0;
+            if (lx->cmd_subst_hd_line)
+                string_clear(lx->cmd_subst_hd_line);
+            continue;
+        }
+
+        /* "<<" or "<<-" outside quotes: remember the delimiter word */
+        if (c == '<' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lexer_peek_ahead(lx, 1) == '<' &&
+            lx->cmd_subst_hd_count < 4)
+        {
+            string_append_char(cmd_text, lexer_advance(lx));
+            string_append_char(cmd_text, lexer_advance(lx));
+            bool strip = false;
+            if (lexer_peek(lx) == '-')
+            {
+                strip = true;
+                string_append_char(cmd_text, lexer_advance(lx));
+            }
+            while (lexer_peek(lx) == ' ' || lexer_peek(lx) == '\t')
+                string_append_char(cmd_text, lexer_advance(lx));
+            string_t *delim = string_create();
+            while (!lexer_at_end(lx))
+            {
+                char d = lexer_peek(lx);
+                if (d == ' ' || d == '\t' || d == '\n' || d == ';' || d == ')' || d == '|' ||
+                    d == '&' || d == '<' || d == '>')
+                    break;
+                if (d == '\'' || d == '"')
+                {
+                    /* quoted part of the delimiter: literal up to the closing quote */
+                    string_append_char(cmd_text, lexer_advance(lx));
+                    while (!lexer_at_end(lx) && lexer_peek(lx) != d)
+                    {
+                        char q = lexer_advance(lx);
+                        string_append_char(delim, q);
+                        string_append_char(cmd_text, q);
+                    }
+                    if (!lexer_at_end(lx))
+                        string_append_char(cmd_text, lexer_advance(lx));
+                    continue;
+                }
+                if (d == '\\')
+                {
+                    string_append_char(cmd_text, lexer_advance(lx));
+                    if (lexer_at_end(lx))
+                        break;
+                    d = lexer_peek(lx);
+                }
+                string_append_char(delim, d);
+                string_append_char(cmd_text, lexer_advance(lx));
+            }
+            if (lexer_at_end(lx))
+            {
+                /* delimiter cut by end of input: wait for more */
+                string_destroy(&delim);
+                return LEX_INCOMPLETE;
+            }
+            int k = lx->cmd_subst_hd_count++;
+            lx->cmd_subst_hd_delim[k] = delim;
+            lx->cmd_subst_hd_strip[k] = strip;
+            continue;
+        }
+
+        /* A comment runs to the end of the line; quotes in it mean nothing */
+        if (c == '#' && !lx->cmd_subst_sq && !lx->cmd_subst_dq)
+        {
+            int len = string_length(cmd_text);
+            char prev = len > 0 ? string_at(cmd_text, len - 1) : ' ';
+            if (prev == ' ' || prev == '\t' || prev == '\n' || prev == ';' || prev == '(' ||
+                prev == '&' || prev == '|')
+            {
+                while (!lexer_at_end(lx) && lexer_peek(lx) != '\n')
+                    string_append_char(cmd_text, lexer_advance(lx));
+                continue;
+            }
+        }
+
+        /* Quoted text is copied verbatim: parentheses inside quotes do not
+         * nest. (A "$(" inside double quotes still nests, below.) */
+        if (lx->cmd_subst_sq)
+        {
+            if (c == '\'')
+                lx->cmd_subst_sq = false;
+            string_append_char(cmd_text, lexer_advance(lx));
+            continue;
+        }
+        if (c == '\'' && !lx->cmd_subst_dq)
+        {
+            lx->cmd_subst_sq = true;
+            string_append_char(cmd_text, lexer_advance(lx));
+            continue;
+        }
+        if (c == '"')
+        {
+            lx->cmd_subst_dq = !lx->cmd_subst_dq;
+            string_append_char(cmd_text, lexer_advance(lx));
+            continue;
+        }
+
+        /* "case ... in pattern) ..." : the ')' after a pattern closes nothing.
+         * Remember the paren depth at each "case" word; a ')' seen at that
+         * depth is a pattern terminator until the matching "esac". */
+        if (!lx->cmd_subst_dq && (c == 'c' || c == 'e'))
+        {
+            int len = string_length(cmd_text);
+            char prev = len > 0 ? string_at(cmd_text, len - 1) : ' ';
+            bool at_word_start = prev == ' ' || prev == '\t' || prev == '\n' || prev == ';' ||
+                                 prev == '(' || prev == '&' || prev == '|';
+            if (at_word_start && lexer_input_starts_with(lx, "case") &&
+                (lexer_peek_ahead(lx, 4) == ' ' || lexer_peek_ahead(lx, 4) == '\t'))
+            {
+                if (lx->cmd_subst_case_count < 16)
+                    lx->cmd_subst_case_depth[lx->cmd_subst_case_count] = lx->cmd_subst_depth;
+                lx->cmd_subst_case_count++;
+            }
+            else if (at_word_start && lexer_input_starts_with(lx, "esac"))
+            {
+                char after = lexer_peek_ahead(lx, 4);
+                if (after == '\0' || after == ' ' || after == '\t' || after == '\n' || after == ';' ||
+                    after == ')' || after == '&' || after == '|')
+                {
+                    if (lx->cmd_subst_case_count > 0)
+                        lx->cmd_subst_case_count--;
+                }
+            }
+        }
+
         if (c == ')')
         {
+            int n = lx->cmd_subst_case_count;
+            if (n > 0 && n <= 16 && lx->cmd_subst_case_depth[n - 1] == lx->cmd_subst_depth)
+            {
+                /* pattern terminator inside case ... esac */
+                string_append_char(cmd_text, lexer_advance(lx));
+                continue;
+            }
             if (--lx->cmd_subst_depth == 0)
             {
                 lexer_advance(lx); // consume )
@@ -58,6 +233,13 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 part_t *part = part_create_command_subst(cmd_text);
                 string_destroy(&lx->cmd_subst_text);
                 lx->cmd_subst_depth = 0;
+                for (int k = 0; k < lx->cmd_subst_hd_count && k < 4; k++)
+                    if (lx->cmd_subst_hd_delim[k])
+                        string_destroy(&lx->cmd_subst_hd_delim[k]);
+                lx->cmd_subst_hd_count = 0;
+                lx->cmd_subst_hd_active = -1;
+                if (lx->cmd_subst_hd_line)
+                    string_destroy(&lx->cmd_subst_hd_line);
 
                 if (lexer_in_mode(lx, LEX_DOUBLE_QUOTE))
                     part_set_quoted(part, false, true);

@@ -623,9 +623,30 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
     // The lexer promotes every "name=value" word to an ASSIGNMENT_WORD. POSIX
     // token rule 7b only recognises assignments before the command name, so
     // after it the word is an ordinary argument (e.g. "export FOO=bar").
-    if (token_get_type(token) == TOKEN_ASSIGNMENT_WORD && !tok->at_command_position)
+    if (token_get_type(token) == TOKEN_ASSIGNMENT_WORD)
     {
-        token_demote_assignment(token);
+        /* Only a word in a command's prefix is an assignment. The word after
+         * "case" (the subject) or "for" (the variable name) is not, even
+         * though the tokenizer is at command position there. */
+        bool after_case_or_for = false;
+        token_list_t *prev_list = (tok->compound_stack_size > 0) ? tok->buffered_tokens
+                                                                  : tok->output_tokens;
+        if (token_list_size(prev_list) > 0)
+        {
+            token_type_t prev = token_get_type(token_list_get(prev_list, token_list_size(prev_list) - 1));
+            after_case_or_for = (prev == TOKEN_CASE || prev == TOKEN_FOR);
+        }
+        /* Nor is a case pattern ("a=b) ..." after "in", ";;", "(" or "|") */
+        bool case_pattern = false;
+        if (tok->compound_stack_size > 0 &&
+            tok->compound_stack[tok->compound_stack_size - 1] == TOKEN_CASE &&
+            tok->input_pos + 1 < token_list_size(tok->input_tokens))
+        {
+            token_type_t next = token_get_type(token_list_get(tok->input_tokens, tok->input_pos + 1));
+            case_pattern = (next == TOKEN_RPAREN || next == TOKEN_PIPE);
+        }
+        if (!tok->at_command_position || after_case_or_for || case_pattern)
+            token_demote_assignment(token);
     }
 
     // No alias expansion - check if this WORD token should be converted to TOKEN_IO_NUMBER
@@ -722,7 +743,13 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
                         }
                     }
 
-                    if (all_digits)
+                    // POSIX 2.7: only digits immediately preceding the
+                    // operator form an IO_NUMBER ("2>&1 >f": the 1 is a word).
+                    bool adjacent =
+                        token_get_first_line(next_token) == token_get_first_line(token) &&
+                        token_get_first_column(next_token) ==
+                            token_get_first_column(token) + (int)strlen(word_text);
+                    if (all_digits && adjacent)
                     {
                         // This word is the IO_NUMBER of the redirection that
                         // follows: convert the word itself (the parser expects
@@ -742,6 +769,20 @@ tok_status_t tokenizer_process_one_token(tokenizer_t *tok)
 add_token:
     // Track compound command nesting with a stack
     token_type_t type = token_get_type(token);
+
+    /* "for" and "case" must be followed by a name. Reporting that here makes
+     * "for<newline>" a syntax error at once instead of an incomplete command
+     * that swallows input until a "done". */
+    if (tok->compound_stack_size > 0 && token_list_size(tok->buffered_tokens) > 0)
+    {
+        token_type_t prev = token_get_type(
+            token_list_get(tok->buffered_tokens, token_list_size(tok->buffered_tokens) - 1));
+        if ((prev == TOKEN_FOR || prev == TOKEN_CASE) && type != TOKEN_WORD)
+        {
+            tokenizer_set_error(tok, "expected a name after '%s'", prev == TOKEN_FOR ? "for" : "case");
+            return TOK_ERROR;
+        }
+    }
 
     // Determine current buffering state BEFORE processing this token
     bool should_buffer_before = (tok->compound_stack_size > 0 || token_list_size(tok->buffered_tokens) > 0);

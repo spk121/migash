@@ -129,6 +129,14 @@ string_t *lib_getcwd(void);
  */
 FILE *lib_fopen_script(const char *path);
 
+/* The default PATH used by "command -p" (and for a PATH that is unset):
+ * confstr(_CS_PATH) where available, otherwise "/bin:/usr/bin". Writes into
+ * buf and returns it. */
+const char *lib_default_path(char *buf, size_t size);
+
+/** The default PS1: "$ ", or "# " for the superuser (POSIX XCU 2.5.3). */
+const char *lib_default_ps1(void);
+
 /* POSIX-style file descriptor constants for UCRT (Windows) */
 #ifdef MIGA_UCRT_API
 #ifndef STDIN_FILENO

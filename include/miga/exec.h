@@ -763,6 +763,27 @@ typedef enum exec_job_state_t
  */
 MIGA_API void exec_reap_background_jobs(miga_exec_t *executor, bool notify);
 
+/**
+ * Run the actions of the trapped signals that have arrived since the last
+ * call, in the current frame. Returns true if an action asked the shell to
+ * exit (exit_requested is then set).
+ */
+MIGA_API bool exec_run_pending_traps(miga_exec_t *executor);
+
+/**
+ * Run the frame's EXIT trap, if one is set, and remove it so that it runs
+ * only once. $? inside the action is the frame's exit status; an exit inside
+ * the action replaces that status.
+ */
+MIGA_API void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame);
+
+/**
+ * In a freshly forked child: restore the signal dispositions the interactive
+ * shell changed (SIGINT caught, SIGQUIT/SIGTERM ignored). A background job's
+ * processes ignore SIGINT and SIGQUIT instead (XCU 2.11).
+ */
+MIGA_API void exec_child_signals(miga_exec_t *executor, bool background);
+
 /* ── Enumeration ─────────────────────────────────────────────────────────── */
 
 MIGA_API size_t exec_get_job_count(const miga_exec_t *executor);

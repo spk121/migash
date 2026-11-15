@@ -47,6 +47,7 @@
 #include "token.h"
 #include "trap_store.h"
 #include "variable_store.h"
+#include "lib.h"
 #include "miga/xalloc.h"
 
 
@@ -102,6 +103,44 @@ static void append_system_quoted(string_t *cmdline, const string_t *word)
 #endif
 }
 #endif
+
+
+/* An expansion error (set -u, ${var:?word}) aborts the command: the message
+ * is already on the executor. Status 2 like dash; a shell error so that a
+ * non-interactive shell stops (XCU 2.8.1). */
+static bool take_expansion_error(miga_frame_t *frame)
+{
+    if (!frame->executor->expansion_error)
+        return false;
+    frame->executor->expansion_error = false;
+    return true;
+}
+
+/* set -x: write PS4 and the command to standard error after expansion */
+static void xtrace_words(miga_frame_t *frame, const strlist_t *assignments_text,
+                         const strlist_t *words)
+{
+    if (!frame->opt_flags || !frame->opt_flags->xtrace)
+        return;
+    string_t *ps4 = frame_has_variable_cstr(frame, "PS4") ? frame_get_variable_cstr(frame, "PS4")
+                                                           : string_create_from_cstr("+ ");
+    fflush(stdout);
+    fputs(string_cstr(ps4), stderr);
+    string_destroy(&ps4);
+    bool first = true;
+    for (int i = 0; assignments_text && i < strlist_size(assignments_text); i++)
+    {
+        fprintf(stderr, "%s%s", first ? "" : " ", string_cstr(strlist_at(assignments_text, i)));
+        first = false;
+    }
+    for (int i = 0; words && i < strlist_size(words); i++)
+    {
+        fprintf(stderr, "%s%s", first ? "" : " ", string_cstr(strlist_at(words, i)));
+        first = false;
+    }
+    fputc('\n', stderr);
+    fflush(stderr);
+}
 
 static void populate_special_variables(variable_store_t *store, const miga_frame_t *frame)
 {
@@ -232,7 +271,8 @@ static miga_exec_status_t apply_prefix_assignments(miga_frame_t *frame, variable
         const token_t *tok = token_list_get(assignments, i);
         string_t *value = expand_assignment_value(frame, tok);
         var_store_error_t err =
-            variable_store_add(frame->variables, tok->assignment_name, value, false, false);
+            variable_store_add(frame->variables, tok->assignment_name, value,
+                               frame->opt_flags && frame->opt_flags->allexport, false);
 
         if (err != VAR_STORE_ERROR_NONE)
         {
@@ -381,22 +421,43 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
     {
         /* With no command name the exit status is that of the last command
          * substitution performed, or 0. record_subst_status() stores it on
-         * the frame while the values are expanded. */
-        frame->last_exit_status = 0;
+         * the frame while the values are expanded and marks it valid; until
+         * then $? in the values must still see the previous status. */
+        frame->subst_status_valid = false;
+        executor->expansion_error = false;
+        strlist_t *traced = NULL;
         if (assign_tokens)
         {
             for (int i = 0; i < token_list_size(assign_tokens); i++)
             {
                 const token_t *tok = token_list_get(assign_tokens, i);
                 string_t *value = expand_assignment_value(frame, tok);
-                if (!value)
+                if (!value || take_expansion_error(frame))
                 {
-                    exec_set_error_cstr(executor, "assignment expansion failed");
-                    return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_ERROR};
+                    if (value)
+                        string_destroy(&value);
+                    if (traced)
+                        strlist_destroy(&traced);
+                    if (!exec_get_error_cstr(executor))
+                        exec_set_error_cstr(executor, "assignment expansion failed");
+                    return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_ERROR,
+                                                         .has_exit_status = true,
+                                                         .exit_status = 2};
+                }
+                if (frame->opt_flags && frame->opt_flags->xtrace)
+                {
+                    if (!traced)
+                        traced = strlist_create();
+                    string_t *t = string_create_from(tok->assignment_name);
+                    string_append_char(t, '=');
+                    string_append(t, value);
+                    strlist_move_push_back(traced, &t);
                 }
 
+                /* set -a: assigned variables are exported */
+                bool export_it = frame->opt_flags && frame->opt_flags->allexport;
                 var_store_error_t err =
-                    variable_store_add(frame->variables, tok->assignment_name, value, false, false);
+                    variable_store_add(frame->variables, tok->assignment_name, value, export_it, false);
                 string_destroy(&value);
 
                 if (err != VAR_STORE_ERROR_NONE)
@@ -407,9 +468,16 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
         }
 
+        if (traced)
+        {
+            xtrace_words(frame, traced, NULL);
+            strlist_destroy(&traced);
+        }
+        int assign_status = frame->subst_status_valid ? frame->last_exit_status : 0;
+        frame->subst_status_valid = false;
         return (exec_frame_execute_result_t){.status = MIGA_EXEC_STATUS_OK,
                                              .has_exit_status = true,
-                                             .exit_status = frame->last_exit_status};
+                                             .exit_status = assign_status};
     }
 
     int cmd_exit_status = 0;
@@ -436,6 +504,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         runtime_redirs = exec_redirections_create();
 
     /* Expand command words */
+    executor->expansion_error = false;
     strlist_t *expanded_words =
         has_words ? expand_words(frame, word_tokens) : strlist_create();
     if (has_words && !expanded_words)
@@ -444,6 +513,57 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         cmd_exit_status = 1;
         goto out_destroy_redirs;
     }
+    if (take_expansion_error(frame))
+    {
+        /* set -u / ${var:?}: the command is not run; the shell error stops a
+         * non-interactive shell. */
+        status = MIGA_EXEC_STATUS_ERROR;
+        cmd_exit_status = 2;
+        goto out_cleanup_words_now;
+    }
+    xtrace_words(frame, NULL, expanded_words);
+
+    /* "command [-p] name args...": run name with function lookup disabled and
+     * special built-ins treated as regular ones (XCU command). The -v and -V
+     * forms, and a bare "command", are left to the builtin itself. */
+    bool command_skip_functions = false;
+    bool command_special_as_regular = false;
+    bool command_default_path = false;
+    while (has_words && strcmp(string_cstr(strlist_at(expanded_words, 0)), "command") == 0 &&
+           builtin_store_has(executor->builtins, "command") &&
+           !func_store_get_def_cstr(frame->functions, "command"))
+    {
+        int n = strlist_size(expanded_words);
+        int i = 1;
+        bool leave_to_builtin = false;
+        while (i < n)
+        {
+            const char *a = string_cstr(strlist_at(expanded_words, i));
+            if (strcmp(a, "--") == 0)
+            {
+                i++;
+                break;
+            }
+            if (a[0] != '-' || a[1] == '\0')
+                break;
+            for (const char *p = a + 1; *p; p++)
+            {
+                if (*p == 'p')
+                    command_default_path = true;
+                else
+                    leave_to_builtin = true; /* -v, -V, or an option error */
+            }
+            i++;
+        }
+        if (leave_to_builtin || i >= n)
+            break;
+        strlist_t *rest = strlist_create_slice(expanded_words, i, -1);
+        strlist_destroy(&expanded_words);
+        expanded_words = rest;
+        command_skip_functions = true;
+        command_special_as_regular = true;
+    }
+    (void)command_default_path; /* only the POSIX external-command path uses it */
 
     if (has_words)
     {
@@ -464,11 +584,13 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
 
         /* POSIX command search order: special builtins, then functions, then
          * regular builtins, then external utilities. */
-        bool is_special = builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL;
-        const ast_node_t *func_body =
-            is_special ? NULL : func_store_get_def_cstr(frame->functions, cmd_name);
-        bool is_regular = !is_special && func_body == NULL && builtin_found &&
-                          builtin_category == MIGA_BUILTIN_CATEGORY_REGULAR;
+        bool is_special = builtin_found && builtin_category == MIGA_BUILTIN_CATEGORY_SPECIAL &&
+                          !command_special_as_regular;
+        const ast_node_t *func_body = (is_special || command_skip_functions)
+                                          ? NULL
+                                          : func_store_get_def_cstr(frame->functions, cmd_name);
+        /* through "command", a special builtin runs as a regular one */
+        bool is_regular = !is_special && func_body == NULL && builtin_found;
         bool has_assignments = assign_tokens && token_list_size(assign_tokens) > 0;
 
         if (has_assignments && is_special)
@@ -499,6 +621,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
            Internal commands (builtins + functions)
            ──────────────────────────────────────────────── */
         bool is_internal = false;
+        (void)is_internal; /* kept for the UCRT/ISO branches below */
 
         /* Shell function */
         if (func_body != NULL)
@@ -580,7 +703,16 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             }
 
             cmd_exit_status = (*builtin_fn)(frame, expanded_words);
+            /* POSIX XCU 2.8.1: an error in a special built-in (a usage error
+             * it reported, or a failed exec of a command) is a shell error:
+             * a non-interactive shell exits, an interactive one goes on. A
+             * plain non-zero status ("eval false", "return 1") is not one. */
+            bool shell_error = cmd_exit_status != 0 &&
+                               (frame_has_error(frame) ||
+                                (strcmp(cmd_name, "exec") == 0 && strlist_size(expanded_words) > 1));
             report_builtin_error(frame, cmd_exit_status);
+            if (shell_error && !executor->is_interactive)
+                status = MIGA_EXEC_STATUS_ERROR;
 
             if (strcmp(cmd_name, "exec") == 0 && strlist_size(expanded_words) == 1)
             {
@@ -648,7 +780,23 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         argv[argc] = NULL;
 
         char *const *envp = variable_store_get_envp(env_store);
+        /* The search path for the child: the shell's PATH as the command sees
+         * it (a prefix assignment included), or the default path for
+         * "command -p". The exec functions consult the process environment. */
+        char default_path_buf[1024];
+        const char *search_path = NULL;
+        if (command_default_path)
+            search_path = lib_default_path(default_path_buf, sizeof default_path_buf);
+        else
+            for (char *const *ep = envp; ep && *ep; ++ep)
+                if (strncmp(*ep, "PATH=", 5) == 0)
+                {
+                    search_path = *ep + 5;
+                    break;
+                }
 
+        fflush(stdout);
+        fflush(stderr);
         pid_t pid = fork();
         if (pid == -1)
         {
@@ -657,6 +805,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         }
         else if (pid == 0) /* child */
         {
+            exec_child_signals(executor, false);
             /* Apply redirections in child */
             miga_exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs);
             if (redir_st != MIGA_EXEC_STATUS_OK)
@@ -677,19 +826,13 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             xfree(cloexec_fds);
 
             /* Exec */
+            if (search_path)
+                setenv("PATH", search_path, 1);
 #if defined(HAVE_EXECVPE)
             execvpe(cmd_name, argv, envp);
 #else
             /* Manual PATH search fallback if execvpe is not available */
-            const char *path_env = NULL;
-            for (char *const *ep = envp; ep && *ep; ++ep)
-            {
-                if (strncmp(*ep, "PATH=", 5) == 0)
-                {
-                    path_env = *ep + 5;
-                    break;
-                }
-            }
+            const char *path_env = search_path;
             if (path_env && strchr(cmd_name, '/') == NULL)
             {
                 char *path = xstrdup(path_env);
@@ -735,7 +878,11 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         else /* parent */
         {
             int wstatus = 0;
-            if (waitpid(pid, &wstatus, 0) < 0)
+            pid_t waited;
+            do
+                waited = waitpid(pid, &wstatus, 0);
+            while (waited < 0 && errno == EINTR);
+            if (waited < 0)
             {
                 cmd_exit_status = 127;
             }
@@ -931,6 +1078,7 @@ done_execution:
         executor->last_argument_set = true;
     }
 
+out_cleanup_words_now:
     strlist_destroy(&expanded_words);
 
 out_destroy_redirs:

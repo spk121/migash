@@ -216,14 +216,58 @@ command's, negated for `! pipeline`.
    executor; a forked child inherits it, which is what POSIX requires.
 2. **Job control is disabled in subshells**, and a subshell starts with an
    empty job table.
-3. **Two copies of some state exist:** options live in both `executor->opt`
-   and `frame->opt_flags`, and the exit status in both `executor` and
-   `frame`. `set -e` is checked against `executor->opt` by the REPL while the
-   builtin writes `frame->opt_flags`; this is a known inconsistency
-   (`docs/alpha-review.md`, item 38).
-4. **Traps are not executed yet.** `trap_handler()` only records the signal;
-   `execute_trap_action()` is a stub, and the `trap_pending[]` loop in the
-   REPL is the intended place to run trap actions between commands.
+3. **Options have one owner.** Before the top-level frame exists (while
+   `main.c`/`shell.c` apply the command-line flags) they live in
+   `executor->opt`; `exec_frame_push()` copies them into the top frame's
+   `opt_flags`, which is the owner from then on (shared or copied by the
+   frame policy). `exec_get_flag_*()`/`exec_set_flag_*()` go through
+   `exec_opts()`, which picks the right copy. `set -e` is applied per
+   command by `exec_frame_apply_errexit()` (after every simple command, after
+   compound commands in a list, after the last command of an and-or list and
+   after a pipeline); `executor->errexit_ignore_depth` is raised while
+   executing the contexts in which `-e` is ignored (`if`/`while`/`until`
+   conditions, the left side of `&&`/`||`, a pipeline beginning with `!`).
+   `set -u` and `${var:?word}` set `executor->expansion_error`, which the
+   simple-command executor turns into a shell error (status 2). `set -n`
+   is checked in the dispatcher and the list loop, `set -v` in the line
+   reader, `set -x` in the simple-command executor after expansion, `set -a`
+   where variables are assigned, `set -C` in the file-redirection open.
+   The exit status still lives in both `executor` and `frame`.
+4. **Traps.** The signal handler (`trap_store.c`) only sets
+   `executor->trap_pending[signo]`. `exec_run_pending_traps()` runs the
+   pending actions in an `EXEC_FRAME_TRAP` frame under the current frame;
+   it is called after every simple command, so an action runs after the
+   command during which the signal arrived and before the next one, and
+   between REPL lines. `$?` is restored after the action unless it called
+   `exit`, in which case the simple command's result carries `TOP` and the
+   exit status. `exec_run_exit_trap()` runs the EXIT trap once (it takes
+   the action out of the store first): at the end of the shell's input, in
+   `exit`, and in `exec_frame_pop()` for frames whose policy has
+   `exit_trap_runs` (top level, subshells, background jobs). Subshells
+   reset non-ignored traps, including EXIT, when their frame is created;
+   signals ignored on entry are recorded and cannot be trapped. The first
+   `trap` on a signal saves the disposition the shell had; `trap - SIG`
+   and `trap_store_clear()` restore that, not `SIG_DFL`.
+   **Interactive signals** (POSIX): `exec_install_interactive_signals()`
+   installs a SIGINT handler without `SA_RESTART` that sets
+   `executor->sigint_received`, and ignores SIGQUIT and SIGTERM. Waits
+   retry on `EINTR`; the simple-command wrapper turns a pending
+   `sigint_received` into a `TOP` flow with status 130, and the REPL
+   (step 2b) clears the flag, resets the parser and prompts again.
+   `exec_child_signals(executor, background)` runs in every forked child
+   (subshell, pipeline, command substitution, external command) and
+   restores the defaults, with INT and QUIT ignored in background jobs.
+   **Prompts and errors.** `render_prompt()` (exec.c) renders PS1 and PS2:
+   migash's backslash escapes first, then each `$` reference through
+   `expand_heredoc()` (parameter expansion with every POSIX modifier;
+   `$(` and `$((` are copied literally). The default PS1 comes from
+   `lib_default_ps1()` (`# ` for root). `source_rc_files()` expands `ENV`
+   and runs the file in a `DOT_SCRIPT` frame before the first prompt. In
+   the REPL a `MIGA_EXEC_STATUS_ERROR` line (syntax error, expansion
+   error, special built-in error: the command executor returns `.status`
+   ERROR for those) is reported with the shell name; an interactive shell
+   goes on, a non-interactive one exits with `$?` (2 for a syntax error,
+   set by `string_core_syntax_error()`).
 5. **Arena memory.** Everything allocated with `xmalloc`/`xstrdup` is owned by
    the arena and must be released with `xfree`; mixing `free()` in (as `cd`
    once did) is a double free at `miga_arena_end()`.

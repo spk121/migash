@@ -31,6 +31,7 @@
 #include "builtin_store.h"
 #include "exec_frame.h"
 #include "exec_frame_policy.h"
+#include "exec_frame_expander.h"
 #include "parse_session.h"
 #include "exec_types_internal.h"
 #include "miga/type_pub.h"
@@ -40,6 +41,7 @@
 #include "gnode.h"
 #include "job_store.h"
 #include "lexer.h"
+#include "lib.h"
 #include "lexer_t.h"
 #include "logging.h"
 #include "lower.h"
@@ -92,38 +94,48 @@
 
 static miga_exec_status_t source_rc_files(struct miga_exec_t *e)
 {
-    // FIXME
-    (void)e;
-    return MIGA_EXEC_STATUS_OK;
-#if 0
-#ifdef EXEC_SYSTEM_RC_PATH
-    exec_load_config_file(e, EXEC_SYSTEM_RC_PATH, func_store, alias_store);
-#endif
-#ifdef EXEC_USER_RC_PATH
-    if (e->is_interactive)
-    {
-        /* Check $ENV for a filename. It is subject to pathname expansion.*/
-        const char *env_raw_rc_path = variable_store_get_value_cstr(e->variables, "ENV");
-        if (env_raw_rc_path && *env_raw_rc_path)
-        {
-            char *env_rc_path = exec_expand_pathname(e, env_raw_rc_path);
+    /* POSIX XCU 2.5.3, ENV: when and only when an interactive shell starts,
+     * the value of ENV is subjected to parameter expansion and the file it
+     * names is executed in the current environment, before the first
+     * prompt. ENV is ignored when the real and effective user or group IDs
+     * differ. A missing or unreadable file is reported and otherwise
+     * ignored: it must not keep the shell from starting. */
+    if (!e->is_interactive || !e->top_frame)
+        return MIGA_EXEC_STATUS_OK;
 #ifdef MIGA_POSIX_API
-            if (getuid() == geteuid() && getgid() == getegid() && getuid())
-            {
-                exec_load_config_file(e, env_rc_path, func_store, alias_store);
-            }
+    if (getuid() != geteuid() || getgid() != getegid())
+        return MIGA_EXEC_STATUS_OK;
 #endif
-            exec_load_config_file(e, env_rc_path, func_store, alias_store);
-        }
-        else
-        {
-            exec_load_config_file_from_config_directory(e, EXEC_USER_RC_NAME, func_store,
-                                                        alias_store);
-        }
-    }
-#endif
+    miga_frame_t *frame = e->top_frame;
+    string_t *name = string_create_from_cstr("ENV");
+    const string_t *raw = exec_frame_get_variable(frame, name);
+    string_destroy(&name);
+    if (!raw || string_length(raw) == 0)
+        return MIGA_EXEC_STATUS_OK;
 
-#endif
+    string_t *path = expand_heredoc(frame, raw, false);
+    if (!path || string_length(path) == 0)
+    {
+        string_destroy(&path);
+        return MIGA_EXEC_STATUS_OK;
+    }
+    FILE *fp = lib_fopen_script(string_cstr(path));
+    if (!fp)
+    {
+        fprintf(stderr, "%s: %s: cannot open\n",
+                e->shell_name ? string_cstr(e->shell_name) : "sh", string_cstr(path));
+        string_destroy(&path);
+        return MIGA_EXEC_STATUS_OK;
+    }
+
+    /* Run it like ". file": in the current environment, "return" allowed. */
+    miga_frame_t *rc_frame = exec_frame_push(frame, EXEC_FRAME_DOT_SCRIPT, e, NULL);
+    exec_execute_stream_once(e, fp);
+    fclose(fp);
+    exec_frame_pop(&rc_frame);
+    string_destroy(&path);
+    log_debug("ENV file sourced");
+    return MIGA_EXEC_STATUS_OK;
 }
 
 /* ============================================================================
@@ -310,169 +322,160 @@ bool exec_set_shell_name_cstr(miga_exec_t *executor, const char *shell_name)
 }
 
 /* ── Shell option flags ──────────────────────────────────────────────────── */
+/* Before the top-level frame exists (command-line parsing) the flags live in
+ * executor->opt; exec_frame_push() copies them into the top frame, which is
+ * their owner from then on (frames share or copy them by policy). */
+#ifdef MIGA_POSIX_API
+static void exec_install_interactive_signals(miga_exec_t *e);
+#endif
+
+static exec_opt_flags_t *exec_opts(const miga_exec_t *executor)
+{
+    if (executor->top_frame && executor->top_frame->opt_flags)
+        return executor->top_frame->opt_flags;
+    return (exec_opt_flags_t *)&executor->opt;
+}
 
 bool exec_get_flag_allexport(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.allexport;
+    return exec_opts(executor)->allexport;
 }
 
 bool exec_set_flag_allexport(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.allexport = value;
+    exec_opts(executor)->allexport = value;
     return true;
 }
 
 bool exec_get_flag_errexit(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.errexit;
+    return exec_opts(executor)->errexit;
 }
 
 bool exec_set_flag_errexit(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.errexit = value;
+    exec_opts(executor)->errexit = value;
     return true;
 }
 
 bool exec_get_flag_ignoreeof(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.ignoreeof;
+    return exec_opts(executor)->ignoreeof;
 }
 
 bool exec_set_flag_ignoreeof(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.ignoreeof = value;
+    exec_opts(executor)->ignoreeof = value;
     return true;
 }
 
 bool exec_get_flag_noclobber(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noclobber;
+    return exec_opts(executor)->noclobber;
 }
 
 bool exec_set_flag_noclobber(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noclobber = value;
+    exec_opts(executor)->noclobber = value;
     return true;
 }
 
 bool exec_get_flag_noglob(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noglob;
+    return exec_opts(executor)->noglob;
 }
 
 bool exec_set_flag_noglob(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noglob = value;
+    exec_opts(executor)->noglob = value;
     return true;
 }
 
 bool exec_get_flag_noexec(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.noexec;
+    return exec_opts(executor)->noexec;
 }
 
 bool exec_set_flag_noexec(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.noexec = value;
+    exec_opts(executor)->noexec = value;
     return true;
 }
 
 bool exec_get_flag_nounset(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.nounset;
+    return exec_opts(executor)->nounset;
 }
 
 bool exec_set_flag_nounset(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.nounset = value;
+    exec_opts(executor)->nounset = value;
     return true;
 }
 
 bool exec_get_flag_pipefail(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.pipefail;
+    return exec_opts(executor)->pipefail;
 }
 
 bool exec_set_flag_pipefail(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.pipefail = value;
+    exec_opts(executor)->pipefail = value;
     return true;
 }
 
 bool exec_get_flag_verbose(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.verbose;
+    return exec_opts(executor)->verbose;
 }
 
 bool exec_set_flag_verbose(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.verbose = value;
+    exec_opts(executor)->verbose = value;
     return true;
 }
 
 bool exec_get_flag_vi(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.vi;
+    return exec_opts(executor)->vi;
 }
 
 bool exec_set_flag_vi(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.vi = value;
+    exec_opts(executor)->vi = value;
     return true;
 }
 
 bool exec_get_flag_xtrace(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return executor->opt.xtrace;
+    return exec_opts(executor)->xtrace;
 }
 
 bool exec_set_flag_xtrace(miga_exec_t *executor, bool value)
 {
     Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->opt.xtrace = value;
+    exec_opts(executor)->xtrace = value;
     return true;
 }
 
@@ -1121,6 +1124,18 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
             variable_store_add_cstr(e->top_frame->variables, "IFS", " \t\n", false, false);
     }
 
+    /* Traps: the signal handler records pending signals in trap_pending[];
+     * signals ignored when the shell started cannot be trapped. Must come
+     * before the RC files run (they may set traps) and before the
+     * interactive handlers are installed (which are not "ignored on entry"). */
+    trap_store_set_pending_flags(e->trap_pending, NSIG);
+    if (e->top_frame && e->top_frame->traps)
+        trap_store_record_ignored_on_entry(e->top_frame->traps);
+#ifdef MIGA_POSIX_API
+    if (e->is_interactive)
+        exec_install_interactive_signals(e);
+#endif
+
     /* Source RC files */
     if (!e->inhibit_rc_files && (interactive || e->is_login_shell))
     {
@@ -1304,9 +1319,9 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
      * -------------------------------------------------------------------------
      */
 #ifdef MIGA_POSIX_API
-    bool default_is_interactive = isatty(STDIN_FILENO);
+    bool default_is_interactive = isatty(STDIN_FILENO) && isatty(STDERR_FILENO);
 #elifdef MIGA_UCRT_API
-    bool default_is_interactive = _isatty(_fileno(stdin));
+    bool default_is_interactive = _isatty(_fileno(stdin)) && _isatty(_fileno(stderr));
 #else
     bool default_is_interactive = false;
 #endif
@@ -1491,17 +1506,17 @@ string_t *exec_get_ps1(const miga_exec_t *executor)
     if (executor->current_frame && executor->current_frame->variables)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->current_frame->variables, "PS1");
-        if (ps1 && *ps1)
+        if (ps1)
             return string_create_from_cstr(ps1);
     }
     else if (executor->variables)
     {
         const char *ps1 = variable_store_get_value_cstr(executor->variables, "PS1");
-        if (ps1 && *ps1)
+        if (ps1)
             return string_create_from_cstr(ps1);
     }
 
-    return string_create_from_cstr("$ ");
+    return string_create_from_cstr(lib_default_ps1());
 }
 
 char *exec_get_ps1_cstr(const miga_exec_t *executor)
@@ -1512,7 +1527,7 @@ char *exec_get_ps1_cstr(const miga_exec_t *executor)
 
 static bool is_valid_ps1_variable_char(char c)
 {
-    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    return isalnum((unsigned char)c) || c == '_';
 }
 
 static bool is_xdigit(char c)
@@ -1523,69 +1538,29 @@ static bool is_xdigit(char c)
 }
 
 /**
- * Render the PS1 prompt string.
+ * Render a prompt string (PS1 or PS2).
  *
- * POSIX (XBD 8.1, XCU 2.5.3) requires that PS1 undergo parameter expansion
- * before being displayed. This implementation performs $VAR / ${VAR}
- * substitution on the raw PS1 value. The special parameters $$ and $? are
- * also expanded, as they are ordinary special parameters defined by POSIX
- * and routinely used in prompts.
+ * POSIX (XBD 8.1, XCU 2.5.3) requires that PS1 and PS2 undergo parameter
+ * expansion before they are written to standard error; whether command
+ * substitution and arithmetic expansion are also performed is unspecified,
+ * and migash deliberately performs neither. Each "$" reference (a name,
+ * "${...}" with any modifier, or a special parameter such as "$?" or "$$")
+ * is handed to the shell's own parameter expander, so the full POSIX
+ * modifier set is available; "$(" and "$((" are copied verbatim.
  *
- * As a non-POSIX extension, the following backslash escape sequences are
- * also recognised and expanded before parameter substitution:
+ * As an extension, backslash escapes ("\n", "\t", "\r", "\\", "\xhh",
+ * "\uhhhh", "\Uhhhhhh") are processed before the parameter references.
  *
- *   \n          Newline
- *   \r          Carriage return
- *   \t          Horizontal tab
- *   \\          Backslash
- *   \xhh        Unicode code point U+00hh encoded as UTF-8 (exactly 2 hex digits)
- *   \uhhhh      Unicode code point U+hhhh encoded as UTF-8 (exactly 4 hex digits)
- *   \Uhhhhhhhh  Unicode code point encoded as UTF-8 (exactly 6 hex digits, full range)
- *
- * An unrecognised escape sequence is passed through literally (backslash
- * and following character both emitted) so that typos are visible.
- *
- * Returns a newly heap-allocated C string. The caller is responsible for
- * freeing it.
+ * Returns a newly allocated string that the caller must destroy.
  */
-static string_t *render_ps1(const miga_exec_t *exec)
+static string_t *render_prompt(const miga_exec_t *exec, const string_t *ps1_raw)
 {
     Expects_not_null(exec);
+    Expects_not_null(ps1_raw);
 
-    if (!exec->top_frame_initialized)
-    {
-        /* No frames at all yet — return the default PS1 value. */
-        return string_create_from_cstr("$ ");
-    }
-
-    const miga_frame_t *frame = exec->current_frame;
+    miga_frame_t *frame = exec->current_frame ? exec->current_frame : exec->top_frame;
     Expects_not_null(frame);
 
-    /* -------------------------------------------------------------------------
-     * 1. Retrieve the raw PS1 value.
-     *
-     * If PS1 is unset or empty, use the POSIX
-     * default of "$ ".
-     * -------------------------------------------------------------------------
-     */
-    string_t *ps1_str = string_create_from_cstr("PS1");
-    const string_t *ps1_raw = exec_frame_get_variable(frame, ps1_str);
-    string_destroy(&ps1_str);
-
-    if (!ps1_raw)
-    {
-        return string_create_from_cstr("$ ");
-    }
-
-    /* -------------------------------------------------------------------------
-     * 2. Expand parameter references in the PS1 string.
-     *
-     * Walk the raw string character by character. On '$', attempt to parse a
-     * parameter reference and substitute its value. Everything else is copied
-     * verbatim. No quoting, no field splitting, no globbing — strict POSIX
-     * prompt expansion only.
-     * -------------------------------------------------------------------------
-     */
     string_t *out = string_create();
     if (!out)
         return NULL;
@@ -1709,88 +1684,94 @@ static string_t *render_ps1(const miga_exec_t *exec)
             continue;
         }
 
-        /* '$' found — identify the parameter reference. */
+        /* '$' found: find the extent of the parameter reference and hand it
+         * to the parameter expander. */
+        int start = i;
         i++; /* consume '$' */
-
-        if (string_at(ps1_raw, i) == '{')
+        if (i >= string_length(ps1_raw))
         {
-            /* ${VAR} form */
-            i++; /* consume '{' */
-            int end = string_find_first_of_cstr_at(ps1_raw, "}", i);
+            string_append_char(out, '$');
+            break;
+        }
+        char d = string_at(ps1_raw, i);
+        int end = -1;
+        if (d == '{')
+        {
+            int depth = 0;
+            for (int j = i; j < string_length(ps1_raw); j++)
+            {
+                char e = string_at(ps1_raw, j);
+                if (e == '{')
+                    depth++;
+                else if (e == '}' && --depth == 0)
+                {
+                    end = j + 1;
+                    break;
+                }
+            }
             if (end == -1)
             {
-                /* No closing '}' found — emit literally. */
-                string_append_cstr(out, "${");
+                /* No closing '}': emit literally. */
+                string_append_char(out, '$');
                 continue;
             }
-            string_t *name_str = string_substring(ps1_raw, i, end);
-            i = end + 1; /* consume up to and including '}' */
-            const string_t *val = exec_frame_get_variable(frame, name_str);
-            if (val)
-                string_append(out, val);
-            else
-            {
-                /* Variable not found - emit literally. */
-                string_append_cstr(out, "${");
-                string_append(out, name_str);
-                string_append_char(out, '}');
-            }
-            string_destroy(&name_str);
         }
-        else if (string_at(ps1_raw, i) == '?')
+        else if (d == '_' || isalpha((unsigned char)d))
         {
-            /* $? — last exit status */
-            i++;
-            string_t *exit_status_str = string_from_int(exec->last_exit_status);
-            string_append(out, exit_status_str);
-            string_destroy(&exit_status_str);
+            end = string_find_first_not_of_predicate_at(ps1_raw, is_valid_ps1_variable_char, i);
+            if (end == -1)
+                end = string_length(ps1_raw);
         }
-        else if (string_at(ps1_raw, i) == '$')
+        else if (strchr("?$#!-@*0123456789", d) != NULL)
         {
-            /* $$ — shell PID */
-            i++;
-            if (exec->shell_pid_valid)
-            {
-                string_t *pid_str = string_from_int(exec->shell_pid);
-                string_append(out, pid_str);
-                string_destroy(&pid_str);
-            }
-            else
-            {
-                /* PID not available — emit literally. */
-                string_append_cstr(out, "$$");
-            }
-        }
-        else if (string_at(ps1_raw, i) == '_' || isalpha((unsigned char)string_at(ps1_raw, i)))
-        {
-            /* $VAR — unbraced name */
-            int end = string_find_first_not_of_predicate_at(ps1_raw, is_valid_ps1_variable_char, i);
-            Expects_ne(end, -1);
-            string_t *name_str = string_substring(ps1_raw, i, end);
-            i = end; /* consume the variable name */
-
-            const string_t *val = exec_frame_get_variable(frame, name_str);
-            if (val)
-                string_append(out, val);
-            else
-            {
-                /* Variable not found - emit literally. */
-                string_append_char(out, '$');
-                string_append(out, name_str);
-            }
-            string_destroy(&name_str);
+            end = i + 1;
         }
         else
         {
-            /* Bare '$' not followed by a recognised parameter — copy literally.
-             * POSIX leaves the result unspecified; copying verbatim is the most
-             * conservative and user-friendly choice. */
+            /* "$(" (command substitution, arithmetic) and a bare "$" are copied
+             * literally; the character after "$" is handled by the next
+             * iteration. */
             string_append_char(out, '$');
-            /* Do not advance p — the character after '$' will be handled by
-             * the next iteration of the loop. */
+            continue;
         }
+
+        string_t *ref = string_substring(ps1_raw, start, end);
+        string_t *val = expand_heredoc(frame, ref, false);
+        if (val)
+        {
+            string_append(out, val);
+            string_destroy(&val);
+        }
+        else
+            string_append(out, ref);
+        string_destroy(&ref);
+        i = end;
     }
 
+    return out;
+}
+
+/* PS1 (or its default) rendered for display */
+static string_t *render_ps1(const miga_exec_t *exec)
+{
+    Expects_not_null(exec);
+    if (!exec->top_frame_initialized || !(exec->current_frame || exec->top_frame))
+        return string_create_from_cstr(lib_default_ps1());
+    string_t *raw = exec_get_ps1(exec);
+    string_t *out = render_prompt(exec, raw);
+    string_destroy(&raw);
+    return out;
+}
+
+/* PS2 (or its default "> ") rendered for display */
+static string_t *render_ps2(const miga_exec_t *exec)
+{
+    Expects_not_null(exec);
+    if (!exec->top_frame_initialized || !(exec->current_frame || exec->top_frame))
+        return string_create_from_cstr("> ");
+    string_t *raw = exec_get_ps2(exec);
+    string_t *out = render_prompt(exec, raw);
+    string_destroy(&raw);
     return out;
 }
 
@@ -1813,14 +1794,14 @@ string_t *exec_get_ps2(const miga_exec_t *executor)
     if (executor->current_frame && executor->current_frame->variables)
     {
         ps2 = variable_store_get_value_cstr(executor->current_frame->variables, "PS2");
-        if (ps2 && *ps2)
+        if (ps2)
             return string_create_from_cstr(ps2);
     }
     if (executor->variables)
     {
         ps2 = variable_store_get_value_cstr(executor->variables, "PS2");
     }
-    return string_create_from_cstr((ps2 && *ps2) ? ps2 : "> ");
+    return string_create_from_cstr(ps2 ? ps2 : "> ");
 }
 
 char *exec_get_ps2_cstr(const miga_exec_t *executor)
@@ -1937,16 +1918,11 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 1. Prompt ---- */
         if (interactive)
         {
-            if (need_continuation)
+            string_t *prompt = need_continuation ? render_ps2(executor) : render_ps1(executor);
+            if (prompt)
             {
-                const char *ps2 = exec_get_ps2_cstr(executor);
-                fprintf(stderr, "%s", ps2);
-            }
-            else
-            {
-                string_t *ps1 = render_ps1(executor);
-                fprintf(stderr, "%s", ps1 ? string_cstr(ps1) : "$ ");
-                string_destroy(&ps1);
+                fputs(string_cstr(prompt), stderr);
+                string_destroy(&prompt);
             }
             fflush(stderr);
         }
@@ -1954,25 +1930,53 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         /* ---- 2. Read & execute one line ---- */
         miga_exec_status_t line_status = exec_frame_stream_core(executor->current_frame, fp, session);
 
+        /* ---- 2b. SIGINT (interactive): back to a fresh prompt, $? = 130 ---- */
+        if (interactive && executor->sigint_received)
+        {
+            executor->sigint_received = 0;
+            clearerr(fp); /* the interrupted read left the error flag set */
+            fprintf(stderr, "\n");
+            need_continuation = false;
+            parse_session_hard_reset(session, exec_get_aliases(executor));
+            executor->last_exit_status = 128 + SIGINT;
+            if (executor->current_frame)
+            {
+                executor->current_frame->last_exit_status = 128 + SIGINT;
+                if (!executor->exit_requested)
+                    executor->current_frame->pending_control_flow = MIGA_FRAME_FLOW_NORMAL;
+            }
+            if (!executor->exit_requested)
+                continue;
+        }
+
         /* ---- 3. EOF handling (a read error ends the stream the same way) ---- */
         if (feof(fp) || ferror(fp))
         {
             if (need_continuation)
             {
-                /*
-                 * EOF inside a multi-line construct.  POSIX XCU 2.3:
-                 * "If the shell is not interactive, the shell need not
-                 *  perform this check." Either way, an unterminated
-                 *  construct is a syntax error.
-                 */
+                /* End of file inside a multi-line construct is a syntax
+                 * error. An interactive shell (Ctrl-D at a PS2 prompt)
+                 * discards the construct and prompts again with $? = 2; a
+                 * non-interactive shell exits with status 2. */
+                fflush(stdout);
+                fprintf(stderr, "%s%s: syntax error: unexpected end of file\n",
+                        interactive ? "\n" : "", string_cstr(executor->shell_name));
+                executor->last_exit_status = 2;
+                executor->last_exit_status_set = true;
+                if (executor->current_frame)
+                    executor->current_frame->last_exit_status = 2;
                 if (interactive)
-                    fprintf(stderr, "\n%s: syntax error: unexpected end of file\n",
-                            string_cstr(executor->shell_name));
+                {
+                    clearerr(fp);
+                    need_continuation = false;
+                    parse_session_hard_reset(session, exec_get_aliases(executor));
+                    continue;
+                }
                 final_result = MIGA_EXEC_STATUS_ERROR;
                 break;
             }
 
-            if (interactive && executor->opt.ignoreeof)
+            if (interactive && exec_opts(executor)->ignoreeof)
             {
                 consecutive_eof++;
                 if (consecutive_eof < IGNOREEOF_MAX)
@@ -2022,31 +2026,35 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         {
             parse_session_reset(session);
 
-            if (interactive)
+            /* A shell error (XCU 2.8.1): syntax error, expansion error,
+             * special built-in error. Report it; an interactive shell goes
+             * on with the next line, a non-interactive one exits with a
+             * non-zero status. */
+            const char *err = exec_get_error_cstr(executor);
+            if (err && *err)
             {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
-                    exec_clear_error(executor);
-                }
-                /* Interactive shells keep going after errors */
+                fflush(stdout);
+                fprintf(stderr, "%s: %s\n", string_cstr(executor->shell_name), err);
             }
-            else
+            exec_clear_error(executor);
+            if (!interactive)
             {
-                /* Non-interactive + errexit: abort on non-zero status */
-                if (executor->opt.errexit && executor->last_exit_status != 0)
-                {
-                    final_result = MIGA_EXEC_STATUS_ERROR;
-                    break;
-                }
+                int st = executor->current_frame ? executor->current_frame->last_exit_status
+                                                 : executor->last_exit_status;
+                executor->last_exit_status = st ? st : 2;
+                executor->last_exit_status_set = true;
+                final_result = MIGA_EXEC_STATUS_ERROR;
+                break;
             }
+            /* set -e is applied per command by the executor (exec_frame.c),
+             * which knows the contexts in which it is ignored. */
         }
 
         /* ---- 5. Check for exit / top-level return ---- */
         if (executor->current_frame &&
             (executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_RETURN ||
-             executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP) &&
+             (executor->current_frame->pending_control_flow == MIGA_FRAME_FLOW_TOP &&
+              executor->exit_requested)) &&
             executor->current_frame == executor->top_frame)
         {
             /* A top-level 'return' or 'exit' unwind */
@@ -2058,46 +2066,10 @@ miga_exec_status_t exec_execute_stream_repl(miga_exec_t *executor, FILE *fp, boo
         exec_reap_background_jobs(executor, interactive);
 
         /* ---- 7. Process pending traps ---- */
-        for (int signo = 1; signo < NSIG; signo++)
+        if (exec_run_pending_traps(executor))
         {
-            if (!executor->trap_pending[signo])
-                continue;
-
-            executor->trap_pending[signo] = 0;
-
-            const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-            if (!trap_action || !trap_action->action)
-                continue;
-
-            /* POSIX: $? is preserved across trap execution */
-            int saved_exit_status = executor->last_exit_status;
-
-            miga_frame_t *trap_frame =
-                exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-            miga_exec_status_t trap_result =
-                frame_execute_string(trap_frame, trap_action->action);
-
-            exec_frame_pop(&executor->current_frame);
-
-            executor->last_exit_status = saved_exit_status;
-
-            if (trap_result == MIGA_EXEC_STATUS_EXIT)
-            {
-                final_result = MIGA_EXEC_STATUS_EXIT;
-                goto done;
-            }
-
-            if (trap_result == MIGA_EXEC_STATUS_ERROR && interactive)
-            {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
-                            err);
-                    exec_clear_error(executor);
-                }
-            }
+            final_result = MIGA_EXEC_STATUS_EXIT;
+            goto done;
         }
 
         /* ---- 8. SIGINT handling ---- */
@@ -2133,7 +2105,12 @@ done:
 
 miga_exec_status_t exec_execute_stream(miga_exec_t *executor, FILE *fp)
 {
-    return exec_execute_stream_repl(executor, fp, executor->is_interactive);
+    miga_exec_status_t status = exec_execute_stream_repl(executor, fp, executor->is_interactive);
+    /* End of the shell's input: run the EXIT trap (once). An exit inside it
+     * has already set executor->last_exit_status. */
+    if (executor->top_frame)
+        exec_run_exit_trap(executor, executor->top_frame);
+    return status;
 }
 
 /* For non-interactive execution of a named script */
@@ -2229,39 +2206,8 @@ miga_exec_status_t exec_execute_stream_once(miga_exec_t *executor, FILE *fp)
     if (status == MIGA_EXEC_STATUS_OK)
     {
         /* Process any pending trap handlers */
-        for (int signo = 1; signo < NSIG; signo++)
-        {
-            if (executor->trap_pending[signo])
-            {
-                executor->trap_pending[signo] = 0;
-
-                /* Get trap action from current trap store */
-                const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-                if (!trap_action || !trap_action->action)
-                    continue;
-
-                /* Save exit status - POSIX says $? should be preserved across trap execution */
-                int saved_exit_status = executor->last_exit_status;
-
-                /* Push EXEC_FRAME_TRAP and execute the trap action string */
-                miga_frame_t *trap_frame =
-                    exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-                miga_exec_status_t trap_result =
-                    frame_execute_string(trap_frame, trap_action->action);
-
-                exec_frame_pop(&executor->current_frame);
-
-                /* Restore exit status */
-                executor->last_exit_status = saved_exit_status;
-
-                if (trap_result == MIGA_EXEC_STATUS_ERROR)
-                {
-                    status = MIGA_EXEC_STATUS_ERROR;
-                    break;
-                }
-            }
-        }
+        if (exec_run_pending_traps(executor))
+            status = MIGA_EXEC_STATUS_EXIT;
     }
 
     return status;
@@ -2315,6 +2261,12 @@ miga_exec_result_t exec_execute_command_string(miga_exec_t *executor, const char
      * Feed the entire command string to the core execution engine.
      * ------------------------------------------------------------------ */
     miga_exec_status_t str_status = exec_frame_string_core(frame, command, session);
+
+    /* The -c string is the shell's whole input: run the EXIT trap (once). */
+    if (executor->top_frame &&
+        (str_status == MIGA_EXEC_STATUS_OK || str_status == MIGA_EXEC_STATUS_EMPTY ||
+         str_status == MIGA_EXEC_STATUS_EXIT))
+        exec_run_exit_trap(executor, executor->top_frame);
 
     switch (str_status)
     {
@@ -2743,7 +2695,7 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
                 break;
             }
 
-            if (executor->opt.ignoreeof)
+            if (exec_opts(executor)->ignoreeof)
             {
                 consecutive_eof++;
                 if (consecutive_eof < IGNOREEOF_MAX)
@@ -2868,46 +2820,10 @@ miga_exec_status_t exec_execute_stream_with_line_editor(miga_exec_t *executor, F
         exec_reap_background_jobs(executor, true);
 
         /* ---- 9. Process pending traps ---- */
-        for (int signo = 1; signo < NSIG; signo++)
+        if (exec_run_pending_traps(executor))
         {
-            if (!executor->trap_pending[signo])
-                continue;
-
-            executor->trap_pending[signo] = 0;
-
-            const trap_action_t *trap_action = trap_store_get(executor->traps, signo);
-            if (!trap_action || !trap_action->action)
-                continue;
-
-            /* POSIX: $? is preserved across trap execution. */
-            int saved_exit_status = executor->last_exit_status;
-
-            miga_frame_t *trap_frame =
-                exec_frame_push(executor->current_frame, EXEC_FRAME_TRAP, executor, NULL);
-
-            miga_exec_result_t trap_result =
-                exec_execute_command_string(executor, string_cstr(trap_action->action));
-
-            exec_frame_pop(&executor->current_frame);
-
-            executor->last_exit_status = saved_exit_status;
-
-            if (trap_result.status == MIGA_EXEC_STATUS_EXIT)
-            {
-                final_result = MIGA_EXEC_STATUS_EXIT;
-                goto done;
-            }
-
-            if (trap_result.status == MIGA_EXEC_STATUS_ERROR)
-            {
-                const char *err = exec_get_error_cstr(executor);
-                if (err)
-                {
-                    fprintf(stderr, "%s: trap handler: %s\n", string_cstr(executor->shell_name),
-                            err);
-                    exec_clear_error(executor);
-                }
-            }
+            final_result = MIGA_EXEC_STATUS_EXIT;
+            goto done;
         }
 
         /* ---- 10. SIGINT received outside the line editor ----
@@ -2952,6 +2868,181 @@ void exec_set_exit_status(miga_exec_t *executor, int status)
 {
     Expects_not_null(executor);
     executor->last_exit_status = status;
+}
+
+/* ============================================================================
+ * Traps
+ * ============================================================================
+ * The signal handler (trap_store.c) only sets executor->trap_pending[signo].
+ * exec_run_pending_traps() is called after every simple command, between the
+ * items of a list and between the lines of the REPL; it runs each pending
+ * action in an EXEC_FRAME_TRAP frame under the current frame. The action
+ * string is parsed and executed like an argument of eval; $? is preserved
+ * across it (XCU 2.11), unless the action calls exit.
+ */
+
+static void run_trap_action(miga_exec_t *executor, const string_t *action)
+{
+    miga_frame_t *current = executor->current_frame;
+    int saved_status = current->last_exit_status;
+    int saved_exec_status = executor->last_exit_status;
+
+    miga_frame_t *trap_frame = exec_frame_push(current, EXEC_FRAME_TRAP, executor, NULL);
+    miga_exec_status_t status = frame_execute_string(trap_frame, action);
+    exec_frame_pop(&trap_frame);
+
+    if (status == MIGA_EXEC_STATUS_ERROR)
+    {
+        const char *err = exec_get_error_cstr(executor);
+        if (err && err[0])
+        {
+            fprintf(stderr, "%s: trap: %s\n", string_cstr(executor->shell_name), err);
+            exec_clear_error(executor);
+        }
+    }
+
+    if (!executor->exit_requested)
+    {
+        current->last_exit_status = saved_status;
+        executor->last_exit_status = saved_exec_status;
+    }
+}
+
+bool exec_run_pending_traps(miga_exec_t *executor)
+{
+    Expects_not_null(executor);
+    if (!executor->current_frame || !trap_store_any_pending())
+        return false;
+
+    trap_store_clear_any_pending();
+    for (int signo = 1; signo < NSIG; signo++)
+    {
+        if (!executor->trap_pending[signo])
+            continue;
+        executor->trap_pending[signo] = 0;
+
+        bool ignored = false;
+        const string_t *action = frame_get_trap(executor->current_frame, signo, &ignored);
+        if (!action || ignored || string_length(action) == 0)
+            continue;
+
+        /* The store may change while the action runs (trap - SIG inside the
+         * action): work on a copy. */
+        string_t *copy = string_create_from(action);
+        run_trap_action(executor, copy);
+        string_destroy(&copy);
+
+        if (executor->exit_requested)
+            return true;
+    }
+    return executor->exit_requested;
+}
+
+void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame)
+{
+    Expects_not_null(executor);
+    Expects_not_null(frame);
+    if (!frame->traps)
+        return;
+
+    /* Taking the action out of the store makes the trap run exactly once,
+     * whatever the action does (including exit). */
+    string_t *action = trap_store_take_exit_action(frame->traps);
+    if (!action)
+        return;
+
+    /* The EXIT trap runs in the frame that is exiting, so that $? is that
+     * frame's exit status. An exit inside the action replaces that status. */
+    miga_frame_t *saved_current = executor->current_frame;
+    executor->current_frame = frame;
+    bool was_exit_requested = executor->exit_requested;
+    executor->exit_requested = false;
+    run_trap_action(executor, action);
+    string_destroy(&action);
+    if (executor->exit_requested)
+        frame->last_exit_status = executor->last_exit_status;
+    executor->exit_requested = was_exit_requested || executor->exit_requested;
+    if (executor->current_frame == frame)
+        executor->current_frame = saved_current;
+}
+
+/* ============================================================================
+ * Interactive signals (XCU 2.11)
+ * ============================================================================
+ * An interactive shell catches SIGINT: at the prompt the current line is
+ * discarded and a new prompt shown; during a foreground command the command
+ * (which gets the same signal from the terminal) ends and the shell stops
+ * the current command list and returns to the prompt with $? = 130. SIGQUIT
+ * and SIGTERM are ignored. The handler is installed without SA_RESTART so
+ * that a blocking read of the terminal returns and the REPL can react.
+ * Children started afterwards get the default dispositions back, except
+ * that the processes of a background job ignore SIGINT and SIGQUIT, and
+ * signals that were ignored when the shell started stay ignored.
+ */
+#ifdef MIGA_POSIX_API
+static miga_exec_t *g_interactive_executor = NULL;
+
+static void interactive_sigint_handler(int signo)
+{
+    (void)signo;
+    if (g_interactive_executor)
+        g_interactive_executor->sigint_received = 1;
+}
+
+static bool signal_is_ignored(int signo)
+{
+    struct sigaction sa;
+    return sigaction(signo, NULL, &sa) == 0 && sa.sa_handler == SIG_IGN;
+}
+
+static void exec_install_interactive_signals(miga_exec_t *e)
+{
+    e->sigint_ignored_on_entry = signal_is_ignored(SIGINT);
+    e->sigquit_ignored_on_entry = signal_is_ignored(SIGQUIT);
+    e->sigterm_ignored_on_entry = signal_is_ignored(SIGTERM);
+
+    g_interactive_executor = e;
+    if (!e->sigint_ignored_on_entry)
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = interactive_sigint_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0; /* no SA_RESTART: interrupt the read at the prompt */
+        sigaction(SIGINT, &sa, NULL);
+    }
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTERM, SIG_IGN);
+    e->interactive_signals = true;
+}
+#endif
+
+void exec_child_signals(miga_exec_t *executor, bool background)
+{
+    Expects_not_null(executor);
+#ifdef MIGA_POSIX_API
+    if (background)
+        executor->in_background_job = true;
+    bool bg = executor->in_background_job;
+    if (executor->interactive_signals)
+    {
+        if (!executor->sigint_ignored_on_entry)
+            signal(SIGINT, bg ? SIG_IGN : SIG_DFL);
+        if (!executor->sigquit_ignored_on_entry)
+            signal(SIGQUIT, bg ? SIG_IGN : SIG_DFL);
+        if (!executor->sigterm_ignored_on_entry)
+            signal(SIGTERM, SIG_DFL);
+    }
+    else if (bg && executor->job_control_disabled)
+    {
+        /* XCU 2.11: commands of an asynchronous list ignore SIGINT and
+         * SIGQUIT when job control is not active */
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
+    }
+#else
+    (void)background;
+#endif
 }
 
 void exec_request_exit(miga_exec_t *executor, int status)
