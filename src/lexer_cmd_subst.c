@@ -45,9 +45,11 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
         lx->cmd_subst_sq = false;
         lx->cmd_subst_dq = false;
         lx->cmd_subst_case_count = 0;
-        lx->cmd_subst_hd_count = 0;
-        lx->cmd_subst_hd_active = -1;
         lx->cmd_subst_hd_line = NULL;
+        /* Here-documents inside the substitution belong to it: their
+         * delimiters are queued in a context of their own, and the enclosing
+         * line's pending here-documents wait until the closing ")". */
+        lexer_push_heredoc_context(lx);
     }
     string_t *cmd_text = lx->cmd_subst_text;
 
@@ -57,26 +59,28 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
 
         /* Inside a here-document body: copy lines verbatim until the
          * delimiter line. Quotes and parentheses mean nothing there. */
-        if (lx->cmd_subst_hd_active >= 0)
+        if (lx->reading_heredoc)
         {
-            int a = lx->cmd_subst_hd_active;
+            const heredoc_entry_t *entry = &lx->heredoc_queue.entries[lx->heredoc_index];
             if (!lx->cmd_subst_hd_line)
                 lx->cmd_subst_hd_line = string_create();
             string_append_char(cmd_text, c);
             if (c == '\n')
             {
                 const char *line = string_cstr(lx->cmd_subst_hd_line);
-                if (lx->cmd_subst_hd_strip[a])
+                if (entry->strip_tabs)
                     while (*line == '\t')
                         line++;
-                if (strcmp(line, string_cstr(lx->cmd_subst_hd_delim[a])) == 0)
+                if (strcmp(line, string_cstr(entry->delimiter)) == 0)
                 {
-                    string_destroy(&lx->cmd_subst_hd_delim[a]);
-                    lx->cmd_subst_hd_active = -1;
-                    if (a + 1 < lx->cmd_subst_hd_count)
-                        lx->cmd_subst_hd_active = a + 1; /* next body follows at once */
-                    else
-                        lx->cmd_subst_hd_count = 0;
+                    /* the next queued body follows at once, if any */
+                    lx->heredoc_index++;
+                    if (lx->heredoc_index >= lx->heredoc_queue.size)
+                    {
+                        lx->reading_heredoc = false;
+                        lexer_empty_heredoc_queue(lx);
+                        lx->heredoc_index = 0;
+                    }
                 }
                 string_clear(lx->cmd_subst_hd_line);
             }
@@ -87,22 +91,23 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
         }
 
         /* A newline after one or more "<<" operators starts their bodies */
-        if (c == '\n' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lx->cmd_subst_hd_count > 0)
+        if (c == '\n' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lx->heredoc_queue.size > 0)
         {
             string_append_char(cmd_text, lexer_advance(lx));
-            lx->cmd_subst_hd_active = 0;
+            lx->reading_heredoc = true;
+            lx->heredoc_index = 0;
             if (lx->cmd_subst_hd_line)
                 string_clear(lx->cmd_subst_hd_line);
             continue;
         }
 
         /* "<<" or "<<-" outside quotes: remember the delimiter word */
-        if (c == '<' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lexer_peek_ahead(lx, 1) == '<' &&
-            lx->cmd_subst_hd_count < 4)
+        if (c == '<' && !lx->cmd_subst_sq && !lx->cmd_subst_dq && lexer_peek_ahead(lx, 1) == '<')
         {
             string_append_char(cmd_text, lexer_advance(lx));
             string_append_char(cmd_text, lexer_advance(lx));
             bool strip = false;
+            bool quoted = false;
             if (lexer_peek(lx) == '-')
             {
                 strip = true;
@@ -120,6 +125,7 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 if (d == '\'' || d == '"')
                 {
                     /* quoted part of the delimiter: literal up to the closing quote */
+                    quoted = true;
                     string_append_char(cmd_text, lexer_advance(lx));
                     while (!lexer_at_end(lx) && lexer_peek(lx) != d)
                     {
@@ -133,6 +139,7 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 }
                 if (d == '\\')
                 {
+                    quoted = true;
                     string_append_char(cmd_text, lexer_advance(lx));
                     if (lexer_at_end(lx))
                         break;
@@ -147,9 +154,8 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 string_destroy(&delim);
                 return LEX_INCOMPLETE;
             }
-            int k = lx->cmd_subst_hd_count++;
-            lx->cmd_subst_hd_delim[k] = delim;
-            lx->cmd_subst_hd_strip[k] = strip;
+            lexer_queue_heredoc(lx, delim, strip, quoted);
+            string_destroy(&delim);
             continue;
         }
 
@@ -233,11 +239,9 @@ lex_status_t lexer_process_cmd_subst_paren(lexer_t *lx)
                 part_t *part = part_create_command_subst(cmd_text);
                 string_destroy(&lx->cmd_subst_text);
                 lx->cmd_subst_depth = 0;
-                for (int k = 0; k < lx->cmd_subst_hd_count && k < 4; k++)
-                    if (lx->cmd_subst_hd_delim[k])
-                        string_destroy(&lx->cmd_subst_hd_delim[k]);
-                lx->cmd_subst_hd_count = 0;
-                lx->cmd_subst_hd_active = -1;
+                /* back to the enclosing line's here-documents; anything the
+                 * substitution left unterminated is dropped */
+                lexer_pop_heredoc_context(lx);
                 if (lx->cmd_subst_hd_line)
                     string_destroy(&lx->cmd_subst_hd_line);
 

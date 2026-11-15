@@ -190,13 +190,10 @@ struct lexer_t
     bool cmd_subst_dq;
     int cmd_subst_case_depth[16];
     int cmd_subst_case_count;
-    /* here-documents inside $( ): delimiters announced by "<<" on the current
-     * line (collected until the newline), then the body being skipped */
-    string_t *cmd_subst_hd_delim[4];
-    bool cmd_subst_hd_strip[4];
-    int cmd_subst_hd_count;      /* pending delimiters not yet consumed */
-    int cmd_subst_hd_active;     /* index of the body being copied, or -1 */
-    string_t *cmd_subst_hd_line; /* current line of the body, for the delimiter test */
+    /* Here-documents inside the substitution are queued in a pushed
+     * here-document context (see heredoc_context_t); this is the current
+     * line of the body being copied, for the delimiter test. */
+    string_t *cmd_subst_hd_line;
 
     /* Context for reserved word recognition */
     bool at_command_start; // true if next word could be a reserved word

@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "ctest.h"
 
 #define LEXER_INTERNAL
@@ -459,6 +461,178 @@ CTEST(test_cmd_subst_paren_not_arithmetic)
     (void)ctest;
 }
 
+/* ============================================================================
+ * Here-documents inside $( ... ): the substitution gets a here-document
+ * context of its own (pushed on "$(", popped on the closing ")")
+ * ============================================================================ */
+
+static const token_t *find_end_of_heredoc(const token_list_t *tokens, const char *delim)
+{
+    for (int i = 0; i < token_list_size(tokens); i++)
+    {
+        const token_t *t = token_list_get(tokens, i);
+        if (token_get_type(t) == TOKEN_END_OF_HEREDOC && t->heredoc_delimiter &&
+            strcmp(string_cstr(t->heredoc_delimiter), delim) == 0)
+            return t;
+    }
+    return NULL;
+}
+
+static const part_t *first_cmd_subst_part(const token_list_t *tokens)
+{
+    for (int i = 0; i < token_list_size(tokens); i++)
+    {
+        const token_t *t = token_list_get(tokens, i);
+        if (token_get_type(t) != TOKEN_WORD)
+            continue;
+        for (int j = 0; j < token_part_count(t); j++)
+        {
+            const part_t *part = token_get_part(t, j);
+            if (part_get_type(part) == PART_COMMAND_SUBST)
+                return part;
+        }
+    }
+    return NULL;
+}
+
+// A here-document inside the substitution is part of its text; the context
+// is back at the top level afterwards.
+CTEST(test_cmd_subst_paren_heredoc_inside)
+{
+    lexer_t *lx = lexer_create();
+    lexer_append_input_cstr(lx, "$(cat <<EOF\nx\nEOF\n)");
+
+    token_list_t *tokens = token_list_create();
+    lex_status_t status = lexer_tokenize(lx, tokens, NULL);
+
+    CTEST_ASSERT_EQ(ctest, status, LEX_OK, "tokenize status is LEX_OK");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "cat <<EOF\nx\nEOF\n",
+                            "the here-document is part of the substitution text");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "context depth is 0 after )");
+    CTEST_ASSERT_FALSE(ctest, lexer_heredoc_pending(lx), "nothing pending after )");
+
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// A ")" inside the nested here-document body does not close the substitution.
+CTEST(test_cmd_subst_paren_heredoc_body_paren)
+{
+    lexer_t *lx = lexer_create();
+    lexer_append_input_cstr(lx, "$(cat <<-B\n)\n\tB\n)");
+
+    token_list_t *tokens = token_list_create();
+    lex_status_t status = lexer_tokenize(lx, tokens, NULL);
+
+    CTEST_ASSERT_EQ(ctest, status, LEX_OK, "tokenize status is LEX_OK");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "cat <<-B\n)\n\tB\n",
+                            "the ) in the body is text; <<- matches the tab-indented delimiter");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "context depth is 0 after )");
+
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// The enclosing line's here-document waits for the substitution to end and
+// is then read by the normal lexer with the right body.
+CTEST(test_cmd_subst_paren_outer_heredoc_waits)
+{
+    lexer_t *lx = lexer_create();
+    lexer_append_input_cstr(lx, "cat <<A $(cat <<B\nb\nB\n)\na\nA\n");
+
+    token_list_t *tokens = token_list_create();
+    lex_status_t status = lexer_tokenize(lx, tokens, NULL);
+
+    CTEST_ASSERT_EQ(ctest, status, LEX_OK, "tokenize status is LEX_OK");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "cat <<B\nb\nB\n",
+                            "inner here-document stays inside the substitution");
+    const token_t *outer = find_end_of_heredoc(tokens, "A");
+    CTEST_ASSERT_NOT_NULL(ctest, outer, "outer here-document read after the substitution");
+    if (outer)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(outer->heredoc_content), "a\n", "outer body");
+    CTEST_ASSERT_NULL(ctest, find_end_of_heredoc(tokens, "B"),
+                      "inner delimiter never reaches the outer token stream");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "context depth is 0 at the end");
+    CTEST_ASSERT_FALSE(ctest, lexer_heredoc_pending(lx), "nothing pending at the end");
+
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// Input arriving a line at a time (the REPL): the nested context lives
+// across LEX_INCOMPLETE returns until the closing ")".
+CTEST(test_cmd_subst_paren_heredoc_line_by_line)
+{
+    lexer_t *lx = lexer_create();
+    token_list_t *tokens = token_list_create();
+
+    lexer_append_input_cstr(lx, "echo $(cat <<B\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE, "line 1: incomplete");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 1, "line 1: inside the substitution");
+    CTEST_ASSERT_TRUE(ctest, lexer_heredoc_pending(lx), "line 1: inner here-document pending");
+
+    lexer_append_input_cstr(lx, "b\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE, "line 2: incomplete");
+    CTEST_ASSERT_TRUE(ctest, lexer_heredoc_pending(lx), "line 2: body being read");
+
+    lexer_append_input_cstr(lx, "B\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE, "line 3: incomplete");
+    CTEST_ASSERT_FALSE(ctest, lexer_heredoc_pending(lx), "line 3: inner here-document finished");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 1, "line 3: still inside");
+
+    lexer_append_input_cstr(lx, ")\n");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_OK, "line 4: complete");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "line 4: back at the top level");
+    const part_t *part = first_cmd_subst_part(tokens);
+    CTEST_ASSERT_NOT_NULL(ctest, part, "command substitution part produced");
+    if (part)
+        CTEST_ASSERT_STR_EQ(ctest, string_cstr(part_get_text(part)), "cat <<B\nb\nB\n",
+                            "substitution text assembled across the lines");
+
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
+// An unterminated here-document keeps the substitution open; a reset drops
+// the nested context.
+CTEST(test_cmd_subst_paren_heredoc_unterminated_reset)
+{
+    lexer_t *lx = lexer_create();
+    token_list_t *tokens = token_list_create();
+
+    lexer_append_input_cstr(lx, "$(cat <<B\nb\n)");
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_INCOMPLETE,
+                    "the ) in the body does not close the substitution");
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 1, "nested context in place");
+    CTEST_ASSERT_TRUE(ctest, lexer_heredoc_pending(lx), "inner here-document pending");
+
+    lexer_reset(lx);
+    CTEST_ASSERT_EQ(ctest, lexer_heredoc_context_depth(lx), 0, "reset returns to the top level");
+    CTEST_ASSERT_FALSE(ctest, lexer_heredoc_pending(lx), "reset drops the pending here-document");
+
+    /* and the lexer works again */
+    lexer_append_input_cstr(lx, "$(echo ok)");
+    token_list_clear(tokens);
+    CTEST_ASSERT_EQ(ctest, lexer_tokenize(lx, tokens, NULL), LEX_OK, "lexing works after reset");
+
+    token_list_destroy(&tokens);
+    lexer_destroy(&lx);
+    (void)ctest;
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -488,6 +662,12 @@ int main(int argc, char *argv[])
         // Nesting corner case tests
         CTEST_ENTRY(test_cmd_subst_backtick_nested),
         CTEST_ENTRY(test_cmd_subst_paren_not_arithmetic),
+        // Here-documents inside $( ... )
+        CTEST_ENTRY(test_cmd_subst_paren_heredoc_inside),
+        CTEST_ENTRY(test_cmd_subst_paren_heredoc_body_paren),
+        CTEST_ENTRY(test_cmd_subst_paren_outer_heredoc_waits),
+        CTEST_ENTRY(test_cmd_subst_paren_heredoc_line_by_line),
+        CTEST_ENTRY(test_cmd_subst_paren_heredoc_unterminated_reset),
         NULL
     };
 

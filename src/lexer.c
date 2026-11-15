@@ -55,6 +55,7 @@ lexer_t *lexer_create(void)
     lx->heredoc_saved.size = 0;
     lx->cmd_subst_text = NULL;
     lx->cmd_subst_depth = 0;
+    lx->cmd_subst_hd_line = NULL;
 
     lx->escaped = false;
     lx->operator_buffer = string_create();
@@ -79,6 +80,8 @@ void lexer_reset(lexer_t *lx)
     lx->pos = 0;
     if (lx->cmd_subst_text)
         string_destroy(&lx->cmd_subst_text);
+    if (lx->cmd_subst_hd_line)
+        string_destroy(&lx->cmd_subst_hd_line);
     lx->cmd_subst_depth = 0;
     lx->line_no = 1;
     lx->col_no = 1;
@@ -201,6 +204,8 @@ void lexer_destroy(lexer_t **lx)
     // delimiter string_t allocations still in the queue.
     if (l->cmd_subst_text)
         string_destroy(&l->cmd_subst_text);
+    if (l->cmd_subst_hd_line)
+        string_destroy(&l->cmd_subst_hd_line);
     while (l->heredoc_saved.size > 0)
         lexer_pop_heredoc_context(l);
     if (l->heredoc_saved.items)
