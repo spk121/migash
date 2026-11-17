@@ -1122,6 +1122,16 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
          * is invoked, whatever the environment holds; it is not exported. */
         if (e->top_frame && e->top_frame->variables)
             variable_store_add_cstr(e->top_frame->variables, "IFS", " \t\n", false, false);
+
+        /* POSIX 2.5.3: PPID is the parent process ID at initialization,
+         * whatever the environment holds; a subshell keeps the value (it is
+         * an ordinary variable, inherited with the rest). Not exported. */
+        if (e->top_frame && e->top_frame->variables && e->shell_ppid_valid)
+        {
+            char ppid[32];
+            snprintf(ppid, sizeof ppid, "%ld", (long)e->shell_ppid);
+            variable_store_add_cstr(e->top_frame->variables, "PPID", ppid, false, false);
+        }
     }
 
     /* Traps: the signal handler records pending signals in trap_pending[];

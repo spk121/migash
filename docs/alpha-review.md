@@ -108,6 +108,14 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
+PPID (2026-11-17): set at initialization to the parent process ID in
+the POSIX configuration (the executor already recorded it; the variable
+was never created), whatever the environment holds, not exported; a
+subshell inherits it like any variable. `test/sh/25_ppid.sh` (7
+assertions checked against dash and bash) covers it. UCRT and ISO C have
+no way to ask for the parent's ID, so `PPID` stays unset there. The
+`$PPID` part of item 30 is fixed; `$LINENO` and `jobs` remain.
+
 Arithmetic errors (2026-11-17): division or modulo by zero and a
 malformed expression are now expansion errors like `${var?word}` (XCU
 2.8.1): `arithmetic expression: division by zero: "1/0"` on standard

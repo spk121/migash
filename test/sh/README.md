@@ -51,6 +51,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
 | `23_hash_ulimit.sh` | `hash` (statuses; the shell keeps no table) and `ulimit -f` (POSIX configuration) |
 | `24_arithmetic_errors.sh` | arithmetic errors (division by zero, malformed expressions) as expansion errors: diagnostic, status, a non-interactive shell exits, inside functions, conditions and pipelines |
+| `25_ppid.sh` | the `PPID` variable: the parent's process ID, kept in subshells, set regardless of the environment, not exported |
 
 ## Interactive tests
 
