@@ -111,7 +111,15 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
-Developer logging (2026-11-17): `log_init()` is called from `main()`
+echo (2026-11-17): by decision migash implements the XSI `echo` of POSIX
+XCU: no options and no `--` (so `echo -n` prints `-n`), the backslash
+escapes `\a \b \f \n \r \t \v \\ \0num` recognised in every argument, and
+`\c` ending the output without the newline; an unknown escape is written
+as it stands. Before, `-n`, `-e` and `-E` were options, escapes needed
+`-e`, and another dash word was an "unrecognized option" error. dash
+agrees on everything but `-n`; bash does not interpret escapes without
+`xpg_echo`. `test/sh/28_echo.sh` (24 assertions) covers it. Item 35 is
+settled. `log_init()` is called from `main()`
 and reads `MIGASH_LOG_LEVEL` and `MIGASH_LOG_ABORT_LEVEL` (the `LOG_LEVEL`
 name belongs to other programs the shell runs; POSIX reserves nothing of
 the kind for the shell). The policy is in `docs/logging.md`: the log_*

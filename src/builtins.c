@@ -5397,138 +5397,63 @@ int builtin_ls(miga_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
+/*
+ * echo: the XSI echo of POSIX XCU, by decision. No options and no "--": every
+ * argument is an operand, "-n" included. The backslash escapes \a \b \f \n
+ * \r \t \v \\ and \0num (zero to three octal digits) are recognised in every
+ * argument; \c ends the output at once, without the trailing newline. An
+ * unknown escape is written as it stands (POSIX leaves it unspecified).
+ */
 int builtin_echo(miga_frame_t *frame, const strlist_t *args)
 {
     Expects_not_null(frame);
     Expects_not_null(args);
     FILE *out = builtin_stdout(frame); /* honours redirections in every configuration */
 
-
-    int flag_n = 0; /* suppress newline */
-    int flag_e = 0; /* interpret escapes */
-    int flag_err = 0;
-    int c;
-
-    string_t *opts = string_create_from_cstr("neE");
-    struct getopt_state state;
-    getopt_state_init(&state);
-
-    while ((c = getopt_r_string(args, opts, &state)) != -1)
-    {
-        switch (c)
-        {
-        case 'n':
-            flag_n = 1;
-            break;
-        case 'e':
-            flag_e = 1;
-            flag_err = 0; /* -e overrides -E */
-            break;
-        case 'E':
-            if (!flag_e)
-                flag_e = 0;
-            break;
-        case '?':
-            fprintf(stderr, "echo: unrecognized option: '-%c'\n", state.optopt);
-            flag_err++;
-            break;
-        }
-    }
-    string_destroy(&opts);
-
-    if (flag_err)
-    {
-        fprintf(stderr, "usage: echo [-neE] [string ...]\n");
-        return 2;
-    }
-
-    /* Print arguments starting from state.optind, separated by spaces */
     int argc = strlist_size(args);
-    for (int i = state.optind; i < argc; i++)
+    for (int i = 1; i < argc; i++)
     {
-        if (i > state.optind)
-        {
+        if (i > 1)
             fputc(' ', out);
-        }
 
-        const char *arg = string_cstr(strlist_at(args, i));
-
-        if (flag_e)
+        for (const char *p = string_cstr(strlist_at(args, i)); *p; p++)
         {
-            /* Interpret escape sequences */
-            for (const char *p = arg; *p; p++)
+            if (*p != '\\' || p[1] == '\0')
             {
-                if (*p == '\\' && *(p + 1))
+                fputc(*p, out);
+                continue;
+            }
+            p++;
+            switch (*p)
+            {
+            case 'a': fputc('\a', out); break;
+            case 'b': fputc('\b', out); break;
+            case 'c': fflush(out); return 0; /* the end of the output */
+            case 'f': fputc('\f', out); break;
+            case 'n': fputc('\n', out); break;
+            case 'r': fputc('\r', out); break;
+            case 't': fputc('\t', out); break;
+            case 'v': fputc('\v', out); break;
+            case '\\': fputc('\\', out); break;
+            case '0': {
+                int val = 0;
+                for (int k = 0; k < 3 && p[1] >= '0' && p[1] <= '7'; k++)
                 {
                     p++;
-                    switch (*p)
-                    {
-                    case 'a':
-                        fputc('\a', out);
-                        break;
-                    case 'b':
-                        fputc('\b', out);
-                        break;
-                    case 'c':
-                        return 0; /* Stop printing */
-                    case 'e':
-                        fputc('\033', out);
-                        break; /* ESC */
-                    case 'f':
-                        fputc('\f', out);
-                        break;
-                    case 'n':
-                        fputc('\n', out);
-                        break;
-                    case 'r':
-                        fputc('\r', out);
-                        break;
-                    case 't':
-                        fputc('\t', out);
-                        break;
-                    case 'v':
-                        fputc('\v', out);
-                        break;
-                    case '\\':
-                        fputc('\\', out);
-                        break;
-                    case '0': /* Octal */
-                    {
-                        int val = 0;
-                        for (int j = 0; j < 3 && p[1] >= '0' && p[1] <= '7'; j++)
-                        {
-                            p++;
-                            val = val * 8 + (*p - '0');
-                        }
-                        fputc(val, out);
-                        break;
-                    }
-                    default:
-                        /* Unknown escape - print literally */
-                        fputc('\\', out);
-                        fputc(*p, out);
-                        break;
-                    }
+                    val = val * 8 + (*p - '0');
                 }
-                else
-                {
-                    fputc(*p, out);
-                }
+                fputc(val & 0xff, out);
+                break;
+            }
+            default:
+                fputc('\\', out);
+                fputc(*p, out);
+                break;
             }
         }
-        else
-        {
-            /* No escape interpretation - print as-is */
-            fputs(arg, out);
-        }
     }
-
-    if (!flag_n)
-    {
-        fputc('\n', out);
-    }
-
-    fflush(stdout);
+    fputc('\n', out);
+    fflush(out);
     return 0;
 }
 
