@@ -18,8 +18,9 @@ an interactive shell), checked on a pty:
      dash; bash exits instead).
   6. Shell errors do not end an interactive shell (2.8.1): special built-in
      misuse, a bad "set" option, "${x?}", a syntax error, command not found
-     (127), a redirection error, "." of a missing file and a failed "exec"
-     (bash follows POSIX here; dash exits on the failed exec).
+     (127), a redirection error, "." of a missing file, a failed "exec"
+     (bash follows POSIX here; dash exits on the failed exec) and an
+     arithmetic error.
   7. ENV is parameter-expanded and the file it names is sourced before the
      first prompt (its PS1 is used).
   8. "set -o ignoreeof" refuses end of file with a message.
@@ -153,6 +154,7 @@ survives("for", "a syntax error: the shell goes on")
 survives("nosuch_cmd_zz", "command not found: 127, the shell goes on", 127)
 survives("echo x > /nonexistent/dir/f", "a redirection error: the shell goes on")
 survives(". /nonexistent/file", ". of a missing file: error, the shell goes on")
+survives("echo $((1/0))", "an arithmetic error: the shell goes on")
 survives("exec nosuch_cmd_zz", "a failed exec: 127, the shell goes on", 127)
 sh.close()
 

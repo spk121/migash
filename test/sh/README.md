@@ -50,6 +50,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `21_umask.sh` | the `umask` utility: octal and symbolic (`-S`) output, octal and symbolic operands, effect on created files (POSIX configuration) |
 | `22_command_type.sh` | `command` (bypassing functions, special built-ins as regular, `-p`, `-v`, `-V`) and `type` |
 | `23_hash_ulimit.sh` | `hash` (statuses; the shell keeps no table) and `ulimit -f` (POSIX configuration) |
+| `24_arithmetic_errors.sh` | arithmetic errors (division by zero, malformed expressions) as expansion errors: diagnostic, status, a non-interactive shell exits, inside functions, conditions and pipelines |
 
 ## Interactive tests
 

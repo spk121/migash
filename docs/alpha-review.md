@@ -108,6 +108,22 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
+Arithmetic errors (2026-11-17): division or modulo by zero and a
+malformed expression are now expansion errors like `${var?word}` (XCU
+2.8.1): `arithmetic expression: division by zero: "1/0"` on standard
+error with the shell's name, the command is not run, `$?` is 2, a
+non-interactive shell exits and an interactive one goes on. Before, the
+expander logged an `[ERROR]` line, substituted 0 and the shell went on
+with status 0 (the division-by-zero part of item 27). Two general gaps
+found by the test and fixed for every expansion error: the message was
+lost when the error happened in a subshell (only the REPL printed it,
+and a subshell exits before getting there; it is now reported where it
+is detected), and a function body's shell error did not end the
+calling shell. `test/sh/24_arithmetic_errors.sh` (18 assertions checked
+against dash and bash) and a check in `prompt_pty.py` (25 checks) cover
+it; `$(( ))` and a non-numeric variable differ between dash and bash
+and are left alone.
+
 Interactive prompts (2026-11-15): `test/interactive/prompt_pty.py` (24
 checks on a pty, validated against dash and bash, which each fail one
 check where they depart from POSIX: dash exits on a failed `exec`, bash

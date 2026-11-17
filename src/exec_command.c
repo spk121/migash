@@ -105,14 +105,32 @@ static void append_system_quoted(string_t *cmdline, const string_t *word)
 #endif
 
 
-/* An expansion error (set -u, ${var:?word}) aborts the command: the message
- * is already on the executor. Status 2 like dash; a shell error so that a
+/* Print the shell error message set on the frame (with the shell's name,
+ * as the REPL would) and clear it. Done where the error is detected, so
+ * that a subshell or a function reports it before it unwinds. */
+static void report_shell_error(miga_frame_t *frame)
+{
+    if (!frame_has_error(frame))
+        return;
+    const string_t *msg = frame_get_error_message(frame);
+    fflush(stdout);
+    fprintf(stderr, "%s: %s\n",
+            frame->executor && frame->executor->shell_name
+                ? string_cstr(frame->executor->shell_name)
+                : "sh",
+            string_cstr(msg));
+    frame_clear_error(frame);
+}
+
+/* An expansion error (set -u, ${var:?word}, arithmetic) aborts the command:
+ * the message is reported here and the status is 2. Status 2 like dash; a shell error so that a
  * non-interactive shell stops (XCU 2.8.1). */
 static bool take_expansion_error(miga_frame_t *frame)
 {
     if (!frame->executor->expansion_error)
         return false;
     frame->executor->expansion_error = false;
+    report_shell_error(frame);
     return true;
 }
 
@@ -651,6 +669,9 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
             exec_frame_execute_result_t func_result =
                 exec_frame_execute_function_body(frame, func_body, func_args, func_redirs);
             cmd_exit_status = func_result.exit_status;
+            /* a shell error in the body (expansion error, ...) is one here too */
+            if (func_result.status == MIGA_EXEC_STATUS_ERROR)
+                status = MIGA_EXEC_STATUS_ERROR;
 
             /* 'exit' inside the function: keep unwinding past the caller */
             if (func_result.flow == MIGA_FRAME_FLOW_TOP)

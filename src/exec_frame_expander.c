@@ -864,10 +864,16 @@ string_t *expand_arithmetic(miga_frame_t *frame, const string_t *expression)
 
     if (result.failed)
     {
-        log_error("Arithmetic expansion error: %s",
-                  result.error ? string_cstr(result.error) : "unknown error");
+        /* An arithmetic error is an expansion error (XCU 2.8.1), reported
+         * and handled like ${var?word}: the command is not run, $? is 2, a
+         * non-interactive shell exits. */
+        const char *msg = result.error ? string_cstr(result.error) : "invalid expression";
+        char first = (char)tolower((unsigned char)msg[0]);
+        frame_set_error_printf(frame, "arithmetic expression: %c%s: \"%s\"", first, msg + 1,
+                               string_cstr(expression));
+        if (frame->executor)
+            frame->executor->expansion_error = true;
         arithmetic_result_free(&result);
-        frame->last_exit_status = 1;
         return string_create_from_cstr("0");
     }
 
