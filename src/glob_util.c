@@ -564,7 +564,7 @@ strlist_t *glob_util_expand_path(const string_t *pattern)
 strlist_t *glob_util_expand_path(const string_t *pattern)
 {
     (void)pattern;
-    log_warn("glob_util_expand_path: No glob implementation available in MIGA_ISO_C mode");
+    log_debug("glob_util_expand_path: no glob implementation in the ISO C configuration");
     return NULL;
 }
 #endif

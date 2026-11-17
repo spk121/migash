@@ -724,6 +724,12 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
     int fds[2];
     if (pipe(fds) == -1)
     {
+        fflush(stdout);
+        fprintf(stderr, "%s: command substitution: cannot create pipe: %s\n",
+                frame->executor && frame->executor->shell_name
+                    ? string_cstr(frame->executor->shell_name)
+                    : "sh",
+                strerror(errno));
         log_error("expand_command_subst: pipe failed: %s", strerror(errno));
         record_subst_status(frame, 1 << 8);
         return string_create();
@@ -737,6 +743,12 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
     pid_t pid = fork();
     if (pid < 0)
     {
+        fflush(stdout);
+        fprintf(stderr, "%s: command substitution: cannot fork: %s\n",
+                frame->executor && frame->executor->shell_name
+                    ? string_cstr(frame->executor->shell_name)
+                    : "sh",
+                strerror(errno));
         log_error("expand_command_subst: fork failed: %s", strerror(errno));
         close(fds[0]);
         close(fds[1]);
@@ -816,6 +828,11 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
     FILE *pipe = _popen(cmd, "r");
     if (pipe == NULL)
     {
+        fflush(stdout);
+        fprintf(stderr, "%s: command substitution: cannot run the command\n",
+                frame->executor && frame->executor->shell_name
+                    ? string_cstr(frame->executor->shell_name)
+                    : "sh");
         log_error("expand_command_subst: _popen failed for '%s'", cmd);
         record_subst_status(frame, 1);
         return string_create();

@@ -254,8 +254,9 @@ static variable_store_t *build_temp_store_for_siple_command(miga_frame_t *frame,
 
             if (err != VAR_STORE_ERROR_NONE)
             {
-                log_warn("Failed to add variable '%s' to temporary variable store",
-                         string_cstr(tok->assignment_name));
+                /* the assignment is lost: a bug or an exhausted resource */
+                log_error("Failed to add variable '%s' to temporary variable store (error %d)",
+                          string_cstr(tok->assignment_name), (int)err);
             }
         }
     }
@@ -954,8 +955,15 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         {
             if (runtime_redirs && runtime_redirs->count > 0)
             {
-                log_warn("Redirections for background commands are not supported on UCRT; ignoring "
-                         "redirections.");
+                /* a limit of this platform: fail the command rather than run
+                 * it with the redirections silently dropped */
+                exec_set_error_cstr(executor, "redirections of a background command are not "
+                                              "supported on this platform");
+                cmd_exit_status = 1;
+                for (int i = 0; argv[i]; i++)
+                    xfree(argv[i]);
+                xfree(argv);
+                goto done_execution;
             }
             log_debug("Preparing to execute external background command: %s", cmd_name);
             for (int i = 0; i < strlist_size(expanded_words); i++)

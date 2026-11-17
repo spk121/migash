@@ -293,11 +293,11 @@ lex_mode_t lexer_pop_mode(lexer_t *lx)
 {
     Expects_not_null(lx);
 
-    // Underflow returns LEX_NORMAL silently. This prevents crashes but masks
-    // push/pop mismatches; a log_warn here aids debugging during development.
+    // Underflow is a push/pop mismatch in the lexer, a bug: logged as an
+    // error; LEX_NORMAL is returned so that lexing can go on.
     if (lx->mode_stack.size == 0)
     {
-        log_warn("lexer_pop_mode: pop on empty mode stack — possible push/pop mismatch");
+        log_error("lexer_pop_mode: pop on empty mode stack (push/pop mismatch)");
         return LEX_NORMAL;
     }
     return lx->mode_stack.modes[--lx->mode_stack.size];

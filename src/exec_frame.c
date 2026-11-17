@@ -797,8 +797,12 @@ static exec_frame_execute_result_t handle_control_flow(miga_frame_t *frame,
             /* Pass it up to parent */
             return result;
         case EXEC_RETURN_DISALLOWED:
-            /* Error: shouldn't happen if AST validation is correct */
-            log_error("return: not valid in this context");
+            /* a user's mistake: a shell diagnostic, not a log line */
+            fflush(stdout);
+            fprintf(stderr, "%s: return: can only be used in a function or sourced script\n",
+                    frame->executor && frame->executor->shell_name
+                        ? string_cstr(frame->executor->shell_name)
+                        : "sh");
             return (exec_frame_execute_result_t){.exit_status = 1,
                                                  .has_exit_status = true,
                                                  .flow = MIGA_FRAME_FLOW_NORMAL,
@@ -850,8 +854,12 @@ static exec_frame_execute_result_t handle_control_flow(miga_frame_t *frame,
             /* Pass through unchanged */
             return result;
         case EXEC_LOOP_DISALLOWED:
-            /* Error: can't break/continue from here */
-            log_error("break/continue: not valid in this context");
+            /* a user's mistake: a shell diagnostic, not a log line */
+            fflush(stdout);
+            fprintf(stderr, "%s: break or continue: only meaningful in a loop\n",
+                    frame->executor && frame->executor->shell_name
+                        ? string_cstr(frame->executor->shell_name)
+                        : "sh");
             return (exec_frame_execute_result_t){.exit_status = 1,
                                                  .has_exit_status = true,
                                                  .flow = MIGA_FRAME_FLOW_NORMAL,

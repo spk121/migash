@@ -110,7 +110,7 @@ static parse_fd_result_t parse_fd_number(const char *str)
     /* Allow optional leading '+' */
     if (*str == '+')
     {
-        log_warn("parse_fd_number: FD string has leading '+': '%s'", str);
+        log_debug("parse_fd_number: FD string has leading '+': '%s'", str);
         str++;
     }
 
@@ -834,13 +834,8 @@ static int dup_to_safe_slot(int fd)
 
 miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exec_redirections_t *redirs)
 {
-    if (!frame || !redirs)
-    {
-        log_fatal(
-            "Contract violation at %s:%d - exec_apply_redirections_ucrt_c received NULL argument",
-            __FILE__, __LINE__);
-        return MIGA_EXEC_STATUS_ERROR;
-    }
+    Expects_not_null(frame);
+    Expects_not_null(redirs);
 
     if (redirs->count == 0)
         return MIGA_EXEC_STATUS_OK;
@@ -1395,9 +1390,13 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
         /* ISO C only supports the three standard streams (builtins use the context FILE* fields) */
         if (target_fd > 2)
         {
-            log_warn("ISO C redirection: fd %d not supported (only 0/1/2 work for builtins)",
-                     target_fd);
-            continue;
+            /* a limit of this configuration, reported to the user as a
+             * redirection error rather than silently skipped */
+            exec_set_error_printf(executor,
+                                  "redirection: file descriptor %d is not available in this "
+                                  "configuration (only 0, 1 and 2 are)",
+                                  target_fd);
+            goto error_restore;
         }
 
         FILE **target_ptr = NULL;
@@ -1570,7 +1569,11 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
             }
             else
             {
-                log_warn("ISO C: fd-to-fd source %d not a standard stream, ignoring", src.fd);
+                exec_set_error_printf(executor,
+                                      "redirection: file descriptor %d is not available in this "
+                                      "configuration (only 0, 1 and 2 are)",
+                                      src.fd);
+                goto error_restore;
             }
             break;
         }

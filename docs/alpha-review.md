@@ -124,7 +124,16 @@ and debug (a trace). The default is `none` in a release build and
 messages are printed whatever the threshold. The log functions are
 exported, so `main.c` and `shell.c` lost their stub macros that had
 discarded their messages. `test_logging_ctest` covers the
-configuration. The `log_init` leftover of item 22 is done.
+configuration. The `log_init` leftover of item 22 is done. The call
+sites were then audited against the policy: `return` and `break`
+outside their contexts and the fork, pipe and popen failures of a
+command substitution now reach the user as shell diagnostics (they were
+`[ERROR]` log lines, invisible in a release build); the ISO C
+redirection limits (descriptors above 2) are redirection errors instead
+of silently skipped redirections, as is a UCRT background command with
+redirections; a hand-written fatal became contract macros; the lexer's
+mode-stack underflow and a lost temporary assignment are errors; the
+`+` in a descriptor number and the ISO glob note are debug traces.
 
 jobs (2026-11-17): every shell now keeps a job table (job control
 proper, process groups and the terminal, stays interactive-only), so
