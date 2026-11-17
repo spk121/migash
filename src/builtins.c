@@ -3534,6 +3534,10 @@ int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
     if (!frame)
         return 1;
 
+    /* Collect the state of the children first, without reporting (that
+     * is this command's job), so that a job that has ended shows as Done. */
+    exec_reap_background_jobs(frame->executor, false);
+
     /* Check if there are any jobs */
     if (!exec_has_jobs(frame->executor))
     {
@@ -3611,6 +3615,11 @@ int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
         /* No job_ids specified - show all jobs */
         exec_print_all_jobs(frame->executor, format, builtin_stdout(frame));
     }
+
+    /* XCU jobs: a job that has been reported as finished is forgotten */
+    fflush(builtin_stdout(frame));
+    if (frame->executor->jobs)
+        job_store_remove_completed(frame->executor->jobs);
 
     return exit_status;
 }
@@ -4516,7 +4525,10 @@ int builtin_wait(miga_frame_t *frame, const strlist_t *args)
     /* No arguments: wait for all background jobs */
     if (argc == 1)
     {
-        return wait_for_all(frame);
+        int all = wait_for_all(frame);
+        if (frame->executor && frame->executor->jobs)
+            job_store_forget_completed(frame->executor->jobs);
+        return all;
     }
 
     /* Parse options (wait has no standard options, but handle -- for consistency) */
@@ -4584,6 +4596,9 @@ int builtin_wait(miga_frame_t *frame, const strlist_t *args)
         }
     }
 
+    /* the jobs waited for are finished and forgotten */
+    if (frame->executor && frame->executor->jobs)
+        job_store_forget_completed(frame->executor->jobs);
     return exit_status;
 }
 

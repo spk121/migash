@@ -209,6 +209,12 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
     if (!store)
         return -1;
 
+    /* With no jobs left the numbering starts over at 1, as in other shells */
+
+    if (store->job_count == 0)
+
+        store->next_job_id = 1;
+
     int job_id = store->next_job_id++;
     job_t *new_job = job_create(job_id, command_line, is_background);
 
@@ -516,6 +522,16 @@ bool job_store_remove(job_store_t *store, int job_id)
     }
 
     return false;
+}
+
+size_t job_store_forget_completed(job_store_t *store)
+{
+    if (!store)
+        return 0;
+    for (job_t *job = store->jobs; job; job = job->next)
+        if (job_is_completed(job))
+            job->is_notified = true;
+    return job_store_remove_completed(store);
 }
 
 size_t job_store_remove_completed(job_store_t *store)

@@ -108,6 +108,18 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
+jobs (2026-11-17): every shell now keeps a job table (job control
+proper, process groups and the terminal, stays interactive-only), so
+`jobs` works in scripts and `-c` strings. A non-interactive shell keeps
+a finished job in the table until `jobs` reports it or `wait` collects
+it (an interactive shell reports it before the next prompt, as before);
+`jobs` collects the children's states first so that an ended job shows
+as `Done`. The output is the POSIX format: `[1] + Running  command`,
+`Done(3)` for a non-zero status, `-l` with the process ID, `-p` the
+process ID alone (it printed `PGID:` labels before). `test/sh/27_jobs.sh`
+(13 assertions checked against dash and bash) covers it. With `$PPID`
+and `$LINENO` done, item 30 is fixed.
+
 LINENO (2026-11-17): the executor already set `LINENO` before each
 command from the AST node's line, but no node ever had one: the
 lowering never recorded token locations, and the lexer numbered every

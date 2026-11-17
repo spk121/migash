@@ -53,6 +53,7 @@ This test suite validates that a shell correctly implements the three quoting me
 | `24_arithmetic_errors.sh` | arithmetic errors (division by zero, malformed expressions) as expansion errors: diagnostic, status, a non-interactive shell exits, inside functions, conditions and pipelines |
 | `25_ppid.sh` | the `PPID` variable: the parent's process ID, kept in subshells, set regardless of the environment, not exported |
 | `26_lineno.sh` | the `LINENO` variable: script lines (blank lines, functions, loop bodies, a command over several lines), `-c` strings, sourced files, standard input |
+| `27_jobs.sh` | the `jobs` utility in a non-interactive shell: running and finished jobs, `-l`, `-p`, job IDs (`%1`, `%%`, unknown), a reported job is forgotten |
 
 ## Interactive tests
 

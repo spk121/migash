@@ -1003,13 +1003,13 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     e->sigchld_received = false;
     memset((void *)e->trap_pending, 0, sizeof(e->trap_pending));
 
-    if (!e->job_control_disabled)
-    {
-        if (e->is_interactive)
-            e->jobs = job_store_create();
-        else
-            e->job_control_disabled = true;
-    }
+    /* Every shell keeps a job table: "jobs", "wait %n" and "$!" work in
+     * scripts too (XCU jobs). Job control proper (process groups, the
+     * terminal) is only enabled for interactive shells. */
+    if (!e->jobs)
+        e->jobs = job_store_create();
+    if (!e->job_control_disabled && !e->is_interactive)
+        e->job_control_disabled = true;
 
 #ifdef MIGA_POSIX_API
     if (!e->pgid_valid)
@@ -3560,6 +3560,64 @@ int exec_parse_job_id(const miga_exec_t* executor, const string_t* spec)
     return exec_parse_job_id_cstr(executor, string_cstr(spec));
 }
 
+/* The state column of a "jobs" line (XCU jobs): Running, Done, Done(code)
+ * for a non-zero exit status, Stopped, or the signal that ended the job. */
+static void job_state_text(const job_t *job, char *buf, size_t size)
+{
+    const process_t *last = job->processes;
+    while (last && last->next)
+        last = last->next;
+    switch (job->state)
+    {
+    case JOB_DONE:
+        if (last && last->exit_status != 0)
+            snprintf(buf, size, "Done(%d)", last->exit_status);
+        else
+            snprintf(buf, size, "Done");
+        break;
+    case JOB_TERMINATED:
+        snprintf(buf, size, "Terminated");
+        break;
+    default:
+        snprintf(buf, size, "%s", job_state_to_string(job->state));
+        break;
+    }
+}
+
+/* One line of "jobs" output in the POSIX format:
+ *   default  "[%d] %c %s %s\n"      job number, current marker, state, command
+ *   -l       "[%d] %c %d %s %s\n"   with the process ID
+ *   -p       "%d\n"                 the process ID only */
+static void print_job_line(const miga_exec_t *executor, job_t *job,
+                           exec_jobs_format_t format, FILE *output)
+{
+    const job_t *current = job_store_get_current(executor->jobs);
+    const job_t *previous = job_store_get_previous(executor->jobs);
+    char marker = job == current ? '+' : (job == previous ? '-' : ' ');
+    long pid = job->processes ? (long)job->processes->pid : (long)job->pgid;
+    const char *command = job->command_line ? string_cstr(job->command_line) : "";
+    char state[32];
+    job_state_text(job, state, sizeof state);
+
+    switch (format)
+    {
+    case EXEC_JOBS_FORMAT_PID_ONLY:
+        fprintf(output, "%ld\n", pid);
+        break;
+    case EXEC_JOBS_FORMAT_LONG:
+        fprintf(output, "[%d] %c %ld %-24s %s\n", job->job_id, marker, pid, state, command);
+        break;
+    case EXEC_JOBS_FORMAT_DEFAULT:
+    default:
+        fprintf(output, "[%d] %c %-24s %s\n", job->job_id, marker, state, command);
+        break;
+    }
+    /* a finished job has now been reported; job_store_remove_completed()
+     * forgets reported jobs */
+    if (job->state == JOB_DONE || job->state == JOB_TERMINATED)
+        job->is_notified = true;
+}
+
 /**
  * Print a single job.
  *
@@ -3569,34 +3627,13 @@ bool exec_print_job_by_id(const miga_exec_t *executor, int job_id, exec_jobs_for
                           FILE *output)
 {
     Expects_not_null(executor);
-    //         const char *state_str = job_state_to_string(job->state);
-    // fprintf(output, "[%d] %s\t%s\n", job->job_id, state_str,
-    //        job->command_line ? string_cstr(job->command_line) : "(no command)");
     job_t *job = job_store_find(executor->jobs, job_id);
     if (!job)
     {
         exec_set_error_printf((miga_exec_t *)executor, "No such job: %d", job_id);
         return false;
     }
-    fprintf(output, "[%d] ", job->job_id);
-    switch (format)
-    {
-    case EXEC_JOBS_FORMAT_DEFAULT:
-        fprintf(output, "%s\t%s\n", job_state_to_string(job->state),
-                job->command_line ? string_cstr(job->command_line) : "(no command)");
-        break;
-    case EXEC_JOBS_FORMAT_LONG:
-        fprintf(output, "%s\tPGID: %d\t%s\n", job_state_to_string(job->state), job->pgid,
-                job->command_line ? string_cstr(job->command_line) : "(no command)");
-        break;
-    case EXEC_JOBS_FORMAT_PID_ONLY:
-        fprintf(output, "PGID: %d\n", job->pgid);
-        break;
-    default:
-        fprintf(output, "%s\t%s\n", job_state_to_string(job->state),
-                job->command_line ? string_cstr(job->command_line) : "(no command)");
-        break;
-    }
+    print_job_line(executor, job, format, output);
     return true;
 }
 
@@ -3609,28 +3646,8 @@ void exec_print_all_jobs(const miga_exec_t *executor, exec_jobs_format_t format,
     Expects_not_null(output);
 
     job_store_t *store = executor->jobs;
-    for (const job_t *job = store->jobs; job; job = job->next)
-    {
-        const char *state_str = job_state_to_string(job->state);
-        switch (format)
-        {
-        case EXEC_JOBS_FORMAT_DEFAULT:
-            fprintf(output, "[%d] %s\t%s\n", job->job_id, state_str,
-                    job->command_line ? string_cstr(job->command_line) : "(no command)");
-            break;
-        case EXEC_JOBS_FORMAT_LONG:
-            fprintf(output, "[%d] %s\tPGID: %d\t%s\n", job->job_id, state_str, job->pgid,
-                    job->command_line ? string_cstr(job->command_line) : "(no command)");
-            break;
-        case EXEC_JOBS_FORMAT_PID_ONLY:
-            fprintf(output, "[%d] PGID: %d\n", job->job_id, job->pgid);
-            break;
-
-        default:
-            fprintf(output, "[%d] %s\t%s\n", job->job_id, state_str,
-                    job->command_line ? string_cstr(job->command_line) : "(no command)");
-        }
-    }
+    for (job_t *job = store->jobs; job; job = job->next)
+        print_job_line(executor, job, format, output);
 }
 
 /**
@@ -3649,7 +3666,7 @@ void exec_print_jobs_verbose(const miga_exec_t *executor, FILE *output)
 bool exec_has_jobs(const miga_exec_t *executor)
 {
     Expects_not_null(executor);
-    return job_store_count(executor->jobs) > 0;
+    return executor->jobs && job_store_count(executor->jobs) > 0;
 }
 
 /* ============================================================================
@@ -3678,12 +3695,14 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
             job_store_set_process_state(executor->jobs, pid, JOB_DONE, exit_status);
         any_reaped = true;
     }
+    /* An interactive shell reports finished jobs before the next prompt and
+     * forgets them; otherwise they stay in the table until "jobs" reports
+     * them or "wait" collects them (XCU jobs). */
     if (any_reaped && notify)
     {
         job_store_print_completed_jobs(executor->jobs, stdout);
-    }
-    if (any_reaped)
         job_store_remove_completed(executor->jobs);
+    }
 #elifdef MIGA_UCRT_API
     bool any_completed = false;
     job_store_t *store = executor->jobs;
@@ -3715,8 +3734,9 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
         }
     }
     if (any_completed && notify)
+    {
         job_store_print_completed_jobs(executor->jobs, stdout);
-    if (any_completed)
         job_store_remove_completed(executor->jobs);
+    }
 #endif
 }

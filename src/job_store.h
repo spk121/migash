@@ -286,6 +286,13 @@ bool job_store_remove(job_store_t *store, int job_id);
  */
 size_t job_store_remove_completed(job_store_t *store);
 
+/**
+ * Remove every finished job, reported or not: what "wait" has collected is
+ * no longer a job.
+ * @return Number of jobs removed.
+ */
+size_t job_store_forget_completed(job_store_t *store);
+
 // ============================================================================
 // Polling API (for Win32/UCRT)
 // ============================================================================
