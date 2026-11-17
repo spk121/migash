@@ -459,6 +459,7 @@ set(MIGASH_UNIT_TEST_SOURCES
     test/mgsh/test_lexer_heredoc_context_ctest.c
     test/mgsh/test_lexer_param_exp_ctest.c
     test/mgsh/test_lexer_quotes_ctest.c
+    test/mgsh/test_logging_ctest.c
     test/mgsh/test_parser_ctest.c
     test/mgsh/test_parser_gnode_ctest.c
     test/mgsh/test_pattern_removal_ctest.c

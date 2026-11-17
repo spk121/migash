@@ -6,12 +6,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "miga/api.h"
+
 /**
  * @file logging.h
- * @brief Logging and precondition checking utilities
+ * @brief Developer logging and precondition checking
  *
- * This header provides a logging system with multiple levels and precondition
- * checking macros that log failures with detailed information.
+ * The log_* functions are for the people working on the shell, not for its
+ * users: a problem a user should know about is reported through the shell's
+ * own diagnostics (frame_set_error_printf(), a message with the shell's
+ * name on standard error) and never only logged. docs/logging.md has the
+ * policy; in short:
+ *
+ *   fatal  an internal invariant is broken; always printed, then abort()
+ *          (the Expects_* macros)
+ *   error  a state the shell does not understand or a failure it could not
+ *          recover from cleanly: a bug or an exhausted resource
+ *   warn   something unexpected that the shell recovered from by itself
+ *   debug  a trace of internal actions and state, for reading with the
+ *          source at hand
+ *
+ * Configuration comes from the environment, read by log_init() in main():
+ * MIGASH_LOG_LEVEL (debug, warn, error, fatal, none; default none, or warn
+ * in a debug build) and MIGASH_LOG_ABORT_LEVEL (warn, error, fatal, none;
+ * default fatal).
  */
 
 /**
@@ -28,14 +46,23 @@ typedef enum
 } LogLevel;
 
 /**
- * @brief Initialize the logging system
+ * @brief Initialize the logging system from the environment
  *
- * Reads the LOG_LEVEL environment variable to set the logging threshold.
- * Valid values are "DEBUG", "WARN", "ERROR", "FATAL", or "NONE".
- * Also reads LOG_ABORT_LEVEL to determine if WARN or ERROR should abort.
- * Should be called once at program startup.
+ * MIGASH_LOG_LEVEL sets the threshold ("debug", "warn", "error", "fatal" or
+ * "none", case does not matter; anything else leaves the default), and
+ * MIGASH_LOG_ABORT_LEVEL the level from which a message aborts the process
+ * ("warn", "error", "fatal" or "none"). Called once, by main().
  */
-void log_init(void);
+MIGA_API void log_init(void);
+
+/**
+ * The threshold used when MIGASH_LOG_LEVEL is not set: LOG_LEVEL_NONE, or
+ * LOG_LEVEL_WARN in a debug build (MIGA_DEBUG_BUILD).
+ */
+MIGA_API LogLevel log_default_level(void);
+
+/** The level from which a message aborts the process. */
+MIGA_API LogLevel log_get_abort_level(void);
 
 /**
  * Returns the current log level.
@@ -47,10 +74,10 @@ LogLevel log_level(void);
  * threshold.
  * Messages below this threshold are suppressed.
  */
-void log_set_level(LogLevel lv);
+MIGA_API void log_set_level(LogLevel lv);
 
 /** Current logging threshold (messages below it are discarded). */
-LogLevel log_get_level(void);
+MIGA_API LogLevel log_get_level(void);
 
 /**
  * @brief Disable abort on fatal messages
@@ -66,7 +93,7 @@ void log_disable_abort(void);
  * Messages at or above this level will trigger abort().
  * Use LOG_LEVEL_NONE to disable aborting entirely.
  */
-void log_set_abort_level(LogLevel lv);
+MIGA_API void log_set_abort_level(LogLevel lv);
 
 /**
  * @brief Setup for fatal "try" region (internal use).
@@ -100,28 +127,28 @@ void log_fatal_try_end(void);
  * @param format Format string (printf-style)
  * @param ... Variable arguments for the format string
  */
-void log_debug(const char *format, ...);
+MIGA_API void log_debug(const char *format, ...);
 
 /**
  * @brief Log a warning message
  * @param format Format string (printf-style)
  * @param ... Variable arguments for the format string
  */
-void log_warn(const char *format, ...);
+MIGA_API void log_warn(const char *format, ...);
 
 /**
  * @brief Log an error message
  * @param format Format string (printf-style)
  * @param ... Variable arguments for the format string
  */
-void log_error(const char *format, ...);
+MIGA_API void log_error(const char *format, ...);
 
 /**
  * @brief Log a fatal message and abort
  * @param format Format string (printf-style)
  * @param ... Variable arguments for the format string
  */
-void log_fatal(const char *format, ...);
+MIGA_API void log_fatal(const char *format, ...);
 
 // Existing recoverable precondition helpers
 

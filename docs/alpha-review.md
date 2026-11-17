@@ -111,6 +111,21 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
+Developer logging (2026-11-17): `log_init()` is called from `main()`
+and reads `MIGASH_LOG_LEVEL` and `MIGASH_LOG_ABORT_LEVEL` (the `LOG_LEVEL`
+name belongs to other programs the shell runs; POSIX reserves nothing of
+the kind for the shell). The policy is in `docs/logging.md`: the log_*
+functions are for the shell's developers, a user-visible problem is
+always a shell diagnostic, and the levels mean fatal (invariant broken,
+always printed, abort), error (a state the shell does not understand or
+a failure it could not recover from), warn (unexpected but recovered)
+and debug (a trace). The default is `none` in a release build and
+`warn` in a debug build, so users never see developer output; fatal
+messages are printed whatever the threshold. The log functions are
+exported, so `main.c` and `shell.c` lost their stub macros that had
+discarded their messages. `test_logging_ctest` covers the
+configuration. The `log_init` leftover of item 22 is done.
+
 jobs (2026-11-17): every shell now keeps a job table (job control
 proper, process groups and the terminal, stays interactive-only), so
 `jobs` works in scripts and `-c` strings. A non-interactive shell keeps

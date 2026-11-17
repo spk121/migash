@@ -4,6 +4,7 @@
 
 #include <setjmp.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include "logging.h"
@@ -19,8 +20,14 @@
 // Constants
 #define LOG_MESSAGE_BUFFER_SIZE 1024
 
-// Define the global threshold
-LogLevel g_log_threshold = LOG_LEVEL_ERROR; // Default to ERROR level
+// The threshold: developer output is off in a release build; a debug build
+// shows warnings and errors (docs/logging.md).
+#ifdef MIGA_DEBUG_BUILD
+#define LOG_DEFAULT_LEVEL LOG_LEVEL_WARN
+#else
+#define LOG_DEFAULT_LEVEL LOG_LEVEL_NONE
+#endif
+LogLevel g_log_threshold = LOG_DEFAULT_LEVEL;
 
 // Define the abort level
 static LogLevel g_log_abort_level = LOG_LEVEL_FATAL; // Default to no aborting, except for FATAL
@@ -34,7 +41,8 @@ static int g_prev_abort_level_valid = 0;
 // Internal logging function
 static void log_message(LogLevel level, const char *level_str, const char *format, va_list args)
 {
-    if (level < g_log_threshold)
+    /* A fatal message is the last word before abort(): always printed. */
+    if (level < g_log_threshold && level != LOG_LEVEL_FATAL)
     {
         if (level >= g_log_abort_level && level != LOG_LEVEL_NONE)
         {
@@ -116,66 +124,51 @@ static int strcompare(const char *s1, const char *s2)
 #endif
 }
 
-// Initialization function checking environment variables
+static bool parse_level(const char *text, LogLevel *out)
+{
+    static const struct
+    {
+        const char *name;
+        LogLevel level;
+    } names[] = {{"debug", LOG_LEVEL_DEBUG},
+                 {"warn", LOG_LEVEL_WARN},
+                 {"error", LOG_LEVEL_ERROR},
+                 {"fatal", LOG_LEVEL_FATAL},
+                 {"none", LOG_LEVEL_NONE}};
+    for (size_t k = 0; k < sizeof names / sizeof names[0]; k++)
+    {
+        if (strcompare(text, names[k].name) == 0)
+        {
+            *out = names[k].level;
+            return true;
+        }
+    }
+    return false;
+}
+
+LogLevel log_default_level(void)
+{
+    return LOG_DEFAULT_LEVEL;
+}
+
+// Initialization from the environment (docs/logging.md)
 void log_init(void)
 {
-    // Set logging threshold
-    const char *env_level = getenv("LOG_LEVEL");
+    LogLevel lv;
+    const char *env_level = getenv("MIGASH_LOG_LEVEL");
+    g_log_threshold = LOG_DEFAULT_LEVEL;
+    if (env_level != NULL && parse_level(env_level, &lv))
+        g_log_threshold = lv;
 
-    if (env_level != NULL)
-    {
-        if (strcompare(env_level, "DEBUG") == 0)
-        {
-            g_log_threshold = LOG_LEVEL_DEBUG;
-        }
-        else if (strcompare(env_level, "WARN") == 0)
-        {
-            g_log_threshold = LOG_LEVEL_WARN;
-        }
-        else if (strcompare(env_level, "ERROR") == 0)
-        {
-            g_log_threshold = LOG_LEVEL_ERROR;
-        }
-        else if (strcompare(env_level, "FATAL") == 0)
-        {
-            g_log_threshold = LOG_LEVEL_FATAL;
-        }
-        else if (strcompare(env_level, "NONE") == 0)
-        {
-            g_log_threshold = LOG_LEVEL_NONE;
-        }
-    }
-    else
-    {
-        g_log_threshold = LOG_LEVEL_ERROR;
-    }
+    const char *env_abort_level = getenv("MIGASH_LOG_ABORT_LEVEL");
+    g_log_abort_level = LOG_LEVEL_FATAL;
+    if (env_abort_level != NULL && parse_level(env_abort_level, &lv) && lv != LOG_LEVEL_DEBUG)
+        g_log_abort_level = lv;
+}
 
-    // Set abort level
-    const char *env_abort_level = getenv("LOG_ABORT_LEVEL");
-
-    if (env_abort_level != NULL)
-    {
-        if (strcompare(env_abort_level, "WARN") == 0)
-        {
-            g_log_abort_level = LOG_LEVEL_WARN;
-        }
-        else if (strcompare(env_abort_level, "ERROR") == 0)
-        {
-            g_log_abort_level = LOG_LEVEL_ERROR;
-        }
-        else if (strcompare(env_abort_level, "FATAL") == 0)
-        {
-            g_log_abort_level = LOG_LEVEL_FATAL;
-        }
-        else if (strcompare(env_abort_level, "NONE") == 0)
-        {
-            g_log_abort_level = LOG_LEVEL_NONE;
-        }
-    }
-    else
-    {
-        g_log_abort_level = LOG_LEVEL_FATAL;
-    }
+LogLevel log_get_abort_level(void)
+{
+    return g_log_abort_level;
 }
 
 LogLevel log_level(void)

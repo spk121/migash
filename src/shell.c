@@ -16,8 +16,7 @@
 /* This is not part of libmigash, so only use the public API header. */
 #include "libmigash.h"
 
-/* FIXME: figure out logging */
-#define log_fatal(...) while(false) {}
+#include "logging.h" /* exported */
 
 struct shell_t
 {

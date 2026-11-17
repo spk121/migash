@@ -42,6 +42,7 @@ check_PROGRAMS = \
     test_lexer_heredoc_context_ctest \
     test_lexer_param_exp_ctest \
     test_lexer_quotes_ctest \
+    test_logging_ctest \
     test_parser_ctest \
     test_parser_gnode_ctest \
     test_pattern_removal_ctest \
@@ -118,6 +119,10 @@ test_lexer_param_exp_ctest_LDADD = $(TEST_LDADD)
 test_lexer_quotes_ctest_SOURCES = test/mgsh/test_lexer_quotes_ctest.c
 test_lexer_quotes_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
 test_lexer_quotes_ctest_LDADD = $(TEST_LDADD)
+
+test_logging_ctest_SOURCES = test/mgsh/test_logging_ctest.c
+test_logging_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
+test_logging_ctest_LDADD = $(TEST_LDADD)
 
 test_parser_ctest_SOURCES = test/mgsh/test_parser_ctest.c
 test_parser_ctest_CPPFLAGS = $(TEST_CPPFLAGS)

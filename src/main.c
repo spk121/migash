@@ -22,8 +22,7 @@
 
 /* Only use non-library headers */
 #include "shell.h"
-
-#define log_debug(...) while(false) {} // FIXME: figure out logging
+#include "logging.h" /* exported: log_init() and the log_* functions */
 
 typedef enum
 {
@@ -188,9 +187,9 @@ int main(int argc, char **argv)
 #endif
 
     miga_arena_init();
-    // FIXME: do I need to add a function to the library to set up
-    // the logger?
-    // log_init();
+    /* Developer logging, from MIGASH_LOG_LEVEL and MIGASH_LOG_ABORT_LEVEL
+     * (docs/logging.md). Off by default in a release build. */
+    log_init();
     setlocale(LC_ALL, "");
 #ifndef MIGA_POSIX_API
     /* Without file descriptors the shell reads its input through stdio. An
@@ -386,55 +385,54 @@ int main(int argc, char **argv)
         arg_array = strlist_to_cstr_array(arguments, NULL);
 
     /* Print parsed results */
-    log_debug("=== Parsed Shell Options ===\n");
-    log_debug("Flags:\n");
-    log_debug("  -a (allexport):  %s\n", flag_a ? "set" : "unset");
-    log_debug("  -b:              %s\n", flag_b ? "set" : "unset");
-    log_debug("  -C (noclobber):  %s\n", flag_C ? "set" : "unset");
-    log_debug("  -e (errexit):    %s\n", flag_e ? "set" : "unset");
-    log_debug("  -f (noglob):     %s\n", flag_f ? "set" : "unset");
-    log_debug("  -i (interactive):%s\n", flag_i ? "set" : "unset");
-    log_debug("  -m (monitor):    %s\n", flag_m ? "set" : "unset");
-    log_debug("  -n (noexec):     %s\n", flag_n ? "set" : "unset");
-    log_debug("  -u (nounset):    %s\n", flag_u ? "set" : "unset");
-    log_debug("  -v (verbose):    %s\n", flag_v ? "set" : "unset");
-    log_debug("  -x (xtrace):     %s\n", flag_x ? "set" : "unset");
+    log_debug("main: parsed shell options");
+    log_debug("  -a (allexport):  %s", flag_a ? "set" : "unset");
+    log_debug("  -b:              %s", flag_b ? "set" : "unset");
+    log_debug("  -C (noclobber):  %s", flag_C ? "set" : "unset");
+    log_debug("  -e (errexit):    %s", flag_e ? "set" : "unset");
+    log_debug("  -f (noglob):     %s", flag_f ? "set" : "unset");
+    log_debug("  -i (interactive):%s", flag_i ? "set" : "unset");
+    log_debug("  -m (monitor):    %s", flag_m ? "set" : "unset");
+    log_debug("  -n (noexec):     %s", flag_n ? "set" : "unset");
+    log_debug("  -u (nounset):    %s", flag_u ? "set" : "unset");
+    log_debug("  -v (verbose):    %s", flag_v ? "set" : "unset");
+    log_debug("  -x (xtrace):     %s", flag_x ? "set" : "unset");
 
     int o_count = strlist_size(o_opts);
     if (o_count > 0)
     {
-        log_debug("\n-o options:\n");
+        log_debug("-o options:");
         for (int j = 0; j < o_count; j++)
         {
-            log_debug("  %s\n", string_cstr(strlist_at(o_opts, j)));
+            log_debug("  %s", string_cstr(strlist_at(o_opts, j)));
         }
     }
 
-    log_debug("\nMode:\n");
+    log_debug("Mode:");
     if (flag_c)
     {
-        log_debug("  -c mode (command string)\n");
-        log_debug("  Command string: %s\n", command_string);
+        log_debug("  -c mode (command string)");
+        log_debug("  Command string: %s", command_string);
         if (command_name)
-            log_debug("  Command name: %s\n", command_name);
+            log_debug("  Command name: %s", command_name);
     }
     else if (flag_s)
     {
-        log_debug("  -s mode (stdin)\n");
+        log_debug("  -s mode (stdin)");
     }
     else
     {
-        log_debug("  Normal mode\n");
+        log_debug("  Normal mode");
         if (command_file)
-            log_debug("  Command file: %s\n", command_file);
+            log_debug("  Command file: %s", command_file);
     }
 
     if (arg_count > 0)
     {
-        log_debug("\nArguments:\n");
+        log_debug("Arguments:");
         for (int j = 0; j < arg_count; j++)
         {
-            log_debug("  [%d]: %s\n", j, string_cstr(strlist_at(arguments, j)));
+            log_debug("  [%d]: %s", j, string_cstr(strlist_at(arguments, j)));
         }
     }
 
