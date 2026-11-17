@@ -57,10 +57,13 @@ and were corrected; the rest were real bugs, now fixed:
   command position), and `!` was applied in every pipeline child as well
   as by the parent.
 
-Known gaps noticed but not yet addressed: `${x:-~}` does not tilde-expand
-the word (dash does); the `read` builtin is still missing (item 17);
-`wait` with no operands returns at once instead of waiting for the
-background jobs (`wait $!` works).
+Known gaps noticed at the time, all addressed since: `${x:-~}` did not
+tilde-expand the word (fixed 2026-11-17: the modifier word now goes
+through the same path as any unquoted word, tilde expansion included,
+with 15 assertions added to `13_edge_cases.sh`; inside double quotes the
+word stays literal, as in dash and bash); the `read` builtin was missing
+(item 17); `wait` with no operands returned at once (fixed with the shell
+options).
 
 Traps (2026-11-14): implemented; `test/sh/18_traps_signals.sh` (33
 assertions checked against dash and bash) passes completely and is no

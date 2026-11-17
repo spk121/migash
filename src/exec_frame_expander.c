@@ -355,7 +355,9 @@ static string_t *expand_modifier_word(miga_frame_t *frame, const part_t *part)
     if (st == LEX_OK && token_list_size(tokens) >= 1 &&
         token_get_type(token_list_get(tokens, 0)) == TOKEN_WORD)
     {
-        result = expand_parts_to_string(frame, token_get_parts_const(token_list_get(tokens, 0)));
+        /* like any unquoted word: tilde expansion first (XCU 2.6.2), then
+         * the expansions, no field splitting */
+        result = expand_word_nosplit(frame, token_list_get(tokens, 0));
     }
     token_list_destroy(&tokens);
     if (!result)

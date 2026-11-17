@@ -182,4 +182,30 @@ assert_eq "24" "$result" "adjacent arithmetic expansions"
 result=$((1+1))$((2+2))
 assert_eq "24" "$result" "unquoted adjacent arithmetic"
 
+
+# --- tilde expansion in the word of a parameter expansion (XCU 2.6.2) --------
+# "word shall be subjected to tilde expansion, parameter expansion, command
+# substitution, and arithmetic expansion". Checked against dash and bash;
+# cases where they differ (a tilde after a colon in the word) are left out.
+unset tm_unset
+tm_set=1
+assert_eq "$HOME" ${tm_unset:-~} "the word of \${x:-word} is tilde-expanded"
+assert_eq "$HOME/a" ${tm_unset:-~/a} "a tilde-prefix with a path after it"
+assert_eq "$HOME" ${tm_unset-~} "the word of \${x-word} too"
+assert_eq "$HOME" ${tm_set:+~} "the word of \${x:+word} too"
+assert_eq "$HOME" ${tm_unset:=~} "\${x:=word} substitutes the expanded word"
+assert_eq "$HOME" "$tm_unset" "... and assigns it"
+unset tm_unset
+assert_eq "$HOME/b" ${tm_unset:-~}/b "text after the expansion is kept"
+assert_eq "${HOME}x" ${tm_unset:-~}x "text right after the expansion is kept"
+assert_eq "~" ${tm_unset:-\~} "a backslash-quoted tilde in the word is literal"
+assert_eq "~" ${tm_unset:-"~"} "a double-quoted tilde in the word is literal"
+assert_eq "~" "${tm_unset:-~}" "inside double quotes the word is not tilde-expanded"
+assert_eq "a~" ${tm_unset:-a~} "a tilde not at the start of the word is literal"
+assert_eq "~" ${tm_unset:-~$tm_unset} "a tilde followed by an expansion is not a tilde-prefix"
+assert_eq ~root ${tm_unset:-~root} "~user in the word"
+tm_v=${tm_unset:-~}
+assert_eq "$HOME" "$tm_v" "the expanded word as an assignment value"
+unset tm_unset tm_set tm_v
+
 finish_tests
