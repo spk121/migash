@@ -151,6 +151,12 @@ void lexer_set_line_no(lexer_t *lx, int line_no)
     lx->col_no = 1;
 }
 
+bool lexer_has_input(const lexer_t *lx)
+{
+    Expects_not_null(lx);
+    return lx->input && string_length(lx->input) > 0;
+}
+
 void lexer_drop_processed_input(lexer_t *lx)
 {
     Expects_not_null(lx);

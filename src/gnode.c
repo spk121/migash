@@ -135,6 +135,13 @@ gnode_t *g_node_create_string(gnode_type_t type, const string_t *str)
  */
 gnode_payload_t gnode_get_payload_type(gnode_type_t type)
 {
+    /* The parser keeps the function name as its token (gparse_function_definition
+     * stores a token_clone in data.token), so G_FNAME is a token node: with the
+     * string payload declared here before, g_node_destroy() freed the token
+     * through string_destroy(), reading the token's type and line as a pointer. */
+    if (type == G_FNAME)
+        return GNODE_PAYLOAD_TOKEN;
+
     switch (type)
     {
     /* Token wrappers - leaf nodes that wrap tokens */

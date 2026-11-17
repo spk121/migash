@@ -2775,6 +2775,11 @@ miga_exec_status_t exec_frame_string_core(miga_frame_t *frame, const char *input
     log_debug("exec_frame_string_core: Processing line %d: %.*s", session->line_num,
               (int)strcspn(input, "\r\n"), input);
 
+    /* A command that starts on this line is numbered from the stream's line
+     * count, so that $LINENO is the line within the script; a command
+     * continued from earlier lines keeps the numbering it has. */
+    if (!lexer_has_input(lx))
+        lexer_set_line_no(lx, session->line_num);
     lexer_append_input_cstr(lx, input);
 
     token_list_t *raw_tokens = token_list_create();

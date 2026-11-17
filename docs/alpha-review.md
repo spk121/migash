@@ -108,6 +108,25 @@ grew six cases for the constructs that hide a parenthesis; the output
 of a 13-probe set matches dash exactly, including `$(echo case)`, which
 the old scanner mis-read as the start of a `case`.
 
+LINENO (2026-11-17): the executor already set `LINENO` before each
+command from the AST node's line, but no node ever had one: the
+lowering never recorded token locations, and the lexer numbered every
+command from 1. A simple command now carries the line and column of
+its first word or assignment, and the string core numbers a command
+that starts on a line from the stream's line count (a continued command
+keeps its numbering), so `$LINENO` is the line within the script, a
+`-c` string, a sourced file or standard input, also inside functions and
+loop bodies and for a command spread over several lines (its first
+line). `test/sh/26_lineno.sh` (12 assertions) is checked against bash
+--posix only: this dash has no `LINENO`. Found by it: the parser keeps a
+function's name as a token in a `G_FNAME` node whose payload the gnode
+table declared a string, so every function definition was destroyed
+through `string_destroy()`, which read the token's type and line as the
+pointer to free; with line numbers of 1 the bogus pointer had slipped
+past the allocator's check, with real line numbers it aborted. The node
+is a token node now. With this the `$LINENO` part of item 30 is fixed;
+`jobs` remains.
+
 PPID (2026-11-17): set at initialization to the parent process ID in
 the POSIX configuration (the executor already recorded it; the variable
 was never created), whatever the environment holds, not exported; a

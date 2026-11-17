@@ -80,6 +80,13 @@ void lexer_append_input(lexer_t *lx, const string_t *input);
  */
 lexer_t *lexer_append_input_cstr(lexer_t *lx, const char *input);
 
+/* Line numbering: the number the next line of input gets (1 after a reset),
+ * so that token locations count from the script's line rather than the
+ * current command's; lexer_has_input() tells whether input is already held
+ * (a command continued from an earlier line keeps its numbering). */
+void lexer_set_line_no(lexer_t *lx, int line_no);
+bool lexer_has_input(const lexer_t *lx);
+
 /* ============================================================================
  * Tokenization — the main workhorse
  * ============================================================================ */

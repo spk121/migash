@@ -721,7 +721,35 @@ static ast_node_t *lower_simple_command(const gnode_t *g)
         }
     }
 
-    return ast_create_simple_command(words, redirs, assignments);
+    /* The node's location is that of its first word or assignment: $LINENO
+     * is set from it before the command runs (XBD 8.1, LINENO). */
+    int first_line = 0, first_col = 0, last_line = 0, last_col = 0;
+    for (int pass = 0; pass < 2; pass++)
+    {
+        const token_list_t *l = pass == 0 ? assignments : words;
+        for (int i = 0; i < token_list_size(l); i++)
+        {
+            const token_t *t = token_list_get(l, i);
+            int fl = token_get_first_line(t);
+            if (fl <= 0)
+                continue;
+            if (first_line == 0 || fl < first_line ||
+                (fl == first_line && token_get_first_column(t) < first_col))
+            {
+                first_line = fl;
+                first_col = token_get_first_column(t);
+            }
+            if (fl > last_line)
+            {
+                last_line = fl;
+                last_col = token_get_first_column(t);
+            }
+        }
+    }
+    ast_node_t *node = ast_create_simple_command(words, redirs, assignments);
+    if (node && first_line > 0)
+        ast_node_set_location(node, first_line, first_col, last_line, last_col);
+    return node;
 }
 
 /* ============================================================================
