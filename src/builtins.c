@@ -4222,6 +4222,41 @@ int builtin_kill(miga_frame_t *frame, const strlist_t *args)
  * Wait for a specific job to complete.
  * Returns the exit status of the job, or -1 on error.
  */
+/*
+ * POSIX (XCU "wait"): once wait has obtained a job's exit status, the shell
+ * forgets that job. Mark the completed jobs this wait collected as reported
+ * and drop them from the job table; otherwise, with job control on, each
+ * background job stayed in the table (and in memory) until the shell exited,
+ * since the reaper had nothing left to collect for it. ONLY_JOB_ID limits
+ * this to one job; 0 means every completed job.
+ */
+static void wait_forget_completed_jobs(miga_frame_t *frame, int only_job_id)
+{
+    if (!frame || !frame->executor || !frame->executor->jobs)
+        return;
+    job_store_t *jobs = frame->executor->jobs;
+    for (job_t *job = jobs->jobs; job; job = job->next)
+    {
+        if ((only_job_id == 0 || job->job_id == only_job_id) && job_is_completed(job))
+            job->is_notified = true;
+    }
+    job_store_remove_completed(jobs);
+}
+
+#ifdef MIGA_POSIX_API
+/* The job a process belongs to, or 0 if the job table does not know it. */
+static int wait_job_id_for_pid(miga_frame_t *frame, intptr_t pid)
+{
+    if (!frame || !frame->executor || !frame->executor->jobs)
+        return 0;
+    for (job_t *job = frame->executor->jobs->jobs; job; job = job->next)
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+            if ((intptr_t)proc->pid == pid)
+                return job->job_id;
+    return 0;
+}
+#endif
+
 static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
 {
     if (!frame || !frame->executor || !frame->executor->jobs)
@@ -4241,11 +4276,9 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
     if (job_is_completed(job))
     {
         /* Get exit status from first process (or last, depending on convention) */
-        if (job->processes)
-        {
-            return job->processes->exit_status;
-        }
-        return 0;
+        int done_status = job->processes ? job->processes->exit_status : 0;
+        wait_forget_completed_jobs(frame, job_id);
+        return done_status;
     }
 
 #ifdef MIGA_POSIX_API
@@ -4279,11 +4312,9 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
     }
 
     /* Return the exit status of the first process */
-    if (job->processes)
-    {
-        return job->processes->exit_status;
-    }
-    return 0;
+    int job_status = job->processes ? job->processes->exit_status : 0;
+    wait_forget_completed_jobs(frame, job_id);
+    return job_status;
 
 #elifdef MIGA_UCRT_API
     /* On Windows, wait for all processes in the job using their handles */
@@ -4326,6 +4357,7 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
         }
     }
 
+    wait_forget_completed_jobs(frame, job_id);
     return last_exit_status;
 
 #else
@@ -4359,23 +4391,27 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
     }
 
     /* Update job store if this process is tracked */
+    int pid_status = 0;
     if (frame && frame->executor && frame->executor->jobs)
     {
+        int pid_job_id = wait_job_id_for_pid(frame, pid);
         if (WIFEXITED(status))
         {
             job_store_set_process_state(frame->executor->jobs, (pid_t)pid, JOB_DONE,
                                         WEXITSTATUS(status));
-            return WEXITSTATUS(status);
+            pid_status = WEXITSTATUS(status);
         }
         else if (WIFSIGNALED(status))
         {
             job_store_set_process_state(frame->executor->jobs, (pid_t)pid, JOB_TERMINATED,
                                         WTERMSIG(status));
-            return 128 + WTERMSIG(status);
+            pid_status = 128 + WTERMSIG(status);
         }
+        if (pid_job_id != 0)
+            wait_forget_completed_jobs(frame, pid_job_id);
     }
 
-    return 0;
+    return pid_status;
 
 #elifdef MIGA_UCRT_API
     /* Search for the PID in the job store to get its handle */
@@ -4392,18 +4428,22 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
                 {
                     DWORD wait_result = WaitForSingleObject((HANDLE)handle, INFINITE);
 
+                    int pid_job_id = job_store_iter_get_job_id(&iter);
+                    int pid_status;
                     if (wait_result == WAIT_OBJECT_0)
                     {
                         DWORD exit_code = 0;
                         GetExitCodeProcess((HANDLE)handle, &exit_code);
                         job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-                        return (int)exit_code;
+                        pid_status = (int)exit_code;
                     }
                     else
                     {
                         job_store_iter_set_state(&iter, JOB_TERMINATED, 1);
-                        return 1;
+                        pid_status = 1;
                     }
+                    wait_forget_completed_jobs(frame, pid_job_id);
+                    return pid_status;
                 }
             }
         }
@@ -4501,6 +4541,7 @@ static int wait_for_all(miga_frame_t *frame)
 #undef MAX_WAIT_HANDLES
 #endif
 
+    wait_forget_completed_jobs(frame, 0);
     return last_exit_status;
 }
 

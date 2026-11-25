@@ -538,6 +538,11 @@ if(UNIX AND API_TYPE STREQUAL "POSIX")
                     $<TARGET_FILE:migash>
         )
         set_tests_properties(interactive_prompts PROPERTIES TIMEOUT 180)
+        add_test(NAME interactive_jobs
+            COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/test/interactive/jobs_pty.py
+                    $<TARGET_FILE:migash>
+        )
+        set_tests_properties(interactive_jobs PROPERTIES TIMEOUT 120)
     endif()
 endif()
 
