@@ -102,6 +102,7 @@ add_compile_definitions(
 
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
+option(ENABLE_ARENA_STATS "Track memory-usage statistics in the arena allocator" OFF)
 
 if(MSVC)
     # The sources use the ISO C functions (fopen, strerror, ...) on purpose;
@@ -240,6 +241,14 @@ else()
     set(MIGA_API_MACRO MIGA_ISO_C_API)
 endif()
 set(CONFIG_DEFINE "#define ${MIGA_API_MACRO} 1")
+# MIGA_ARENA_STATS changes the layout of the public miga_arena_t, so it goes in
+# migaconf.h where the library and its users both see it.
+if(ENABLE_ARENA_STATS)
+    set(ARENA_STATS_DEFINE "#define MIGA_ARENA_STATS 1")
+    message(STATUS "Arena memory-usage statistics enabled")
+else()
+    set(ARENA_STATS_DEFINE "/* #undef MIGA_ARENA_STATS */")
+endif()
 # The sources test the API macro before including any project header (to pick
 # system headers), so it must also be defined on the command line, the way the
 # autotools build defines it in config.h.

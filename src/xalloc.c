@@ -138,6 +138,48 @@ static long find_insertion_index(miga_arena_t *arena, void *new_ptr)
 }
 
 // -------------------------------------------------------------
+// Memory-usage statistics (MIGA_ARENA_STATS)
+// -------------------------------------------------------------
+#ifdef MIGA_ARENA_STATS
+// Class 0: 1..16 bytes; class k: (2^(k+3), 2^(k+4)]; last class: larger.
+static int stats_size_class(size_t size)
+{
+    int k = 0;
+    size_t limit = 16;
+    while (size > limit && k < MIGA_ARENA_STATS_SIZE_CLASSES - 1)
+    {
+        limit *= 2;
+        k++;
+    }
+    return k;
+}
+
+// A block of `size` bytes became live (allocation or reallocation result).
+static void stats_add_block(miga_arena_t *arena, size_t size)
+{
+    miga_arena_stats_t *st = &arena->stats;
+    st->live_blocks++;
+    st->live_bytes += size;
+    if (st->live_blocks > st->peak_blocks)
+        st->peak_blocks = st->live_blocks;
+    if (st->live_bytes > st->peak_bytes)
+        st->peak_bytes = st->live_bytes;
+    st->total_bytes_allocated += size;
+    if (size > st->largest_block)
+        st->largest_block = size;
+    st->size_classes[stats_size_class(size)]++;
+}
+
+// A tracked block of `size` bytes stopped being live.
+static void stats_remove_block(miga_arena_t *arena, size_t size)
+{
+    miga_arena_stats_t *st = &arena->stats;
+    st->live_blocks--;
+    st->live_bytes -= size;
+}
+#endif
+
+// -------------------------------------------------------------
 // Lazy initialization and safe OOM handling
 // -------------------------------------------------------------
 
@@ -224,9 +266,12 @@ static void arena_oom_bail(miga_arena_t *arena)
 #ifdef MIGA_ARENA_DEBUG
 static bool insert_ptr(miga_arena_t *arena, void *p, const char *file, int line, size_t size)
 #else
-static bool insert_ptr(miga_arena_t *arena, void *p)
+static bool insert_ptr(miga_arena_t *arena, void *p, size_t size)
 #endif
 {
+#if !defined(MIGA_ARENA_STATS) && !defined(MIGA_ARENA_DEBUG)
+    (void)size; // only recorded when statistics or debug tracking is on
+#endif
     if (!p)
     {
         fprintf(stderr, "insert_ptr: NULL pointer passed\n");
@@ -291,15 +336,16 @@ static bool insert_ptr(miga_arena_t *arena, void *p)
     // Shift everything right one position
     if (idx < arena->allocated_count)
     {
-#ifdef MIGA_ARENA_DEBUG
         memmove(arena->allocated_ptrs + idx + 1, arena->allocated_ptrs + idx,
                 (arena->allocated_count - idx) * sizeof(miga_arena_alloc_t));
-#else
-        memmove(arena->allocated_ptrs + idx + 1, arena->allocated_ptrs + idx,
-                (arena->allocated_count - idx) * sizeof(void *));
-#endif
     }
     arena->allocated_ptrs[idx].ptr = p;
+#if defined(MIGA_ARENA_STATS) && !defined(MIGA_ARENA_DEBUG)
+    arena->allocated_ptrs[idx].size = size;
+#endif
+#ifdef MIGA_ARENA_STATS
+    stats_add_block(arena, size);
+#endif
 #ifdef MIGA_ARENA_DEBUG
     strncpy_t(arena->allocated_ptrs[idx].file, get_basename(file), MIGA_ARENA_DEBUG_FILENAME_MAX_LEN);
     arena->allocated_ptrs[idx].line = line;
@@ -318,13 +364,11 @@ static void remove_ptr_at(miga_arena_t *arena, long idx)
         fprintf(stderr, "remove_ptr_at: invalid index %ld\n", idx);
         abort();
     }
-#ifdef MIGA_ARENA_DEBUG
+#ifdef MIGA_ARENA_STATS
+    stats_remove_block(arena, arena->allocated_ptrs[idx].size);
+#endif
     memmove(arena->allocated_ptrs + idx, arena->allocated_ptrs + idx + 1,
             (arena->allocated_count - idx - 1) * sizeof(miga_arena_alloc_t));
-#else
-    memmove(arena->allocated_ptrs + idx, arena->allocated_ptrs + idx + 1,
-            (arena->allocated_count - idx - 1) * sizeof(void *));
-#endif
     arena->allocated_count--;
 }
 
@@ -360,12 +404,16 @@ void *arena_xmalloc(miga_arena_t *arena, size_t size MIGA_ARENA_DEBUG_PARAMS)
 #ifdef MIGA_ARENA_DEBUG
     inserted = insert_ptr(arena, p, file, line, size);
 #else
-    inserted = insert_ptr(arena, p);
+    inserted = insert_ptr(arena, p, size);
 #endif
     if (!inserted)
     {
         fprintf(stderr, "%s: %p failed to track allocation\n", __func__, p);
     }
+#ifdef MIGA_ARENA_STATS
+    else
+        arena->stats.total_allocs++;
+#endif
     miga_mutex_unlock(&arena->mtx);
     return p;
 }
@@ -401,12 +449,16 @@ void *arena_xcalloc(miga_arena_t *arena, size_t n, size_t size MIGA_ARENA_DEBUG_
 #ifdef MIGA_ARENA_DEBUG
     inserted = insert_ptr(arena, p, file, line, n * size);
 #else
-    inserted = insert_ptr(arena, p);
+    inserted = insert_ptr(arena, p, n * size);
 #endif
     if (!inserted)
     {
         fprintf(stderr, "%s: %p failed to track allocation\n", __func__, p);
     }
+#ifdef MIGA_ARENA_STATS
+    else
+        arena->stats.total_allocs++;
+#endif
     miga_mutex_unlock(&arena->mtx);
     return p;
 }
@@ -473,12 +525,16 @@ void *arena_xrealloc(miga_arena_t *arena, void *old_ptr, size_t new_size MIGA_AR
     fprintf(stderr, "%p %s:%d %zu\n", p, get_basename(file), line, new_size);
     inserted = insert_ptr(arena, p, file, line, new_size);
 #else
-    inserted = insert_ptr(arena, p);
+    inserted = insert_ptr(arena, p, new_size);
 #endif
     if (!inserted)
     {
         fprintf(stderr, "%s: %p failed to track allocation\n", __func__, p);
     }
+#ifdef MIGA_ARENA_STATS
+    else
+        arena->stats.total_reallocs++;
+#endif
     miga_mutex_unlock(&arena->mtx);
     return p;
 }
@@ -511,12 +567,16 @@ char *arena_xstrdup(miga_arena_t *arena, const char *s MIGA_ARENA_DEBUG_PARAMS)
 #ifdef MIGA_ARENA_DEBUG
     inserted = insert_ptr(arena, p, file, line, strlen(s) + 1);
 #else
-    inserted = insert_ptr(arena, p);
+    inserted = insert_ptr(arena, p, strlen(s) + 1);
 #endif
     if (!inserted)
     {
         fprintf(stderr, "%s: %p failed to track allocation\n", __func__, p);
     }
+#ifdef MIGA_ARENA_STATS
+    else
+        arena->stats.total_allocs++;
+#endif
     miga_mutex_unlock(&arena->mtx);
     return p;
 }
@@ -553,6 +613,9 @@ void arena_xfree(miga_arena_t *arena, void *p MIGA_ARENA_DEBUG_PARAMS)
             arena->allocated_ptrs[idx].size, p);
 #endif
     remove_ptr_at(arena, idx);
+#ifdef MIGA_ARENA_STATS
+    arena->stats.total_frees++;
+#endif
     free(p);
     miga_mutex_unlock(&arena->mtx);
 }
@@ -578,11 +641,7 @@ void arena_init_ex(miga_arena_t *arena)
     arena->max_allocations = ARENA_MAX_ALLOCATIONS;
     arena->resource_cleanup = NULL;
     arena->resource_cleanup_user_data = NULL;
-#ifdef MIGA_ARENA_DEBUG
     arena->allocated_ptrs = calloc(arena->initial_cap, sizeof(miga_arena_alloc_t));
-#else
-    arena->allocated_ptrs = calloc(arena->initial_cap, sizeof(void *));
-#endif
     if (!arena->allocated_ptrs)
     {
         fprintf(stderr, "arena_init_ex: failed to allocate initial pointer array\n");
@@ -634,6 +693,14 @@ void arena_reset_ex(miga_arena_t *arena)
         arena->resource_cleanup(arena->resource_cleanup_user_data);
     }
 
+#ifdef MIGA_ARENA_STATS
+    // Whatever the cleanup callback did not free is about to be reclaimed
+    // wholesale: record it, since those blocks are leaks.
+    arena->stats.teardown_blocks = arena->stats.live_blocks;
+    arena->stats.teardown_bytes = arena->stats.live_bytes;
+    arena->stats.resets++;
+#endif
+
     // Free from the end to avoid expensive memmove on every removal
 #ifdef MIGA_ARENA_DEBUG
     for (long i = 0; i < arena->allocated_count; i++)
@@ -651,6 +718,10 @@ void arena_reset_ex(miga_arena_t *arena)
 
     free(arena->allocated_ptrs);
     arena->allocated_ptrs = NULL;
+#ifdef MIGA_ARENA_STATS
+    arena->stats.live_blocks = 0;
+    arena->stats.live_bytes = 0;
+#endif
 #ifdef MIGA_ARENA_DEBUG
     if (count > 0)
     {
@@ -752,3 +823,128 @@ void miga_arena_end(void)
 {
     arena_end_ex(&global_arena);
 }
+
+// -------------------------------------------------------------
+// Memory-usage statistics API (MIGA_ARENA_STATS)
+// -------------------------------------------------------------
+#ifdef MIGA_ARENA_STATS
+void arena_stats_get_ex(miga_arena_t *arena, miga_arena_stats_t *out)
+{
+    if (!arena || !out)
+    {
+        fprintf(stderr, "arena_stats_get_ex: NULL pointer passed\n");
+        abort();
+    }
+    ensure_mutex(arena);
+    miga_mutex_lock(&arena->mtx);
+    *out = arena->stats;
+    miga_mutex_unlock(&arena->mtx);
+}
+
+void arena_stats_reset_peak_ex(miga_arena_t *arena)
+{
+    if (!arena)
+    {
+        fprintf(stderr, "arena_stats_reset_peak_ex: NULL arena pointer\n");
+        abort();
+    }
+    ensure_mutex(arena);
+    miga_mutex_lock(&arena->mtx);
+    arena->stats.peak_blocks = arena->stats.live_blocks;
+    arena->stats.peak_bytes = arena->stats.live_bytes;
+    miga_mutex_unlock(&arena->mtx);
+}
+
+void arena_stats_clear_ex(miga_arena_t *arena)
+{
+    if (!arena)
+    {
+        fprintf(stderr, "arena_stats_clear_ex: NULL arena pointer\n");
+        abort();
+    }
+    ensure_mutex(arena);
+    miga_mutex_lock(&arena->mtx);
+    size_t live_blocks = arena->stats.live_blocks;
+    size_t live_bytes = arena->stats.live_bytes;
+    memset(&arena->stats, 0, sizeof(arena->stats));
+    arena->stats.live_blocks = live_blocks;
+    arena->stats.live_bytes = live_bytes;
+    arena->stats.peak_blocks = live_blocks;
+    arena->stats.peak_bytes = live_bytes;
+    miga_mutex_unlock(&arena->mtx);
+}
+
+void arena_stats_foreach_live_ex(miga_arena_t *arena, miga_arena_live_block_fn fn, void *user_data)
+{
+    if (!arena || !fn)
+    {
+        fprintf(stderr, "arena_stats_foreach_live_ex: NULL pointer passed\n");
+        abort();
+    }
+    ensure_mutex(arena);
+    miga_mutex_lock(&arena->mtx);
+    for (long i = 0; i < arena->allocated_count; i++)
+        fn(arena->allocated_ptrs[i].ptr, arena->allocated_ptrs[i].size, user_data);
+    miga_mutex_unlock(&arena->mtx);
+}
+
+void arena_stats_print_ex(miga_arena_t *arena, FILE *out)
+{
+    if (!arena || !out)
+    {
+        fprintf(stderr, "arena_stats_print_ex: NULL pointer passed\n");
+        abort();
+    }
+    miga_arena_stats_t st;
+    arena_stats_get_ex(arena, &st);
+
+    fprintf(out, "arena: live %zu blocks, %zu bytes; peak %zu blocks, %zu bytes\n",
+            st.live_blocks, st.live_bytes, st.peak_blocks, st.peak_bytes);
+    fprintf(out,
+            "arena: %zu allocs, %zu reallocs, %zu frees; %zu bytes allocated in total; "
+            "largest block %zu bytes\n",
+            st.total_allocs, st.total_reallocs, st.total_frees, st.total_bytes_allocated,
+            st.largest_block);
+    fprintf(out, "arena: %zu blocks, %zu bytes still allocated at teardown (%zu resets)\n",
+            st.teardown_blocks, st.teardown_bytes, st.resets);
+    fprintf(out, "arena: allocation sizes:");
+    size_t limit = 16;
+    for (int k = 0; k < MIGA_ARENA_STATS_SIZE_CLASSES; k++)
+    {
+        if (st.size_classes[k] != 0)
+        {
+            if (k == MIGA_ARENA_STATS_SIZE_CLASSES - 1)
+                fprintf(out, " >%zu: %zu", limit / 2, st.size_classes[k]);
+            else
+                fprintf(out, " <=%zu: %zu", limit, st.size_classes[k]);
+        }
+        limit *= 2;
+    }
+    fprintf(out, "\n");
+}
+
+void miga_arena_stats_get(miga_arena_stats_t *out)
+{
+    arena_stats_get_ex(&global_arena, out);
+}
+
+void miga_arena_stats_reset_peak(void)
+{
+    arena_stats_reset_peak_ex(&global_arena);
+}
+
+void miga_arena_stats_clear(void)
+{
+    arena_stats_clear_ex(&global_arena);
+}
+
+void miga_arena_stats_foreach_live(miga_arena_live_block_fn fn, void *user_data)
+{
+    arena_stats_foreach_live_ex(&global_arena, fn, user_data);
+}
+
+void miga_arena_stats_print(FILE *out)
+{
+    arena_stats_print_ex(&global_arena, out);
+}
+#endif /* MIGA_ARENA_STATS */

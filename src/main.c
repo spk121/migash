@@ -4,6 +4,7 @@
 
 #include <locale.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -535,6 +536,13 @@ int main(int argc, char **argv)
     // Don't call shell_destroy here - miga_arena_end will call shell_cleanup.
     // arg_array is arena memory too and is released here.
     miga_arena_end();
+
+#ifdef MIGA_ARENA_STATS
+    /* Report memory usage on request. Printed after miga_arena_end() so the
+     * teardown counters show what shell cleanup left allocated (leaks). */
+    if (getenv("MIGA_ARENA_STATS") != NULL)
+        miga_arena_stats_print(stderr);
+#endif
 
     if (mode == SHELL_MODE_INTERACTIVE)
         printf("Goodbye!\n");

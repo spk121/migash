@@ -231,6 +231,155 @@ CTEST(test_arena_xfree_null)
     (void)ctest;
 }
 
+#ifdef MIGA_ARENA_STATS
+// Live, peak and cumulative counters follow allocations, reallocations and frees
+CTEST(test_arena_stats_counters)
+{
+    miga_arena_t arena = {0};
+    arena_init_ex(&arena);
+
+    if (setjmp(arena.rollback_point) == 0)
+    {
+        miga_arena_stats_t st;
+        void *a = TEST_ARENA_XMALLOC(&arena, 100);
+        int *b = TEST_ARENA_XCALLOC(&arena, 10, sizeof(int));
+        char *c = TEST_ARENA_XSTRDUP(&arena, "hello");
+
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.live_blocks, 3, "three live blocks");
+        CTEST_ASSERT_EQ(ctest, st.live_bytes, 100 + 10 * sizeof(int) + 6, "live bytes");
+        CTEST_ASSERT_EQ(ctest, st.total_allocs, 3, "three allocations");
+
+        a = TEST_ARENA_XREALLOC(&arena, a, 300);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.live_blocks, 3, "realloc keeps the block count");
+        CTEST_ASSERT_EQ(ctest, st.live_bytes, 300 + 10 * sizeof(int) + 6, "realloc updates bytes");
+        CTEST_ASSERT_EQ(ctest, st.total_reallocs, 1, "one reallocation");
+        CTEST_ASSERT_EQ(ctest, st.largest_block, 300, "largest block");
+
+        TEST_ARENA_XFREE(&arena, a);
+        TEST_ARENA_XFREE(&arena, b);
+        TEST_ARENA_XFREE(&arena, c);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.live_blocks, 0, "no live blocks after freeing");
+        CTEST_ASSERT_EQ(ctest, st.live_bytes, 0, "no live bytes after freeing");
+        CTEST_ASSERT_EQ(ctest, st.total_frees, 3, "three frees");
+        CTEST_ASSERT_EQ(ctest, st.peak_blocks, 3, "peak blocks");
+        CTEST_ASSERT_EQ(ctest, st.peak_bytes, 300 + 10 * sizeof(int) + 6, "peak bytes");
+        CTEST_ASSERT_EQ(ctest, st.total_bytes_allocated, 100 + 10 * sizeof(int) + 6 + 300,
+                        "total bytes allocated");
+    }
+
+    arena_end_ex(&arena);
+    (void)ctest;
+}
+
+// miga_arena_stats_reset_peak() starts a new high-water mark from the live state
+CTEST(test_arena_stats_reset_peak)
+{
+    miga_arena_t arena = {0};
+    arena_init_ex(&arena);
+
+    if (setjmp(arena.rollback_point) == 0)
+    {
+        miga_arena_stats_t st;
+        void *keep = TEST_ARENA_XMALLOC(&arena, 10);
+        void *big = TEST_ARENA_XMALLOC(&arena, 1000);
+        TEST_ARENA_XFREE(&arena, big);
+
+        arena_stats_reset_peak_ex(&arena);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.peak_blocks, 1, "peak blocks reset to live");
+        CTEST_ASSERT_EQ(ctest, st.peak_bytes, 10, "peak bytes reset to live");
+
+        void *mid = TEST_ARENA_XMALLOC(&arena, 50);
+        TEST_ARENA_XFREE(&arena, mid);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.peak_blocks, 2, "new peak blocks");
+        CTEST_ASSERT_EQ(ctest, st.peak_bytes, 60, "new peak bytes");
+
+        TEST_ARENA_XFREE(&arena, keep);
+    }
+
+    arena_end_ex(&arena);
+    (void)ctest;
+}
+
+// Blocks that nobody freed before a reset show up as teardown (leaked) blocks
+CTEST(test_arena_stats_teardown_leaks)
+{
+    miga_arena_t arena = {0};
+    arena_init_ex(&arena);
+
+    if (setjmp(arena.rollback_point) == 0)
+    {
+        miga_arena_stats_t st;
+        (void)TEST_ARENA_XMALLOC(&arena, 24);
+        (void)TEST_ARENA_XMALLOC(&arena, 40);
+        void *freed = TEST_ARENA_XMALLOC(&arena, 8);
+        TEST_ARENA_XFREE(&arena, freed);
+
+        arena_reset_ex(&arena);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.teardown_blocks, 2, "two blocks leaked");
+        CTEST_ASSERT_EQ(ctest, st.teardown_bytes, 64, "64 bytes leaked");
+        CTEST_ASSERT_EQ(ctest, st.resets, 1, "one reset");
+        CTEST_ASSERT_EQ(ctest, st.live_blocks, 0, "reset reclaims live blocks");
+        CTEST_ASSERT_EQ(ctest, st.live_bytes, 0, "reset reclaims live bytes");
+    }
+
+    arena_end_ex(&arena);
+    (void)ctest;
+}
+
+static void sum_live_block(const void *ptr, size_t size, void *user_data)
+{
+    size_t *totals = (size_t *)user_data;
+    (void)ptr;
+    totals[0]++;
+    totals[1] += size;
+}
+
+// foreach_live visits every live block with its size; size classes bucket sizes
+CTEST(test_arena_stats_foreach_live_and_size_classes)
+{
+    miga_arena_t arena = {0};
+    arena_init_ex(&arena);
+
+    if (setjmp(arena.rollback_point) == 0)
+    {
+        miga_arena_stats_t st;
+        void *a = TEST_ARENA_XMALLOC(&arena, 16);   /* class 0: 1..16 */
+        void *b = TEST_ARENA_XMALLOC(&arena, 17);   /* class 1: 17..32 */
+        void *c = TEST_ARENA_XMALLOC(&arena, 1024); /* class 6: 513..1024 */
+
+        size_t totals[2] = {0, 0};
+        arena_stats_foreach_live_ex(&arena, sum_live_block, totals);
+        CTEST_ASSERT_EQ(ctest, totals[0], 3, "foreach visits three blocks");
+        CTEST_ASSERT_EQ(ctest, totals[1], 16 + 17 + 1024, "foreach reports block sizes");
+
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.size_classes[0], 1, "one block of <=16 bytes");
+        CTEST_ASSERT_EQ(ctest, st.size_classes[1], 1, "one block of 17..32 bytes");
+        CTEST_ASSERT_EQ(ctest, st.size_classes[6], 1, "one block of 513..1024 bytes");
+
+        arena_stats_clear_ex(&arena);
+        arena_stats_get_ex(&arena, &st);
+        CTEST_ASSERT_EQ(ctest, st.total_allocs, 0, "clear zeroes the counters");
+        CTEST_ASSERT_EQ(ctest, st.size_classes[0], 0, "clear zeroes the size classes");
+        CTEST_ASSERT_EQ(ctest, st.live_blocks, 3, "clear keeps the live blocks");
+        CTEST_ASSERT_EQ(ctest, st.peak_blocks, 3, "clear sets the peak to live");
+
+        TEST_ARENA_XFREE(&arena, a);
+        TEST_ARENA_XFREE(&arena, b);
+        TEST_ARENA_XFREE(&arena, c);
+    }
+
+    arena_end_ex(&arena);
+    (void)ctest;
+}
+#endif /* MIGA_ARENA_STATS */
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -244,6 +393,12 @@ int main(int argc, char **argv)
         CTEST_ENTRY(test_arena_lifecycle),
         CTEST_ENTRY(test_arena_multiple_allocs),
         CTEST_ENTRY(test_arena_xfree_null),
+#ifdef MIGA_ARENA_STATS
+        CTEST_ENTRY(test_arena_stats_counters),
+        CTEST_ENTRY(test_arena_stats_reset_peak),
+        CTEST_ENTRY(test_arena_stats_teardown_leaks),
+        CTEST_ENTRY(test_arena_stats_foreach_live_and_size_classes),
+#endif
         NULL
     };
 
