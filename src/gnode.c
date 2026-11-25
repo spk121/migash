@@ -146,10 +146,10 @@ gnode_payload_t gnode_get_payload_type(gnode_type_t type)
     case G_SEPARATOR_OP:
     case G_CMD_NAME:
     case G_CMD_WORD:
+    case G_FNAME: /* the parser stores the function name token */
         return GNODE_PAYLOAD_TOKEN;
 
     /* String wrappers */
-    case G_FNAME:
     case G_HERE_END:
         return GNODE_PAYLOAD_STRING;
 
