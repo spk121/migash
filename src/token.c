@@ -79,7 +79,9 @@ token_t *token_clone(const token_t *other)
     }
     if (other->parts)
     {
-        new_token->parts = part_list_create();
+        /* token_create() already gives TOKEN_WORD an empty part list */
+        if (!new_token->parts)
+            new_token->parts = part_list_create();
         for (int i = 0; i < other->parts->size; i++)
         {
             part_t *prt = part_clone(other->parts->parts[i]);

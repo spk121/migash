@@ -777,6 +777,51 @@ void exec_restore_redirections_posix(miga_frame_t *frame)
 }
 #elifdef MIGA_UCRT_API
 
+/* When _dup(), _dup2() or _close() is given a descriptor that is not open,
+ * the UCRT calls its invalid-parameter handler, and the default handler ends
+ * the process (exit code 0xc0000409) where POSIX would just fail with EBADF.
+ * Redirections routinely name descriptors that may be closed ("cmd 3>&-",
+ * "cmd 2>&5", "cmd 4>file"), so these wrappers install a do-nothing handler
+ * for the duration of the call: the function then returns -1 with errno set
+ * to EBADF, and the callers handle that as on POSIX. */
+static void ucrt_ignore_invalid_parameter(const wchar_t *expression, const wchar_t *function,
+                                          const wchar_t *file, unsigned int line,
+                                          uintptr_t reserved)
+{
+    (void)expression;
+    (void)function;
+    (void)file;
+    (void)line;
+    (void)reserved;
+}
+
+static int ucrt_dup(int fd)
+{
+    _invalid_parameter_handler old =
+        _set_thread_local_invalid_parameter_handler(ucrt_ignore_invalid_parameter);
+    int result = _dup(fd);
+    _set_thread_local_invalid_parameter_handler(old);
+    return result;
+}
+
+static int ucrt_dup2(int fd1, int fd2)
+{
+    _invalid_parameter_handler old =
+        _set_thread_local_invalid_parameter_handler(ucrt_ignore_invalid_parameter);
+    int result = _dup2(fd1, fd2);
+    _set_thread_local_invalid_parameter_handler(old);
+    return result;
+}
+
+static int ucrt_close(int fd)
+{
+    _invalid_parameter_handler old =
+        _set_thread_local_invalid_parameter_handler(ucrt_ignore_invalid_parameter);
+    int result = _close(fd);
+    _set_thread_local_invalid_parameter_handler(old);
+    return result;
+}
+
 /* Lowest FD number used for backup copies on Windows.
  * _dup() always picks the lowest available slot, so without forcing a minimum
  * it can return 3, 4, … which are then clobbered by the very _dup2() calls
@@ -804,7 +849,7 @@ static int dup_to_safe_slot(int fd)
 
     for (;;)
     {
-        int dup_fd = _dup(fd);
+        int dup_fd = ucrt_dup(fd);
         if (dup_fd < 0)
             break; /* _dup failed; errno already set */
 
@@ -820,14 +865,14 @@ static int dup_to_safe_slot(int fd)
         else
         {
             /* Shouldn't be reachable, but don't leak if it is */
-            _close(dup_fd);
+            ucrt_close(dup_fd);
             break;
         }
     }
 
     /* Release the spill slots so the fd space isn't permanently consumed */
     for (int k = 0; k < spill_count; k++)
-        _close(spill[k]);
+        ucrt_close(spill[k]);
 
     return result;
 }
@@ -918,6 +963,12 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
 
         log_debug("apply(ucrt): phase1 saving fd=%d before redirect", fd);
         int backup = dup_to_safe_slot(fd);
+        if (backup < 0 && errno == EBADF)
+        {
+            /* The fd is not open: there is nothing to save. */
+            log_debug("apply(ucrt): phase1 fd=%d not open; nothing to save", fd);
+            continue;
+        }
         if (backup < 0)
         {
             exec_set_error_printf(executor, "_dup(%d) to safe slot failed: %s", fd,
@@ -1023,16 +1074,16 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
             }
 
             log_debug("apply(ucrt): _dup2(%d -> %d) wiring fd=%d to '%s'", newfd, fd, fd, fname);
-            if (_dup2(newfd, fd) < 0)
+            if (ucrt_dup2(newfd, fd) < 0)
             {
                 exec_set_error_printf(executor, "_dup2(%d, %d) failed: %s", newfd, fd,
                                       strerror(errno));
-                _close(newfd);
+                ucrt_close(newfd);
                 string_destroy(&expanded_target);
                 goto error_restore;
             }
             log_debug("apply(ucrt): _close(%d) temp file fd", newfd);
-            _close(newfd);
+            ucrt_close(newfd);
 
             if (fds)
                 fd_table_add(fds, fd, FD_IS_REDIRECTED, expanded_target);
@@ -1076,7 +1127,7 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
             {
                 /* n<&- or n>&-: explicit close of target fd. */
                 log_debug("apply(ucrt): _close(%d) explicit n<&- or n>&-", fd);
-                _close(fd);
+                ucrt_close(fd);
                 if (fds)
                 {
                     fd_table_mark_closed(fds, fd);
@@ -1091,7 +1142,7 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
             }
 
             log_debug("apply(ucrt): _dup2(%d -> %d) fd-to-fd redirect", src.fd, fd);
-            if (_dup2(src.fd, fd) < 0)
+            if (ucrt_dup2(src.fd, fd) < 0)
             {
                 exec_set_error_printf(executor, "_dup2(%d, %d) failed: %s", src.fd, fd,
                                       strerror(errno));
@@ -1114,7 +1165,7 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
                     fprintf(stderr, "Warning: Self-move redirection (%d>&%d-) ignored\n", fd,
                             src.fd);
                 }
-                else if (_close(src.fd) < 0)
+                else if (ucrt_close(src.fd) < 0)
                 {
                     fprintf(stderr, "Warning: Failed to close source FD %d after move: %s\n",
                             src.fd, strerror(errno));
@@ -1132,7 +1183,7 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
 
         case REDIR_TARGET_CLOSE: {
             log_debug("apply(ucrt): _close(%d) REDIR_TARGET_CLOSE", fd);
-            _close(fd);
+            ucrt_close(fd);
             if (fds)
             {
                 fd_table_mark_closed(fds, fd);
@@ -1193,20 +1244,20 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
                 {
                     exec_set_error_printf(executor, "write to heredoc temp file failed: %s",
                                           strerror(errno));
-                    _close(tmpfd);
+                    ucrt_close(tmpfd);
                     string_destroy(&content_str);
                     goto error_restore;
                 }
                 _lseek(tmpfd, 0, SEEK_SET);
-                if (_dup2(tmpfd, fd) < 0)
+                if (ucrt_dup2(tmpfd, fd) < 0)
                 {
                     exec_set_error_printf(executor,
                                           "failed to duplicate file descriptor for heredoc temp file: %s", strerror(errno));
-                    _close(tmpfd);
+                    ucrt_close(tmpfd);
                     string_destroy(&content_str);
                     goto error_restore;
                 }
-                _close(tmpfd);
+                ucrt_close(tmpfd);
                 // File will be deleted by the OS when fd (the last reference) is closed
                 // during restore, thanks to _O_TEMPORARY.
                 string_destroy(&content_str);
@@ -1231,19 +1282,19 @@ miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame, const exe
 
             if (content_len > 0)
                 _write(pipefd[1], content, (unsigned int)content_len);
-            _close(pipefd[1]);
+            ucrt_close(pipefd[1]);
             string_destroy(&content_str);
 
             log_debug("apply(ucrt): _dup2(%d -> %d) wiring heredoc pipe to fd=%d", pipefd[0], fd,
                       fd);
-            if (_dup2(pipefd[0], fd) < 0)
+            if (ucrt_dup2(pipefd[0], fd) < 0)
             {
                 exec_set_error_printf(executor, "_dup2(%d, %d) failed for heredoc: %s", pipefd[0],
                                       fd, strerror(errno));
-                _close(pipefd[0]);
+                ucrt_close(pipefd[0]);
                 goto error_restore;
             }
-            _close(pipefd[0]);
+            ucrt_close(pipefd[0]);
 
             if (fds)
             {
@@ -1302,7 +1353,7 @@ void exec_restore_redirections_ucrt_c(miga_frame_t *frame)
             log_warn("exec_restore_redirections_ucrt_c: saved fd %d has no recorded original; "
                      "closing and skipping",
                      backup_fd);
-            _close(backup_fd);
+            ucrt_close(backup_fd);
             fd_table_mark_closed(fds, backup_fd);
             fd_table_remove(fds, backup_fd);
             continue;
@@ -1323,7 +1374,7 @@ void exec_restore_redirections_ucrt_c(miga_frame_t *frame)
 
         log_debug("restore(ucrt): _dup2(%d -> %d) restoring fd=%d from backup", backup_fd, orig_fd,
                   orig_fd);
-        if (_dup2(backup_fd, orig_fd) < 0)
+        if (ucrt_dup2(backup_fd, orig_fd) < 0)
         {
             log_warn("restore(ucrt): _dup2(%d, %d) failed: %s", backup_fd, orig_fd,
                      strerror(errno));
@@ -1334,7 +1385,7 @@ void exec_restore_redirections_ucrt_c(miga_frame_t *frame)
         }
 
         log_debug("restore(ucrt): _close(%d) backup fd", backup_fd);
-        _close(backup_fd);
+        ucrt_close(backup_fd);
 
         /* Bug 5 fix: after _dup2(backup_fd, orig_fd) the original fd is live
          * again — do NOT remove its table entry.  Removing it caused the

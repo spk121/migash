@@ -131,10 +131,9 @@ void positional_params_destroy(positional_params_t **params)
             if (p->params[i] != NULL)
                 string_destroy(&p->params[i]);
         }
-        if (p->arg0 != NULL)
-            string_destroy(&p->arg0);
         xfree(p->params);
     }
+    string_destroy(&p->arg0);
 
     xfree(p);
     *params = NULL;

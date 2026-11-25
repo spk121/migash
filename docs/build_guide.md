@@ -86,6 +86,43 @@ cmake -B build-ci -DCI=ON
 cmake --build build-ci
 ```
 
+### Arena Memory-Usage Statistics
+
+`-DENABLE_ARENA_STATS=ON` (autotools: `--enable-arena-stats`) makes the arena
+allocator in `xalloc.c` count every allocation. It works in every `API_TYPE`,
+ISO C included, and needs no external tools. It defines `MIGA_ARENA_STATS` in
+the generated `miga/migaconf.h`, because it changes the layout of the public
+`miga_arena_t`; code built against the library must use the same header.
+
+```bash
+cmake -B build-stats -DAPI_TYPE=ISO_C -DENABLE_ARENA_STATS=ON
+cmake --build build-stats
+MIGA_ARENA_STATS=1 build-stats/bin/migash script.sh
+```
+
+With `MIGA_ARENA_STATS` set in the environment, the shell prints a report to
+stderr at exit:
+
+```
+arena: live 0 blocks, 0 bytes; peak 438 blocks, 25719 bytes
+arena: 8634 allocs, 8 reallocs, 8634 frees; 353225 bytes allocated in total; largest block 2048 bytes
+arena: 0 blocks, 0 bytes still allocated at teardown (1 resets)
+arena: allocation sizes: <=16: 722 <=32: 5688 <=64: 1849 <=128: 271 <=256: 3 <=512: 104 <=1024: 3 <=2048: 2
+```
+
+- **peak** is the most memory in use at once (sizes as requested, not counting
+  the arena's own bookkeeping).
+- **still allocated at teardown** counts the blocks that shell cleanup did not
+  free before `miga_arena_end()` reclaimed them. These are leaks, so this line
+  should read 0. A peak that grows with a script's loop count also points to a
+  leak.
+- **allocation sizes** is a histogram in power-of-two size classes.
+
+Programs and tests can read the same data through `miga_arena_stats_get()`,
+`miga_arena_stats_reset_peak()`, `miga_arena_stats_clear()`,
+`miga_arena_stats_foreach_live()` and `miga_arena_stats_print()`, declared in
+`miga/xalloc.h`.
+
 ## Understanding Library Layering
 
 The project enforces a strict 3-layer architecture:

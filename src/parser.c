@@ -3066,8 +3066,7 @@ parse_status_t gparse_io_here(parser_t *parser, gnode_t **out_node)
         g_node_destroy(&node);
         return PARSE_ERROR;
     }
-    token_t *here_end_tok = token_clone(parser_current_token(parser));
-    node->data.io_here.here_end = token_get_all_text(here_end_tok);
+    node->data.io_here.here_end = token_get_all_text(parser_current_token(parser));
     node->data.io_here.tok = NULL; /* Will be filled in by gparse_redirect_list */
     parser_advance(parser);
 
@@ -3088,8 +3087,7 @@ parse_status_t gparse_here_end(parser_t *parser, gnode_t **out_node)
         return PARSE_ERROR;
 
     gnode_t *node = g_node_create(G_HERE_END);
-    token_t *here_end_tok = token_clone(parser_current_token(parser));
-    node->data.string = token_get_all_text(here_end_tok);
+    node->data.string = token_get_all_text(parser_current_token(parser));
     parser_advance(parser);
 
     *out_node = node;

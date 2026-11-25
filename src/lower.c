@@ -1646,8 +1646,6 @@ static redir_target_kind_t determine_target_kind(token_type_t op_type, token_t *
 {
     // FIXME: use out_io_loc if needed
     (void)out_io_loc;
-    string_t *lx = token_get_all_text(target_tok);
-
     switch (op_type)
     {
 
@@ -1663,17 +1661,21 @@ static redir_target_kind_t determine_target_kind(token_type_t op_type, token_t *
      * ------------------------------------------------------------ */
     case TOKEN_LESSAND:  /* <& */
     case TOKEN_GREATAND: /* >& */
+    {
+        string_t *lx = token_get_all_text(target_tok);
+        redir_target_kind_t kind;
+
         if (string_compare_cstr(lx, "-") == 0)
-            return REDIR_TARGET_CLOSE;
-
+            kind = REDIR_TARGET_CLOSE;
         /* numeric? */
-        if (string_length(lx) > 0 && string_find_first_not_of_cstr(lx, "0123456789") != -1)
-        {
-            string_destroy(&lx);
-            return REDIR_TARGET_FILE; /* unspecified → treat as filename */
-        }
+        else if (string_length(lx) > 0 && string_find_first_not_of_cstr(lx, "0123456789") != -1)
+            kind = REDIR_TARGET_FILE; /* unspecified → treat as filename */
+        else
+            kind = REDIR_TARGET_FD;
 
-        return REDIR_TARGET_FD;
+        string_destroy(&lx);
+        return kind;
+    }
 
     /* ------------------------------------------------------------
      * FILENAME OPERATORS

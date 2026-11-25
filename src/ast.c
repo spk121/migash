@@ -109,27 +109,15 @@ ast_node_t *ast_node_clone(const ast_node_t *node)
             ast_node_list_clone(node->data.redirected_command.redirections);
         break;
     case AST_REDIRECTION:
-        switch (node->data.redirection.operand)
-        {
-        case REDIR_TARGET_FILE:
-        case REDIR_TARGET_FD:
-            new_node->data.redirection.target = token_clone(node->data.redirection.target);
-            break;
-        case REDIR_TARGET_FD_STRING:
-            new_node->data.redirection.fd_string =
-                string_create_from(node->data.redirection.fd_string);
-            break;
-        case REDIR_TARGET_BUFFER:
-            new_node->data.redirection.target = token_clone(node->data.redirection.target);
-            new_node->data.redirection.buffer =
-                string_create_from(node->data.redirection.buffer);
-            break;
-        case REDIR_TARGET_CLOSE:
-        case REDIR_TARGET_INVALID:
-        default:
-            /* no operand storage */
-            break;
-        }
+        /* Ownership does not depend on the operand kind: deep-copy whatever
+         * the memcpy above shared. */
+        new_node->data.redirection.target =
+            node->data.redirection.target ? token_clone(node->data.redirection.target) : NULL;
+        new_node->data.redirection.fd_string =
+            node->data.redirection.fd_string ? string_create_from(node->data.redirection.fd_string)
+                                             : NULL;
+        new_node->data.redirection.buffer =
+            node->data.redirection.buffer ? string_create_from(node->data.redirection.buffer) : NULL;
         break;
     case AST_FUNCTION_STORED:
         // No owned data to clone.
@@ -268,35 +256,14 @@ void ast_node_destroy(ast_node_t **node)
         }
         break;
 
-    case AST_REDIRECTION: {
-        switch (n->data.redirection.operand)
-        {
-        case REDIR_TARGET_FILE:
-        case REDIR_TARGET_FD:
-            if (n->data.redirection.target)
-                token_destroy(&n->data.redirection.target);
-            break;
-
-        case REDIR_TARGET_FD_STRING:
-            if (n->data.redirection.fd_string)
-                string_destroy(&n->data.redirection.fd_string);
-            break;
-
-        case REDIR_TARGET_BUFFER:
-            if (n->data.redirection.target)
-                token_destroy(&n->data.redirection.target);
-            if (n->data.redirection.buffer)
-                string_destroy(&n->data.redirection.buffer);
-            break;
-
-        case REDIR_TARGET_CLOSE:
-        case REDIR_TARGET_INVALID:
-        default:
-            /* no operand storage */
-            break;
-        }
-    }
-    break;
+    case AST_REDIRECTION:
+        /* Free every owned field, whatever the operand kind: a '>&-' or '<&-'
+         * redirection (REDIR_TARGET_CLOSE) still carries its target token. */
+        if (n->data.redirection.target)
+            token_destroy(&n->data.redirection.target);
+        string_destroy(&n->data.redirection.fd_string);
+        string_destroy(&n->data.redirection.buffer);
+        break;
 
     case AST_FUNCTION_STORED:
         // No owned data to destroy.

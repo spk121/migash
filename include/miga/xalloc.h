@@ -28,8 +28,57 @@ typedef struct
 typedef struct
 {
     void *ptr;
+#ifdef MIGA_ARENA_STATS
+    size_t size; // requested size, needed to keep live_bytes exact
+#endif
 } miga_arena_alloc_t;
 #endif
+
+#ifdef MIGA_ARENA_STATS
+/**
+ * Number of allocation size classes in miga_arena_stats_t.size_classes.
+ * Class 0 counts blocks of 1..16 bytes, class k (k >= 1) counts blocks of
+ * (2^(k+3), 2^(k+4)] bytes, and the last class counts everything larger.
+ */
+#define MIGA_ARENA_STATS_SIZE_CLASSES 16
+
+/**
+ * Memory-usage statistics kept by the arena when MIGA_ARENA_STATS is defined
+ * (configure with -DENABLE_ARENA_STATS=ON or --enable-arena-stats).
+ *
+ * All sizes are the sizes requested by the caller, not what the C library
+ * actually reserves. The arena's own bookkeeping array is not counted.
+ */
+typedef struct miga_arena_stats_t
+{
+    /* Current state */
+    size_t live_blocks; // blocks allocated and not yet freed
+    size_t live_bytes;  // bytes in those blocks
+
+    /* High-water marks since the last miga_arena_stats_reset_peak() */
+    size_t peak_blocks;
+    size_t peak_bytes;
+
+    /* Cumulative counters since the last miga_arena_stats_clear() */
+    size_t total_allocs;          // xmalloc, xcalloc, xstrdup (and xrealloc from NULL)
+    size_t total_reallocs;        // xrealloc of an existing block
+    size_t total_frees;           // xfree (and xrealloc to size 0)
+    size_t total_bytes_allocated; // sum of all allocation and reallocation sizes
+    size_t largest_block;         // largest single allocation or reallocation
+    size_t size_classes[MIGA_ARENA_STATS_SIZE_CLASSES]; // allocations + reallocations by size
+
+    /* Blocks still live when the arena was last reset (miga_arena_reset(),
+     * miga_arena_end(), or an out-of-memory rollback), counted after the
+     * cleanup callback ran. Blocks that nothing freed before teardown are
+     * leaks, so in a shell that cleans up after itself these should be 0. */
+    size_t teardown_blocks;
+    size_t teardown_bytes;
+    size_t resets; // number of resets that found the arena initialized
+} miga_arena_stats_t;
+
+/** Callback for miga_arena_stats_foreach_live(). */
+typedef void (*miga_arena_live_block_fn)(const void *ptr, size_t size, void *user_data);
+#endif /* MIGA_ARENA_STATS */
 
 typedef void (*miga_arena_resource_cleanup_fn)(void *user_data);
 
@@ -53,6 +102,9 @@ typedef struct miga_arena_t
     long max_allocations; // maximum number of allocations allowed
     miga_arena_resource_cleanup_fn resource_cleanup;
     void *resource_cleanup_user_data;
+#ifdef MIGA_ARENA_STATS
+    miga_arena_stats_t stats;
+#endif
 } miga_arena_t;
 
 // Access to global singleton arena for use in miga_setjmp() macro
@@ -107,6 +159,37 @@ MIGA_API void miga_arena_reset(void);
  * being unloaded.
  */
 MIGA_API void miga_arena_end(void);
+
+#ifdef MIGA_ARENA_STATS
+/**
+ * Copy the global arena's statistics into *out.
+ */
+MIGA_API void miga_arena_stats_get(miga_arena_stats_t *out);
+
+/**
+ * Set the peak counters to the current live counters, so that the next
+ * miga_arena_stats_get() reports the high-water mark of the code run since.
+ */
+MIGA_API void miga_arena_stats_reset_peak(void);
+
+/**
+ * Zero the cumulative counters, the size classes and the teardown counters,
+ * and reset the peaks. The live counters are kept, since those blocks are
+ * still allocated.
+ */
+MIGA_API void miga_arena_stats_clear(void);
+
+/**
+ * Call fn once for each block currently allocated from the global arena,
+ * in address order. fn must not allocate from or free to the arena.
+ */
+MIGA_API void miga_arena_stats_foreach_live(miga_arena_live_block_fn fn, void *user_data);
+
+/**
+ * Write a human-readable report of the global arena's statistics to out.
+ */
+MIGA_API void miga_arena_stats_print(FILE *out);
+#endif /* MIGA_ARENA_STATS */
 
 #ifndef MIGA_HIDE_LOCALS    
 /**
@@ -188,6 +271,14 @@ MIGA_LOCAL void arena_init_ex(miga_arena_t *arena);
 MIGA_LOCAL void arena_set_cleanup_ex(miga_arena_t *arena, miga_arena_resource_cleanup_fn fn, void *user_data);
 MIGA_LOCAL void arena_reset_ex(miga_arena_t *arena);
 MIGA_LOCAL void arena_end_ex(miga_arena_t *arena);
+#ifdef MIGA_ARENA_STATS
+MIGA_LOCAL void arena_stats_get_ex(miga_arena_t *arena, miga_arena_stats_t *out);
+MIGA_LOCAL void arena_stats_reset_peak_ex(miga_arena_t *arena);
+MIGA_LOCAL void arena_stats_clear_ex(miga_arena_t *arena);
+MIGA_LOCAL void arena_stats_foreach_live_ex(miga_arena_t *arena, miga_arena_live_block_fn fn,
+                                            void *user_data);
+MIGA_LOCAL void arena_stats_print_ex(miga_arena_t *arena, FILE *out);
+#endif
 #endif /* MIGA_HIDE_LOCALS */
 
 MIGA_EXTERN_C_END

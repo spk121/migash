@@ -766,9 +766,13 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
                  st != MIGA_EXEC_STATUS_EMPTY && code == 0)
             code = 1;
 
+        /* Flush only the output streams. fflush(NULL) would also flush the
+         * stream the parent is reading the script from, and on a C library
+         * that implements POSIX fflush() for input streams (newer glibc) that
+         * moves the file offset the parent shares with this child back to the
+         * child's read position, so the parent re-reads script text. */
         fflush(stdout);
         fflush(stderr);
-        fflush(NULL);
         _exit(code);
     }
 
@@ -1049,7 +1053,7 @@ strlist_t *expand_pathname(miga_frame_t *frame, const string_t *pattern)
     }
 
     strlist_t *result = strlist_create();
-    strlist_push_back(result, string_create_from(pattern));
+    strlist_push_back(result, pattern);
     return result;
 }
 
@@ -1474,8 +1478,8 @@ static strlist_t *expand_parts_to_fields(miga_frame_t *frame, const part_list_t 
 
     if (fb.has_content)
         fb_push_current(&fb);
-    else
-        string_destroy(&fb.current);
+    /* fb_push_current() leaves a fresh empty string behind */
+    string_destroy(&fb.current);
 
     string_destroy(&ifs);
     if (out_glob)
@@ -1545,12 +1549,12 @@ strlist_t *exec_frame_expander_expand_word(miga_frame_t *frame, const token_t *t
             const string_t *field = strlist_at(fields, i);
             if (!glob_flags[i])
             {
-                strlist_push_back(globs, string_create_from(field));
+                strlist_push_back(globs, field);
                 continue;
             }
             strlist_t *matches = expand_pathname(frame, field);
             for (int j = 0; j < strlist_size(matches); j++)
-                strlist_push_back(globs, string_create_from(strlist_at(matches, j)));
+                strlist_push_back(globs, strlist_at(matches, j));
             strlist_destroy(&matches);
         }
         strlist_destroy(&fields);
@@ -1651,7 +1655,7 @@ strlist_t *expand_words(miga_frame_t *frame, const token_list_t *tokens)
         {
             for (int j = 0; j < strlist_size(expanded); j++)
             {
-                strlist_push_back(result, string_create_from(strlist_at(expanded, j)));
+                strlist_push_back(result, strlist_at(expanded, j));
             }
             strlist_destroy(&expanded);
         }

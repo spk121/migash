@@ -102,6 +102,7 @@ add_compile_definitions(
 
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
+option(ENABLE_ARENA_STATS "Track memory-usage statistics in the arena allocator" OFF)
 
 if(MSVC)
     # The sources use the ISO C functions (fopen, strerror, ...) on purpose;
@@ -240,6 +241,14 @@ else()
     set(MIGA_API_MACRO MIGA_ISO_C_API)
 endif()
 set(CONFIG_DEFINE "#define ${MIGA_API_MACRO} 1")
+# MIGA_ARENA_STATS changes the layout of the public miga_arena_t, so it goes in
+# migaconf.h where the library and its users both see it.
+if(ENABLE_ARENA_STATS)
+    set(ARENA_STATS_DEFINE "#define MIGA_ARENA_STATS 1")
+    message(STATUS "Arena memory-usage statistics enabled")
+else()
+    set(ARENA_STATS_DEFINE "/* #undef MIGA_ARENA_STATS */")
+endif()
 # The sources test the API macro before including any project header (to pick
 # system headers), so it must also be defined on the command line, the way the
 # autotools build defines it in config.h.
@@ -458,6 +467,7 @@ set(MIGASH_UNIT_TEST_SOURCES
     test/mgsh/test_lexer_heredoc_ctest.c
     test/mgsh/test_lexer_param_exp_ctest.c
     test/mgsh/test_lexer_quotes_ctest.c
+    test/mgsh/test_memory_leak_ctest.c
     test/mgsh/test_parser_ctest.c
     test/mgsh/test_parser_gnode_ctest.c
     test/mgsh/test_pattern_removal_ctest.c
@@ -497,9 +507,12 @@ foreach(test_src ${MIGASH_UNIT_TEST_SOURCES})
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test
     )
 
+    # Without a timeout a hung test stalls CI until the job limit; each unit
+    # test finishes in well under a second.
     set_tests_properties(${test_name} PROPERTIES
         FAIL_REGULAR_EXPRESSION "not ok|\\b(Bail out!|Bailout!)\\b"
         PASS_REGULAR_EXPRESSION "ok"
+        TIMEOUT 60
     )
 endforeach()
 
@@ -511,6 +524,7 @@ if(UNIX AND API_TYPE STREQUAL "POSIX")
         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh
     )
+    set_tests_properties(shell_tests PROPERTIES TIMEOUT 300)
     # Interactive SIGINT behaviour, driven through a pseudo-terminal.
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)

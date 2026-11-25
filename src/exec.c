@@ -188,6 +188,9 @@ void exec_destroy(miga_exec_t **executor_ptr)
         sig_act_store_destroy(&e->original_signals);
 
     job_store_destroy(&e->jobs);
+    if (e->builtins)
+        builtin_store_destroy(&e->builtins);
+    strlist_destroy(&e->env_vars);
 
 #if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
     if (e->open_fds)
@@ -1064,6 +1067,7 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     //
     // N.B. If e->variables is set, e->variables, rather than e->envp, becomes the source of the
     // initial environment variables for the top frame when the top frame is initialized.
+    strlist_destroy(&e->env_vars);
     if (e->envp)
         e->env_vars = strlist_create_from_cstr_array((const char **)e->envp, -1);
     else

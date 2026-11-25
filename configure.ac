@@ -83,6 +83,20 @@ case "$configuration" in
 esac
 
 AC_SUBST([CONFIG_DEFINE])
+
+dnl Arena memory-usage statistics. MIGA_ARENA_STATS changes the layout of the
+dnl public miga_arena_t, so it goes in migaconf.h, not config.h.
+AC_ARG_ENABLE([arena-stats],
+  [AS_HELP_STRING([--enable-arena-stats],
+                  [Track memory-usage statistics in the arena allocator])],
+  [arena_stats="$enableval"],
+  [arena_stats="no"])
+AC_MSG_CHECKING([whether to track arena memory-usage statistics])
+AS_IF([test "x$arena_stats" = xyes],
+  [ARENA_STATS_DEFINE="#define MIGA_ARENA_STATS 1"],
+  [ARENA_STATS_DEFINE="/* #undef MIGA_ARENA_STATS */"])
+AC_MSG_RESULT([$arena_stats])
+AC_SUBST([ARENA_STATS_DEFINE])
 dnl The shell conformance suite needs a shell that can fork and redirect
 dnl descriptors, i.e. the POSIX configuration.
 AM_CONDITIONAL([POSIX_API], [test "x$configuration" = xposix])
