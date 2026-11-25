@@ -23,7 +23,8 @@ an interactive shell), checked on a pty:
   7. ENV is parameter-expanded and the file it names is sourced before the
      first prompt (its PS1 is used).
   8. "set -o ignoreeof" refuses end of file with a message.
-  9. End of file at a PS1 prompt ends the shell with the last command's status.
+  9. End of file at a PS1 prompt ends the shell with the last command's status;
+     "exit" ends it the same way (same final output), with the given status.
  10. Without a terminal: a shell reading commands from a pipe prints no
      prompt; "sh -i" reading from a pipe prints prompts on standard error.
 
@@ -33,7 +34,7 @@ Exit status: 0 when every check passes, 1 otherwise. Validated against dash
 import os, subprocess, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ptyshell import PtyShell, check, finish, exit_status
+from ptyshell import PROMPT, PtyShell, check, finish, exit_status
 
 shell_argv = sys.argv[1:] if len(sys.argv) > 1 else ["sh"]
 work = tempfile.mkdtemp(prefix="prompt_pty.")
@@ -184,6 +185,27 @@ status = sh.wait_exit()
 check(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 3,
       "end of file at the prompt ends the shell with the last status", exit_status(status))
 sh.close()
+
+# 9b. "exit" ends the shell like end of file does: through the same shutdown,
+#     so with the same final output (a shell's farewell line, if it has one)
+def final_output(end_session):
+    s2 = PtyShell(shell_argv)
+    s2.take()
+    end_session(s2)
+    out = s2.drain(1.0)  # read the final output before the pty goes away
+    st = s2.wait_exit()
+    lines = [l.replace(PROMPT.decode(), "").strip() for l in out.splitlines()]
+    lines = [l for l in lines if l and l != "exit 4"]
+    s2.close()
+    return st, (lines[-1] if lines else "")
+
+
+eof_status, eof_last = final_output(lambda s2: s2.ctrl("d"))
+exit_status_, exit_last = final_output(lambda s2: s2.send("exit 4\n"))
+check(exit_status_ is not None and os.WIFEXITED(exit_status_) and os.WEXITSTATUS(exit_status_) == 4
+      and exit_last == eof_last,
+      "exit ends the shell like end of file, with the given status",
+      "%s; last line after exit %r, after end of file %r" % (exit_status(exit_status_), exit_last, eof_last))
 
 # 10. no terminal: pipe without -i prints no prompt; -i prints prompts to stderr
 env = dict(os.environ)

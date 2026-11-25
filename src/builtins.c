@@ -599,27 +599,14 @@ int builtin_exit(miga_frame_t *frame, const strlist_t *args)
     if (frame->executor)
         exec_reap_background_jobs(frame->executor, true);
 
-    // If this is the top-level frame, terminate the process
-    if (!frame->parent)
-    {
-#ifdef MIGA_POSIX_API
-        _exit(exit_status);
-#elif defined(MIGA_UCRT_API)
-        _exit(exit_status);
-#else
-        exit(exit_status);
-#endif
-    }
-    else
-    {
-        // Not top-level (function, loop, brace group, ...): unwind every
-        // frame to the top level and have the main loop stop.
-        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
-        frame->last_exit_status = exit_status;
-        exec_request_exit(frame->executor, exit_status);
-    }
-
-    // Not reached if top-level
+    // Unwind every frame to the top level and have the main loop stop, so
+    // that the shell ends through its normal shutdown (freeing its memory,
+    // the MIGA_ARENA_STATS report). A forked child (command substitution,
+    // pipeline element, subshell) ends with _exit() once control returns to
+    // the code that forked it. The EXIT trap has run above and runs only once.
+    frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
+    frame->last_exit_status = exit_status;
+    exec_request_exit(frame->executor, exit_status);
     return exit_status;
 }
 
