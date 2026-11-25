@@ -1474,8 +1474,8 @@ static strlist_t *expand_parts_to_fields(miga_frame_t *frame, const part_list_t 
 
     if (fb.has_content)
         fb_push_current(&fb);
-    else
-        string_destroy(&fb.current);
+    /* fb_push_current() leaves a fresh empty string behind */
+    string_destroy(&fb.current);
 
     string_destroy(&ifs);
     if (out_glob)
