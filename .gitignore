@@ -169,3 +169,7 @@ core.*
 # /install/
 # /dist/
 # /doc/doxygen/
+
+# Python bytecode (test/interactive helpers)
+__pycache__/
+*.pyc
