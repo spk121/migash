@@ -127,14 +127,11 @@ void tokenizer_set_error(tokenizer_t *tok, const char *format, ...)
     Expects_not_null(tok);
     Expects_not_null(format);
 
-    if (tok->error_msg != NULL)
-    {
-        string_clear(tok->error_msg);
-    }
+    if (tok->error_msg == NULL)
+        tok->error_msg = string_create();
 
     va_list args;
     va_start(args, format);
-    tok->error_msg = string_create();
     string_vprintf(tok->error_msg, format, args);
     va_end(args);
 }
