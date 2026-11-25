@@ -4537,18 +4537,15 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
 
 /**
  * Wait for all background jobs.
- * Returns the exit status of the last job waited for, or 0 if none.
+ * Returns 0, as POSIX specifies for wait without operands.
  */
 static int wait_for_all(miga_frame_t *frame)
 {
-    /* Wait for every child, whether or not the job table knows about it:
-     * the table only exists for job control, "wait" must work regardless. */
+    /* Wait for every child, whether or not the job table knows about it */
     if (!frame || !frame->executor)
         return 0;
     job_store_t *jobs = frame->executor->jobs;
     (void)jobs; /* only the POSIX implementation records job states */
-
-    int last_exit_status = 0;
 
 #ifdef MIGA_POSIX_API
     int status;
@@ -4563,13 +4560,11 @@ static int wait_for_all(miga_frame_t *frame)
             {
                 if (jobs)
                     job_store_set_process_state(jobs, result, JOB_DONE, WEXITSTATUS(status));
-                last_exit_status = WEXITSTATUS(status);
             }
             else if (WIFSIGNALED(status))
             {
                 if (jobs)
                     job_store_set_process_state(jobs, result, JOB_TERMINATED, 128 + WTERMSIG(status));
-                last_exit_status = 128 + WTERMSIG(status);
             }
         }
     }
@@ -4604,19 +4599,18 @@ static int wait_for_all(miga_frame_t *frame)
             DWORD exit_code = 0;
             GetExitCodeProcess(handles[i], &exit_code);
             job_store_iter_set_state(&iters[i], JOB_DONE, (int)exit_code);
-            last_exit_status = (int)exit_code;
         }
         else
         {
             job_store_iter_set_state(&iters[i], JOB_TERMINATED, 1);
-            last_exit_status = 1;
         }
     }
 #undef MAX_WAIT_HANDLES
 #endif
 
     wait_forget_completed_jobs(frame, 0);
-    return last_exit_status;
+    /* POSIX: with no operands, wait returns 0 once every child is done */
+    return 0;
 }
 
 int builtin_wait(miga_frame_t *frame, const strlist_t *args)

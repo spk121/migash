@@ -36,6 +36,9 @@ assert_eq "refused" "$result" "fg reports that there is no job control"
 # -----------------------------
 # 2. The status wait returns
 # -----------------------------
+result=$($SH -c '(exit 5) & (exit 6) & wait; echo $?')
+assert_eq "0" "$result" "wait without operands returns 0"
+
 result=$($SH -c '(exit 4) & p=$!; wait $p; echo $?')
 assert_eq "4" "$result" "wait pid returns the job's exit status"
 
