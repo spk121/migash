@@ -182,4 +182,18 @@ assert_eq "24" "$result" "adjacent arithmetic expansions"
 result=$((1+1))$((2+2))
 assert_eq "24" "$result" "unquoted adjacent arithmetic"
 
+# -----------------------------
+# The shell's status when it runs no command at all
+# -----------------------------
+SH="${TEST_SHELL:-sh}"
+
+$SH /dev/null
+assert_eq "0" "$?" "an empty script exits with status 0"
+
+printf '\n\n' | $SH
+assert_eq "0" "$?" "input of blank lines exits with status 0"
+
+result=$($SH -c 'echo $?')
+assert_eq "0" "$result" "\$? is 0 before any command has run"
+
 finish_tests

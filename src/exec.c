@@ -1006,6 +1006,15 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     e->sigchld_received = false;
     memset((void *)e->trap_pending, 0, sizeof(e->trap_pending));
 
+    /* $? is 0 until a command runs (an embedder may have preset it), so that
+     * a shell ending before running anything (an empty script, end of file
+     * at the first prompt) exits with status 0, not -1 & 0xff = 255. */
+    if (!e->last_exit_status_set)
+    {
+        e->last_exit_status = 0;
+        e->last_exit_status_set = true;
+    }
+
     /* The job table records every asynchronous list, so that "jobs", "%N"
      * job IDs and "wait" work in scripts too. Job control (process groups,
      * fg/bg, status notices) is only active in an interactive shell. */

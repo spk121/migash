@@ -186,6 +186,15 @@ check(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 
       "end of file at the prompt ends the shell with the last status", exit_status(status))
 sh.close()
 
+# (no PS1 assignment first: no command may run before the end of file)
+sh = PtyShell(shell_argv, set_prompt=False)
+sh.read_until(default_ps1.encode(), 5.0)
+sh.ctrl("d")
+status = sh.wait_exit()
+check(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0,
+      "end of file at the first prompt ends the shell with status 0", exit_status(status))
+sh.close()
+
 # 9b. "exit" ends the shell like end of file does: through the same shutdown,
 #     so with the same final output (a shell's farewell line, if it has one)
 def final_output(end_session):
