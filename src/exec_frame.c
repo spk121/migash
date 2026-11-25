@@ -2043,13 +2043,13 @@ exec_frame_execute_result_t exec_frame_execute_function_def_clause(miga_frame_t 
 
     func_store_t *func_store = frame->functions;
     func_store_insert_result_t ret = func_store_add_ex(func_store, name, body, redirections);
+    /* func_store_add_ex() stores its own clone of the redirections */
+    if (redirections)
+        exec_redirections_destroy(&redirections);
 
     if (ret.error != FUNC_STORE_ERROR_NONE)
     {
         exec_set_error_printf(frame->executor, "Failed to define function '%s'", string_cstr(name));
-        // Clean up redirections on failure
-        if (redirections)
-            exec_redirections_destroy(&redirections);
         result.status = MIGA_EXEC_STATUS_ERROR;
         result.exit_status = 1;
         return result;
