@@ -184,7 +184,6 @@ gnode_payload_t gnode_get_payload_type(gnode_type_t type)
     /* Single-child nodes */
     case G_PROGRAM:
     case G_CMD_PREFIX:
-    case G_FUNCTION_BODY:
     case G_SEPARATOR:
     case G_LINEBREAK:
     case G_COMPOUND_COMMAND:
@@ -202,6 +201,7 @@ gnode_payload_t gnode_get_payload_type(gnode_type_t type)
     case G_CASE_ITEM:
     case G_CASE_ITEM_NS:
     case G_FUNCTION_DEFINITION:
+    case G_FUNCTION_BODY: /* .a = compound_command, .b = redirect_list */
     case G_IO_REDIRECT:
     case G_IO_FILE:
     case G_SUBSHELL:
