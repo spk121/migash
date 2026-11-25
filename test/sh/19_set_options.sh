@@ -251,5 +251,26 @@ result=$( (sleep 1; echo child) & wait; echo parent )
 assert_eq "child
 parent" "$result" "wait with no operands waits for background jobs"
 
+# -----------------------------
+# 12. pipefail: the status of the rightmost failing command
+# -----------------------------
+result=$($SH -c 'false | true; echo $?')
+assert_eq "0" "$result" "without pipefail a pipeline has its last command's status"
+
+result=$($SH -c 'set -o pipefail; false | true; echo $?')
+assert_eq "1" "$result" "pipefail: a failing first command fails the pipeline"
+
+result=$($SH -c 'set -o pipefail; (exit 3) | (exit 4) | true; echo $?')
+assert_eq "4" "$result" "pipefail: the rightmost failing command gives the status"
+
+result=$($SH -c 'set -o pipefail; true | true; echo $?')
+assert_eq "0" "$result" "pipefail: a pipeline of successes succeeds"
+
+result=$($SH -c 'set -o pipefail; ! false | true; echo $?')
+assert_eq "0" "$result" "pipefail: ! negates the pipefail status"
+
+result=$($SH -c 'set -o pipefail; set +o pipefail; (exit 3) | true; echo $?')
+assert_eq "0" "$result" "set +o pipefail turns it off again"
+
 rm -rf "$WORK"
 finish_tests

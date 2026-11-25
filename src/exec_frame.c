@@ -2552,8 +2552,11 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
         }
     }
 
-    /* Wait for all children (collect every status for future pipefail support) */
+    /* Wait for all children. The pipeline's status is the last command's, or
+     * with "set -o pipefail" that of the rightmost command that failed
+     * (0 if none did). */
     int last_status = 0;
+    int pipefail_status = 0;
     for (int i = 0; i < ncmds; i++)
     {
         int status;
@@ -2574,6 +2577,7 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
             {
                 last_status = 127;
             }
+            pipefail_status = 127;
             continue;
         }
 
@@ -2591,17 +2595,16 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
             child_status = 127;
         }
 
-        /*
-         * TODO: Store child_status in frame->executor->pipe_statuses[i]
-         * for pipefail / $PIPESTATUS support.
-         */
-
+        if (child_status != 0)
+            pipefail_status = child_status;
         if (i == ncmds - 1)
         {
             last_status = child_status;
         }
     }
 
+    if (frame->opt_flags && frame->opt_flags->pipefail)
+        last_status = pipefail_status;
     result.exit_status = is_negated ? (last_status == 0 ? 1 : 0) : last_status;
     frame->last_exit_status = result.exit_status;
 
