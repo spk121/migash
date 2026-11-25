@@ -1215,6 +1215,12 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
                 int job_id = job_store_add(exec->jobs, cmdline, true /* is_background */);
                 job_store_add_process(exec->jobs, job_id, pid, cmdline);
                 string_destroy(&cmdline);
+                /* The main loop reaps only between commands, so a loop that
+                 * starts background jobs would pile up finished children
+                 * (zombies, and job table entries) until it ends. Collect the
+                 * finished ones now; the new job is already in the table, so
+                 * its status is kept even if it has finished too. */
+                exec_reap_background_jobs(exec, false);
                 return (exec_frame_execute_result_t){.exit_status = 0,
                                                      .has_exit_status = true,
                                                      .flow = MIGA_FRAME_FLOW_NORMAL,
