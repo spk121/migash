@@ -209,7 +209,13 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
     if (!store)
         return -1;
 
-    int job_id = store->next_job_id++;
+    /* Like other shells, number a new job one past the highest job ID still
+     * in use, so that numbers start again at 1 once every job is gone. */
+    int job_id = 1;
+    for (const job_t *job = store->jobs; job; job = job->next)
+        if (job->job_id >= job_id)
+            job_id = job->job_id + 1;
+    store->next_job_id = job_id + 1;
     job_t *new_job = job_create(job_id, command_line, is_background);
 
     // Add to front of list

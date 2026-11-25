@@ -4,7 +4,8 @@
 # Covers: the job table of a script (asynchronous lists get job IDs that
 #         "jobs", "kill" and "wait" accept), fg/bg refusing to work without
 #         job control, and the status "wait" returns for a pid or job ID,
-#         also when the job finished before wait was called.
+#         also when the job finished before wait was called, and the reuse
+#         of job numbers once jobs are gone.
 #
 # Notes:
 #   - Each check runs in its own $SH -c so that job numbers start at 1.
@@ -50,5 +51,15 @@ assert_eq "7" "$result" "wait %N returns the status of the last command of a pip
 
 result=$($SH -c '(exit 2) & wait %1; jobs; echo end')
 assert_eq "end" "$result" "a job is forgotten once wait has returned its status"
+
+# -----------------------------
+# 3. Job numbers
+# -----------------------------
+result=$($SH -c '(exit 2) & wait %1; (exit 3) & wait %1; echo $?')
+assert_eq "3" "$result" "job numbers start again at 1 once every job is gone"
+
+result=$($SH -c 'sleep 2 & sleep 2 & kill %1; wait %1; sleep 2 & jobs | sed "s/].*/]/" | sort; kill %2 %3')
+assert_eq "[2]
+[3]" "$result" "a new job is numbered one past the highest job number in use"
 
 finish_tests
