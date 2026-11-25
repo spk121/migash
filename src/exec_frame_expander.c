@@ -766,9 +766,13 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
                  st != MIGA_EXEC_STATUS_EMPTY && code == 0)
             code = 1;
 
+        /* Flush only the output streams. fflush(NULL) would also flush the
+         * stream the parent is reading the script from, and on a C library
+         * that implements POSIX fflush() for input streams (newer glibc) that
+         * moves the file offset the parent shares with this child back to the
+         * child's read position, so the parent re-reads script text. */
         fflush(stdout);
         fflush(stderr);
-        fflush(NULL);
         _exit(code);
     }
 

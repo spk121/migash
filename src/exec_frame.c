@@ -1279,7 +1279,10 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
     if (policy->exit.terminates_process)
     {
 #ifdef MIGA_POSIX_API
-        fflush(NULL); /* builtins write through stdio */
+        /* Builtins write through stdio. Flush only the output streams: see
+         * the comment in expand_command_subst(). */
+        fflush(stdout);
+        fflush(stderr);
         _exit(result.exit_status);
 #else
         /* For ISO C mode, just return */
@@ -2490,7 +2493,10 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
 
             /* Exit the child with the command's exit status. ("!" is applied
              * once by the parent to the pipeline's status, not per command.) */
-            fflush(NULL);
+            /* Flush only the output streams: see the comment in
+             * expand_command_subst(). */
+            fflush(stdout);
+            fflush(stderr);
             _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
         }
 
