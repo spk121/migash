@@ -3952,6 +3952,24 @@ static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const c
     }
 
 #ifdef MIGA_POSIX_API
+    if (frame->executor->job_control_disabled)
+    {
+        /* Without job control a job is not a process group of its own:
+         * signal each of its processes that is still running. */
+        int errors = 0;
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+        {
+            if (proc->state == JOB_DONE || proc->state == JOB_TERMINATED)
+                continue;
+            if (kill(proc->pid, signum) != 0 && errno != ESRCH)
+            {
+                fprintf(stderr, "kill: %s - %s\n", target_str, strerror(errno));
+                errors++;
+            }
+        }
+        return errors ? 1 : 0;
+    }
+
     /* Send signal to the process group */
     if (kill(-job->pgid, signum) != 0)
     {
@@ -4649,7 +4667,7 @@ int builtin_fg(miga_frame_t *frame, const strlist_t *args)
     Expects_not_null(args);
 
 
-    if (!frame->executor || !frame->executor->jobs)
+    if (!frame->executor || !frame->executor->jobs || frame->executor->job_control_disabled)
     {
         fprintf(stderr, "fg: no job control\n");
         return 1;
@@ -4840,7 +4858,7 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
     Expects_not_null(args);
 
 
-    if (!frame->executor || !frame->executor->jobs)
+    if (!frame->executor || !frame->executor->jobs || frame->executor->job_control_disabled)
     {
         fprintf(stderr, "bg: no job control\n");
         return 1;

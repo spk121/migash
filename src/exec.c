@@ -1006,13 +1006,13 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     e->sigchld_received = false;
     memset((void *)e->trap_pending, 0, sizeof(e->trap_pending));
 
-    if (!e->job_control_disabled)
-    {
-        if (e->is_interactive)
-            e->jobs = job_store_create();
-        else
-            e->job_control_disabled = true;
-    }
+    /* The job table records every asynchronous list, so that "jobs", "%N"
+     * job IDs and "wait" work in scripts too. Job control (process groups,
+     * fg/bg, status notices) is only active in an interactive shell. */
+    if (!e->jobs)
+        e->jobs = job_store_create();
+    if (!e->job_control_disabled && !e->is_interactive)
+        e->job_control_disabled = true;
 
 #ifdef MIGA_POSIX_API
     if (!e->pgid_valid)
@@ -3650,6 +3650,22 @@ bool exec_has_jobs(const miga_exec_t *executor)
  * Job Control
  * ============================================================================ */
 
+/* Finished jobs a shell without job control remembers, so that "wait pid" or
+ * "wait %N" can still report their status after the reaper collected them.
+ * POSIX requires at least {_POSIX_CHILD_MAX} (25). */
+#define EXEC_REMEMBERED_FINISHED_JOBS 256
+
+/* Drop finished jobs from the table after reaping: the reported ones with job
+ * control, and with it off (no reports) all but the most recent
+ * EXEC_REMEMBERED_FINISHED_JOBS, so that the table stays bounded. */
+static void exec_forget_finished_jobs(miga_exec_t *executor)
+{
+    if (executor->job_control_disabled)
+        job_store_limit_completed(executor->jobs, EXEC_REMEMBERED_FINISHED_JOBS);
+    else
+        job_store_remove_completed(executor->jobs);
+}
+
 void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
@@ -3677,7 +3693,7 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
         job_store_print_completed_jobs(executor->jobs, stdout);
     }
     if (any_reaped)
-        job_store_remove_completed(executor->jobs);
+        exec_forget_finished_jobs(executor);
 #elifdef MIGA_UCRT_API
     bool any_completed = false;
     job_store_t *store = executor->jobs;
@@ -3711,6 +3727,6 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
     if (any_completed && notify)
         job_store_print_completed_jobs(executor->jobs, stdout);
     if (any_completed)
-        job_store_remove_completed(executor->jobs);
+        exec_forget_finished_jobs(executor);
 #endif
 }

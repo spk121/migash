@@ -562,6 +562,22 @@ size_t job_store_remove_completed(job_store_t *store)
     return removed;
 }
 
+size_t job_store_limit_completed(job_store_t *store, size_t max_completed)
+{
+    if (!store)
+        return 0;
+
+    /* The list starts with the newest job: keep the first max_completed
+     * completed jobs, and let job_store_remove_completed() drop the rest. */
+    size_t seen = 0;
+    for (job_t *job = store->jobs; job; job = job->next)
+    {
+        if (job_is_completed(job) && ++seen > max_completed)
+            job->is_notified = true;
+    }
+    return job_store_remove_completed(store);
+}
+
 // ============================================================================
 // Polling API (for Win32/UCRT)
 // ============================================================================
