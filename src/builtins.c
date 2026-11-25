@@ -3528,11 +3528,19 @@ int builtin_pwd(miga_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
+static void wait_forget_completed_jobs(miga_frame_t *frame, int only_job_id);
+
 int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
 {
 
     if (!frame)
         return 1;
+
+    /* Collect the background jobs that have finished, so that they are not
+     * reported as still running (the reaper otherwise only runs between
+     * commands). */
+    if (frame->executor)
+        exec_reap_background_jobs(frame->executor, false);
 
     /* Check if there are any jobs */
     if (!exec_has_jobs(frame->executor))
@@ -3604,12 +3612,18 @@ int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
                 fprintf(stderr, "jobs: %s: no such job\n", string_cstr(arg_str));
                 exit_status = 1;
             }
+            /* A finished job whose status was reported is forgotten (POSIX) */
+            else if (format != EXEC_JOBS_FORMAT_PID_ONLY)
+                wait_forget_completed_jobs(frame, job_id);
         }
     }
     else
     {
         /* No job_ids specified - show all jobs */
         exec_print_all_jobs(frame->executor, format, builtin_stdout(frame));
+        /* Finished jobs whose status was reported are forgotten (POSIX) */
+        if (format != EXEC_JOBS_FORMAT_PID_ONLY)
+            wait_forget_completed_jobs(frame, 0);
     }
 
     return exit_status;

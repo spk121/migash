@@ -6,7 +6,8 @@
 #         job control, and the status "wait" returns for a pid or job ID,
 #         also when the job finished before wait was called, and the reuse
 #         of job numbers once jobs are gone, and the job ID forms %%, %+,
-#         %-, %string and %?string.
+#         %-, %string and %?string, and "jobs" reporting finished jobs as
+#         such, then forgetting them.
 #
 # Notes:
 #   - Each check runs in its own $SH -c so that job numbers start at 1.
@@ -81,5 +82,16 @@ assert_eq "7" "$result" "%?string is the job whose command contains string"
 
 result=$($SH -c 'wait %nomatch' 2>/dev/null; echo $?)
 assert_eq "127" "$result" "wait for an unknown job ID returns 127"
+
+# -----------------------------
+# 5. jobs reports finished jobs, then forgets them
+# -----------------------------
+# "jobs" itself must run in the shell that started the job (not in a pipeline
+# or command substitution), so its output goes to a file.
+result=$($SH -c 'f=${TMPDIR:-/tmp}/jobs_out_$$; (exit 6) & sleep 1; jobs > "$f"; grep -c Running "$f"; rm -f "$f"')
+assert_eq "0" "$result" "jobs does not report a job that finished during the same command as running"
+
+result=$($SH -c '(exit 6) & sleep 1; jobs >/dev/null; jobs; echo end')
+assert_eq "end" "$result" "a finished job is forgotten once jobs has reported it"
 
 finish_tests
