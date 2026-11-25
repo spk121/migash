@@ -43,7 +43,7 @@ typedef struct process_t
 #else
     int pid;           // Process ID (or 0 if not available)
 #endif
-    int exit_status;   // Exit status (if done) or signal number (if terminated)
+    int exit_status;   // Exit status (if done) or 128 + signal number (if terminated)
     job_state_t state; // Current state of this process
 } process_t;
 

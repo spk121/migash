@@ -472,7 +472,7 @@ void job_store_print_jobs(const job_store_t *store, FILE *output)
             if (proc->state == JOB_DONE)
                 fprintf(output, "exit status: %d  ", proc->exit_status);
             else if (proc->state == JOB_TERMINATED)
-                fprintf(output, "signal: %d  ", proc->exit_status);
+                fprintf(output, "signal: %d  ", proc->exit_status - 128);
             fprintf(output, "command: %s\n", proc->command ? string_cstr(proc->command) : "(no command)");
         }
     }
