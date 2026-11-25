@@ -3502,7 +3502,7 @@ bool exec_job_kill(miga_exec_t *executor, int job_id, int sig)
 
 /**
  * Parse a job-ID specifier from a string.
- * Accepts: %n, %+, %%, %-, or a plain number.
+ * Accepts: %n, %+, %%, %-, %string, %?string, or a plain number.
  *
  * @return Job ID on success, -1 on error.
  */
@@ -3519,6 +3519,20 @@ int exec_parse_job_id_cstr(const miga_exec_t *executor, const char *spec)
         else if (strcmp(spec, "%-") == 0)
         {
             return exec_get_previous_job_id(executor);
+        }
+        else if (spec[1] == '?' || (spec[1] != '\0' && !isdigit((unsigned char)spec[1])))
+        {
+            // %?string: the job whose command contains string; %string: the
+            // job whose command begins with string. When several match, the
+            // most recent one is taken (POSIX leaves this unspecified).
+            const job_t *job = spec[1] == '?' ? job_store_find_by_substring(executor->jobs, spec + 2)
+                                              : job_store_find_by_prefix(executor->jobs, spec + 1);
+            if (!job)
+            {
+                exec_set_error_printf((miga_exec_t *)executor, "No such job: %s", spec);
+                return -1;
+            }
+            return job->job_id;
         }
         else
         {

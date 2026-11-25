@@ -5,7 +5,8 @@
 #         "jobs", "kill" and "wait" accept), fg/bg refusing to work without
 #         job control, and the status "wait" returns for a pid or job ID,
 #         also when the job finished before wait was called, and the reuse
-#         of job numbers once jobs are gone.
+#         of job numbers once jobs are gone, and the job ID forms %%, %+,
+#         %-, %string and %?string.
 #
 # Notes:
 #   - Each check runs in its own $SH -c so that job numbers start at 1.
@@ -61,5 +62,24 @@ assert_eq "3" "$result" "job numbers start again at 1 once every job is gone"
 result=$($SH -c 'sleep 2 & sleep 2 & kill %1; wait %1; sleep 2 & jobs | sed "s/].*/]/" | sort; kill %2 %3')
 assert_eq "[2]
 [3]" "$result" "a new job is numbered one past the highest job number in use"
+
+# -----------------------------
+# 4. Job ID forms
+# -----------------------------
+result=$($SH -c '(exit 3) & wait %%; echo $?')
+assert_eq "3" "$result" "%% is the current job"
+
+result=$($SH -c '(exit 4) & (exit 5) & wait %-; echo $?; wait %+; echo $?')
+assert_eq "4
+5" "$result" "%- is the previous job and %+ the current one"
+
+result=$($SH -c 'sleep 1 & (exit 6) & wait %sleep; echo $?')
+assert_eq "0" "$result" "%string is the job whose command begins with string"
+
+result=$($SH -c '(exit 7) & wait %?xit; echo $?')
+assert_eq "7" "$result" "%?string is the job whose command contains string"
+
+result=$($SH -c 'wait %nomatch' 2>/dev/null; echo $?)
+assert_eq "127" "$result" "wait for an unknown job ID returns 127"
 
 finish_tests
