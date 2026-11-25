@@ -507,9 +507,12 @@ foreach(test_src ${MIGASH_UNIT_TEST_SOURCES})
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test
     )
 
+    # Without a timeout a hung test stalls CI until the job limit; each unit
+    # test finishes in well under a second.
     set_tests_properties(${test_name} PROPERTIES
         FAIL_REGULAR_EXPRESSION "not ok|\\b(Bail out!|Bailout!)\\b"
         PASS_REGULAR_EXPRESSION "ok"
+        TIMEOUT 60
     )
 endforeach()
 
@@ -521,6 +524,7 @@ if(UNIX AND API_TYPE STREQUAL "POSIX")
         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh
     )
+    set_tests_properties(shell_tests PROPERTIES TIMEOUT 300)
     # Interactive SIGINT behaviour, driven through a pseudo-terminal.
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
