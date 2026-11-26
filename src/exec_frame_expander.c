@@ -179,7 +179,7 @@ string_t *expand_tilde(miga_frame_t *frame, const string_t *username)
 
     return string_create_from_cstr(pw->pw_dir);
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     if (username == NULL || string_length(username) == 0)
     {
         /* Expand ~ to current user's home */
@@ -807,7 +807,7 @@ string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
 
     return output;
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     const char *cmd = string_cstr(command);
     if (cmd == NULL || *cmd == '\0')
     {

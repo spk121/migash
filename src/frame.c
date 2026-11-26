@@ -504,7 +504,7 @@ miga_export_status_t frame_export_variable(miga_frame_t *frame, const string_t *
     {
         return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
     }
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     if (_putenv_s(name_str, value_str) != 0)
     {
         return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
@@ -568,7 +568,7 @@ miga_var_status_t frame_unset_variable(miga_frame_t *frame, const string_t *name
     {
 #ifdef MIGA_POSIX_API
         unsetenv(string_cstr(name));
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         _putenv_s(string_cstr(name), "");
 #endif
     }

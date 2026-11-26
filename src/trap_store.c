@@ -89,7 +89,7 @@ static inline int get_max_signal_number(void)
     return max;
 }
 
-#elifdef TRAP_USE_UCRT_SIGNALS
+#elif defined(TRAP_USE_UCRT_SIGNALS)
 // UCRT signals: ABRT, FPE, ILL, INT, SEGV, TERM
 #define TRAP_SIGNAL_COUNT 6
 
@@ -284,7 +284,7 @@ void trap_handler(int signal, siginfo_t *info, void *context)
     (void)context;
     note_pending(signal);
 }
-#elifdef TRAP_USE_UCRT_SIGNALS
+#elif defined(TRAP_USE_UCRT_SIGNALS)
 int trap_handler(int signo, int fpe_code)
 {
     (void)fpe_code;

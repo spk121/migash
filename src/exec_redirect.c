@@ -775,7 +775,7 @@ void exec_restore_redirections_posix(miga_frame_t *frame)
     log_debug("restore(posix): complete");
     save_set_destroy(saves);
 }
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 
 /* When _dup(), _dup2() or _close() is given a descriptor that is not open,
  * the UCRT calls its invalid-parameter handler, and the default handler ends
@@ -1680,7 +1680,7 @@ void exec_redirect_restore_redirections(miga_frame_t *frame, const exec_redirect
     (void)redirections;
 #ifdef MIGA_POSIX_API
     exec_restore_redirections_posix(frame);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     exec_restore_redirections_ucrt_c(frame);
 #else
     exec_restore_redirections_iso_c(frame);
@@ -1708,7 +1708,7 @@ void exec_redirect_commit_redirections(miga_frame_t *frame)
         }
 #ifdef MIGA_POSIX_API
         close(backup_fd);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         _close(backup_fd);
 #endif
         if (fds)

@@ -91,7 +91,7 @@ static int check_command_file_readable(const char *command_file)
     {
         return SH_EXIT_COMMAND_FILE_READ_ERROR;
     }
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     // Check if file exists
     if (_access(command_file, 0) != 0)
     {

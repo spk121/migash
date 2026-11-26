@@ -2217,7 +2217,7 @@ int builtin_times(miga_frame_t *frame, const strlist_t *args)
     return 0;
 }
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 
 int builtin_times(miga_frame_t *frame, const strlist_t *args)
 {
@@ -3389,7 +3389,7 @@ int builtin_cd(miga_frame_t *frame, const strlist_t *args)
         char *physical = NULL;
 #ifdef MIGA_POSIX_API
         physical = realpath(string_cstr(curpath), NULL);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         physical = _fullpath(NULL, string_cstr(curpath), 0);
 #endif
         if (!physical)
@@ -3864,7 +3864,7 @@ static int kill_send_signal(miga_frame_t *frame, int signum, intptr_t pid, const
         return 1;
     }
     return 0;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     /* On Windows, we can only terminate processes, not send arbitrary signals */
     if (signum == SIGTERM
 #ifdef SIGKILL
@@ -3978,7 +3978,7 @@ static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const c
         return 1;
     }
     return 0;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     /* On Windows, iterate through processes in the job using the iterator */
     if (signum != SIGTERM
 #ifdef SIGKILL
@@ -4370,7 +4370,7 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
     wait_forget_completed_jobs(frame, job_id);
     return job_status;
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     /* On Windows, wait for all processes in the job using their handles */
     int last_exit_status = 0;
 
@@ -4474,7 +4474,7 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
         return 128 + WTERMSIG(status);
     return 0;
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     /* Search for the PID in the job store to get its handle */
     if (frame && frame->executor && frame->executor->jobs)
     {
@@ -4556,7 +4556,7 @@ static int wait_for_all(miga_frame_t *frame)
         }
     }
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 /* Collect all active process handles and wait for them */
 #define MAX_WAIT_HANDLES 64
     HANDLE handles[MAX_WAIT_HANDLES];
@@ -4829,7 +4829,7 @@ int builtin_fg(miga_frame_t *frame, const strlist_t *args)
 
     return exit_status;
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     /* Windows doesn't have true foreground/background job control */
     /* We can wait for the job, but can't give it terminal control */
 
@@ -4939,7 +4939,7 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
         /* Print the job info */
         printf("[%d]+ %s &\n", current->job_id,
                current->command_line ? string_cstr(current->command_line) : "");
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
         return 1;
 #else
@@ -4992,7 +4992,7 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
             printf("[%d]%c %s &\n", job_id,
                    (job == job_store_get_current(frame->executor->jobs)) ? '+' : '-',
                    job->command_line ? string_cstr(job->command_line) : "");
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
             fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
             exit_status = 1;
 #else

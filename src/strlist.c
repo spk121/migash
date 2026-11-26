@@ -118,7 +118,7 @@ strlist_t *strlist_create_from_system_env(void)
 #ifdef MIGA_POSIX_API
     extern char **environ;
     env = (char * const *)environ;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     extern char **_environ;
     env = (char * const *)_environ;
 #else

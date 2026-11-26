@@ -106,7 +106,7 @@ void exec_redirect_commit_redirections(miga_frame_t *frame);
 miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs);
 void exec_restore_redirections_posix(miga_frame_t *frame);
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 
 miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame,
                                              const exec_redirections_t *redirs);

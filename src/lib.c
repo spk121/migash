@@ -299,7 +299,7 @@ string_t *lib_getcwd(void)
     {
 #ifdef MIGA_POSIX_API
         result = getcwd(string_data(cwd), string_capacity(cwd));
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         result = _getcwd(string_data(cwd), string_capacity(cwd));
 #else /* ISO C fallback */
         string_set_cstr(cwd, ".");

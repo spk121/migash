@@ -51,7 +51,7 @@ static const char *get_basename(const char *file)
     {
 #ifdef MIGA_POSIX_API
         if (*p == '/')
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         if (*p == '/' || *p == '\\')
 #else
         if (*p == '/' || *p == '\\')

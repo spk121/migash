@@ -441,7 +441,7 @@ strlist_t *glob_util_expand_path(const string_t *pattern)
     return result;
 }
 
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 
 strlist_t *glob_util_expand_path(const string_t *pattern)
 {

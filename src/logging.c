@@ -10,7 +10,7 @@
 
 #ifdef MIGA_POSIX_API
 #include <strings.h> // For strcasecmp
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 #include <string.h> // For _stricmp
 #else
 #include "lib.h" // For ascii_strcasecmp
@@ -108,7 +108,7 @@ static int strcompare(const char *s1, const char *s2)
 {
 #ifdef MIGA_POSIX_API
     return strcasecmp(s1, s2);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     return _stricmp(s1, s2);
 #else
     // Fallback for MIGA_ISO_C: ASCII-only case-sensitive comparison

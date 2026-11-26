@@ -235,7 +235,7 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
 
 #ifdef MIGA_POSIX_API
 bool job_store_add_process(job_store_t *store, int job_id, pid_t pid, const string_t *command)
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 bool job_store_add_process(job_store_t *store, int job_id, int pid, uintptr_t handle, const string_t *command)
 #else
 bool job_store_add_process(job_store_t *store, int job_id, int pid, const string_t *command)

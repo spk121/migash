@@ -907,7 +907,7 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         {
             exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         int argc = strlist_size(expanded_words);
         char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
         for (int i = 0; i < argc; i++)

@@ -37,7 +37,7 @@ typedef struct process_t
     string_t *command;      // Command string for this process
 #ifdef MIGA_POSIX_API
     pid_t pid; // Process ID
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     int pid; // Process ID (or 0 if not available)
     unsigned long long handle; // Process handle (or 0 if not available)
 #else
@@ -135,7 +135,7 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
  */
 #ifdef MIGA_POSIX_API
 bool job_store_add_process(job_store_t *store, int job_id, pid_t pid, const string_t *command);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 bool job_store_add_process(job_store_t *store, int job_id, int pid, uintptr_t handle,
                             const string_t *command);
 #else
@@ -381,7 +381,7 @@ size_t job_process_count(const job_t *job);
 
 #ifdef MIGA_POSIX_API
 pid_t job_get_process_pid(const job_t *job, size_t index);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
 int job_get_process_pid(const job_t *job, size_t index);
 intptr_t job_get_process_handle(const job_t *job, size_t index);
 #else

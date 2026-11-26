@@ -957,7 +957,7 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     pid_t default_ppid = getppid();
     bool default_pid_valid = true;
     bool default_ppid_valid = true;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     int default_pid = _getpid();
     int default_ppid = 0; /* No getppid in UCRT */
     bool default_pid_valid = true;
@@ -1033,7 +1033,7 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
             e->pgid_valid = true;
         }
     }
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     e->pgid_valid = false; /* No getpgrp in UCRT, and we don't want to assume pgid == pid */
     e->pgid = -1;
 #else
@@ -1197,7 +1197,7 @@ static miga_exec_status_t exec_setup_lazy(miga_exec_t *executor, FILE *fp)
     bool is_interactive;
 #ifdef MIGA_POSIX_API
     is_interactive = isatty(fileno(fp));
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     is_interactive = _isatty(_fileno(fp));
 #else
     is_interactive = false;
@@ -1236,7 +1236,7 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
     pid_t default_ppid = getppid();
     bool default_pid_valid = true;
     bool default_ppid_valid = true;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     int default_pid = _getpid();
     int default_ppid = 0; /* No getppid in UCRT */
     bool default_pid_valid = true;
@@ -1333,7 +1333,7 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
      */
 #ifdef MIGA_POSIX_API
     bool default_is_interactive = isatty(STDIN_FILENO) && isatty(STDERR_FILENO);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     bool default_is_interactive = _isatty(_fileno(stdin)) && _isatty(_fileno(stderr));
 #else
     bool default_is_interactive = false;
@@ -3717,7 +3717,7 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
     }
     if (any_reaped)
         exec_forget_finished_jobs(executor);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     bool any_completed = false;
     job_store_t *store = executor->jobs;
     job_process_iterator_t iter = job_store_active_processes_begin(store);

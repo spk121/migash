@@ -120,7 +120,7 @@ static int get_umask_from_system(void)
     mode_t current_mask = umask(0);
     umask(current_mask);
     return current_mask;
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
     int current_mask = _umask(0);
     _umask(current_mask);
     return current_mask;
@@ -1244,7 +1244,7 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
         }
         /* Child process continues below */
         exec_child_signals(exec, policy->classification.is_background);
-#elifdef MIGA_UCRT_API
+#elif defined(MIGA_UCRT_API)
         /* While POSIX can fork and get a PID before executing a command,
          * in UCRT, we can't get a handle until when the command is spawned.
          * In POSIX, because of fork, you handle both background and foreground
