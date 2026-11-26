@@ -477,9 +477,11 @@ int main(int argc, char **argv)
         command_name ? command_name : ((argc > 0 && argv[0][0]) ? argv[0] : "shell");
 
     /* The banner belongs to interactive sessions only; scripts, -c strings
-     * and piped input must produce exactly the output of their commands. */
+     * and piped input must produce exactly the output of their commands. Like
+     * the prompt, it goes to standard error, so that standard output carries
+     * only what commands write. */
     if (mode == SHELL_MODE_INTERACTIVE)
-        printf("Welcome to Miga Shell. This is pre-alpha software. Use at your own risk.\n");
+        fprintf(stderr, "Welcome to Miga Shell. This is pre-alpha software. Use at your own risk.\n");
 
     shell_cfg_t cfg = {0};
     cfg.mode = mode;
@@ -545,6 +547,6 @@ int main(int argc, char **argv)
 #endif
 
     if (mode == SHELL_MODE_INTERACTIVE)
-        printf("Goodbye!\n");
+        fprintf(stderr, "Goodbye!\n");
     return exit_code;
 }

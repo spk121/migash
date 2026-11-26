@@ -1006,13 +1006,22 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     e->sigchld_received = false;
     memset((void *)e->trap_pending, 0, sizeof(e->trap_pending));
 
-    if (!e->job_control_disabled)
+    /* $? is 0 until a command runs (an embedder may have preset it), so that
+     * a shell ending before running anything (an empty script, end of file
+     * at the first prompt) exits with status 0, not -1 & 0xff = 255. */
+    if (!e->last_exit_status_set)
     {
-        if (e->is_interactive)
-            e->jobs = job_store_create();
-        else
-            e->job_control_disabled = true;
+        e->last_exit_status = 0;
+        e->last_exit_status_set = true;
     }
+
+    /* The job table records every asynchronous list, so that "jobs", "%N"
+     * job IDs and "wait" work in scripts too. Job control (process groups,
+     * fg/bg, status notices) is only active in an interactive shell. */
+    if (!e->jobs)
+        e->jobs = job_store_create();
+    if (!e->job_control_disabled && !e->is_interactive)
+        e->job_control_disabled = true;
 
 #ifdef MIGA_POSIX_API
     if (!e->pgid_valid)
@@ -3502,7 +3511,7 @@ bool exec_job_kill(miga_exec_t *executor, int job_id, int sig)
 
 /**
  * Parse a job-ID specifier from a string.
- * Accepts: %n, %+, %%, %-, or a plain number.
+ * Accepts: %n, %+, %%, %-, %string, %?string, or a plain number.
  *
  * @return Job ID on success, -1 on error.
  */
@@ -3519,6 +3528,20 @@ int exec_parse_job_id_cstr(const miga_exec_t *executor, const char *spec)
         else if (strcmp(spec, "%-") == 0)
         {
             return exec_get_previous_job_id(executor);
+        }
+        else if (spec[1] == '?' || (spec[1] != '\0' && !isdigit((unsigned char)spec[1])))
+        {
+            // %?string: the job whose command contains string; %string: the
+            // job whose command begins with string. When several match, the
+            // most recent one is taken (POSIX leaves this unspecified).
+            const job_t *job = spec[1] == '?' ? job_store_find_by_substring(executor->jobs, spec + 2)
+                                              : job_store_find_by_prefix(executor->jobs, spec + 1);
+            if (!job)
+            {
+                exec_set_error_printf((miga_exec_t *)executor, "No such job: %s", spec);
+                return -1;
+            }
+            return job->job_id;
         }
         else
         {
@@ -3650,6 +3673,22 @@ bool exec_has_jobs(const miga_exec_t *executor)
  * Job Control
  * ============================================================================ */
 
+/* Finished jobs a shell without job control remembers, so that "wait pid" or
+ * "wait %N" can still report their status after the reaper collected them.
+ * POSIX requires at least {_POSIX_CHILD_MAX} (25). */
+#define EXEC_REMEMBERED_FINISHED_JOBS 256
+
+/* Drop finished jobs from the table after reaping: the reported ones with job
+ * control, and with it off (no reports) all but the most recent
+ * EXEC_REMEMBERED_FINISHED_JOBS, so that the table stays bounded. */
+static void exec_forget_finished_jobs(miga_exec_t *executor)
+{
+    if (executor->job_control_disabled)
+        job_store_limit_completed(executor->jobs, EXEC_REMEMBERED_FINISHED_JOBS);
+    else
+        job_store_remove_completed(executor->jobs);
+}
+
 void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
@@ -3677,7 +3716,7 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
         job_store_print_completed_jobs(executor->jobs, stdout);
     }
     if (any_reaped)
-        job_store_remove_completed(executor->jobs);
+        exec_forget_finished_jobs(executor);
 #elifdef MIGA_UCRT_API
     bool any_completed = false;
     job_store_t *store = executor->jobs;
@@ -3711,6 +3750,6 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
     if (any_completed && notify)
         job_store_print_completed_jobs(executor->jobs, stdout);
     if (any_completed)
-        job_store_remove_completed(executor->jobs);
+        exec_forget_finished_jobs(executor);
 #endif
 }

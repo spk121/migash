@@ -71,10 +71,18 @@ commands, quotes, here-documents and backslash-newline, end of file at a
 PS2 prompt, that shell errors (special built-in misuse, `${x?}`, a syntax
 error, command not found, a redirection error, a failed `.` or `exec`) do
 not end an interactive shell, `ENV`, `set -o ignoreeof`, end of file at
-the prompt, and that a shell reading a pipe prints no prompt unless
+the prompt, `exit` ending the shell the same way as end of file, and that a shell reading a pipe prints no prompt unless
 started with `-i`. CMake registers it as `interactive_prompts`. dash
 fails one check (it exits on a failed `exec`) and bash another (it exits
-at end of file under PS2). Both scripts share `../interactive/ptyshell.py`.
+at end of file under PS2).
+
+`../interactive/jobs_pty.py <shell>` checks that an interactive shell
+forgets the jobs `wait` has collected (POSIX `wait`): after `cmd &` and
+`wait`, `wait $!` or `wait %N`, `jobs` lists nothing, and `wait %N`
+returns the job's status. CMake registers it as `interactive_jobs`. bash
+passes it.
+
+The interactive scripts share `../interactive/ptyshell.py`.
 
 ## Expected failures
 

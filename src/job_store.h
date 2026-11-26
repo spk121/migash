@@ -43,7 +43,7 @@ typedef struct process_t
 #else
     int pid;           // Process ID (or 0 if not available)
 #endif
-    int exit_status;   // Exit status (if done) or signal number (if terminated)
+    int exit_status;   // Exit status (if done) or 128 + signal number (if terminated)
     job_state_t state; // Current state of this process
 } process_t;
 
@@ -285,6 +285,17 @@ bool job_store_remove(job_store_t *store, int job_id);
  * @return Number of jobs removed
  */
 size_t job_store_remove_completed(job_store_t *store);
+
+/**
+ * Keep at most max_completed completed jobs (the most recent ones) and
+ * remove the older ones, reported or not. Also removes every completed job
+ * already reported. Returns the number of jobs removed.
+ *
+ * A shell without job control never reports finished jobs, so this is what
+ * bounds its job table; POSIX lets it forget all but the most recent
+ * CHILD_MAX statuses.
+ */
+size_t job_store_limit_completed(job_store_t *store, size_t max_completed);
 
 // ============================================================================
 // Polling API (for Win32/UCRT)

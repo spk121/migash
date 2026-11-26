@@ -10,6 +10,7 @@ EXTRA_DIST = migash.pc.in packaging/migash.spec.in \
     test/sh/run_tests.sh test/sh/test_helpers.sh test/sh/README.md \
     test/sh/expected_failures.txt test/interactive/ptyshell.py \
     test/interactive/sigint_pty.py test/interactive/prompt_pty.py \
+    test/interactive/jobs_pty.py \
     $(wildcard $(srcdir)/test/sh/[0-9]*.sh)
 
 # ---------------------------------------------------------------------------

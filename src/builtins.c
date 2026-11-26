@@ -599,27 +599,14 @@ int builtin_exit(miga_frame_t *frame, const strlist_t *args)
     if (frame->executor)
         exec_reap_background_jobs(frame->executor, true);
 
-    // If this is the top-level frame, terminate the process
-    if (!frame->parent)
-    {
-#ifdef MIGA_POSIX_API
-        _exit(exit_status);
-#elif defined(MIGA_UCRT_API)
-        _exit(exit_status);
-#else
-        exit(exit_status);
-#endif
-    }
-    else
-    {
-        // Not top-level (function, loop, brace group, ...): unwind every
-        // frame to the top level and have the main loop stop.
-        frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
-        frame->last_exit_status = exit_status;
-        exec_request_exit(frame->executor, exit_status);
-    }
-
-    // Not reached if top-level
+    // Unwind every frame to the top level and have the main loop stop, so
+    // that the shell ends through its normal shutdown (freeing its memory,
+    // the MIGA_ARENA_STATS report). A forked child (command substitution,
+    // pipeline element, subshell) ends with _exit() once control returns to
+    // the code that forked it. The EXIT trap has run above and runs only once.
+    frame_set_pending_control_flow(frame, MIGA_FRAME_FLOW_TOP, 0);
+    frame->last_exit_status = exit_status;
+    exec_request_exit(frame->executor, exit_status);
     return exit_status;
 }
 
@@ -3528,11 +3515,19 @@ int builtin_pwd(miga_frame_t *frame, const strlist_t *args)
  * ============================================================================
  */
 
+static void wait_forget_completed_jobs(miga_frame_t *frame, int only_job_id);
+
 int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
 {
 
     if (!frame)
         return 1;
+
+    /* Collect the background jobs that have finished, so that they are not
+     * reported as still running (the reaper otherwise only runs between
+     * commands). */
+    if (frame->executor)
+        exec_reap_background_jobs(frame->executor, false);
 
     /* Check if there are any jobs */
     if (!exec_has_jobs(frame->executor))
@@ -3604,12 +3599,18 @@ int builtin_jobs(miga_frame_t *frame, const strlist_t *args)
                 fprintf(stderr, "jobs: %s: no such job\n", string_cstr(arg_str));
                 exit_status = 1;
             }
+            /* A finished job whose status was reported is forgotten (POSIX) */
+            else if (format != EXEC_JOBS_FORMAT_PID_ONLY)
+                wait_forget_completed_jobs(frame, job_id);
         }
     }
     else
     {
         /* No job_ids specified - show all jobs */
         exec_print_all_jobs(frame->executor, format, builtin_stdout(frame));
+        /* Finished jobs whose status was reported are forgotten (POSIX) */
+        if (format != EXEC_JOBS_FORMAT_PID_ONLY)
+            wait_forget_completed_jobs(frame, 0);
     }
 
     return exit_status;
@@ -3952,6 +3953,24 @@ static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const c
     }
 
 #ifdef MIGA_POSIX_API
+    if (frame->executor->job_control_disabled)
+    {
+        /* Without job control a job is not a process group of its own:
+         * signal each of its processes that is still running. */
+        int errors = 0;
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+        {
+            if (proc->state == JOB_DONE || proc->state == JOB_TERMINATED)
+                continue;
+            if (kill(proc->pid, signum) != 0 && errno != ESRCH)
+            {
+                fprintf(stderr, "kill: %s - %s\n", target_str, strerror(errno));
+                errors++;
+            }
+        }
+        return errors ? 1 : 0;
+    }
+
     /* Send signal to the process group */
     if (kill(-job->pgid, signum) != 0)
     {
@@ -4222,6 +4241,76 @@ int builtin_kill(miga_frame_t *frame, const strlist_t *args)
  * Wait for a specific job to complete.
  * Returns the exit status of the job, or -1 on error.
  */
+/*
+ * POSIX (XCU "wait"): once wait has obtained a job's exit status, the shell
+ * forgets that job. Mark the completed jobs this wait collected as reported
+ * and drop them from the job table; otherwise, with job control on, each
+ * background job stayed in the table (and in memory) until the shell exited,
+ * since the reaper had nothing left to collect for it. ONLY_JOB_ID limits
+ * this to one job; 0 means every completed job.
+ */
+static void wait_forget_completed_jobs(miga_frame_t *frame, int only_job_id)
+{
+    if (!frame || !frame->executor || !frame->executor->jobs)
+        return;
+    job_store_t *jobs = frame->executor->jobs;
+    for (job_t *job = jobs->jobs; job; job = job->next)
+    {
+        if ((only_job_id == 0 || job->job_id == only_job_id) && job_is_completed(job))
+            job->is_notified = true;
+    }
+    job_store_remove_completed(jobs);
+}
+
+#ifdef MIGA_POSIX_API
+/* The job a process belongs to, or 0 if the job table does not know it. */
+static int wait_job_id_for_pid(miga_frame_t *frame, intptr_t pid)
+{
+    if (!frame || !frame->executor || !frame->executor->jobs)
+        return 0;
+    for (job_t *job = frame->executor->jobs->jobs; job; job = job->next)
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+            if ((intptr_t)proc->pid == pid)
+                return job->job_id;
+    return 0;
+}
+#endif
+
+/* A job's exit status: that of its last process (the last command of the
+ * pipeline), as the job table records it (128 + signal when killed). */
+static int wait_job_status(const job_t *job)
+{
+    const process_t *last = job->processes;
+    if (!last)
+        return 0;
+    while (last->next)
+        last = last->next;
+    return last->exit_status;
+}
+
+#ifdef MIGA_POSIX_API
+/* Wait for one process of a job and record how it ended. A process the
+ * reaper collected already has its status recorded; one that is no longer
+ * our child for another reason is recorded as status 127. */
+static void wait_for_job_process(job_store_t *jobs, process_t *proc)
+{
+    if (proc->state == JOB_DONE || proc->state == JOB_TERMINATED)
+        return;
+    int status;
+    pid_t result;
+    do
+        result = waitpid(proc->pid, &status, 0);
+    while (result == -1 && errno == EINTR);
+
+    if (result == proc->pid && WIFEXITED(status))
+        job_store_set_process_state(jobs, proc->pid, JOB_DONE, WEXITSTATUS(status));
+    else if (result == proc->pid && WIFSIGNALED(status))
+        job_store_set_process_state(jobs, proc->pid, JOB_TERMINATED, 128 + WTERMSIG(status));
+    else if (proc->state != JOB_DONE && proc->state != JOB_TERMINATED)
+        job_store_set_process_state(jobs, proc->pid, JOB_DONE, 127);
+}
+#endif
+
 static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
 {
     if (!frame || !frame->executor || !frame->executor->jobs)
@@ -4240,50 +4329,46 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
     /* If job is already completed, return its exit status */
     if (job_is_completed(job))
     {
-        /* Get exit status from first process (or last, depending on convention) */
-        if (job->processes)
-        {
-            return job->processes->exit_status;
-        }
-        return 0;
+        int done_status = wait_job_status(job);
+        wait_forget_completed_jobs(frame, job_id);
+        return done_status;
     }
 
 #ifdef MIGA_POSIX_API
-    /* Wait for the process group */
-    int status;
-    pid_t result;
-
-    /* Wait for any process in the job's process group */
-    while ((result = waitpid(-job->pgid, &status, 0)) > 0 || (result == -1 && errno == EINTR))
+    if (frame->executor->job_control_disabled)
     {
-        if (result > 0)
+        /* Without job control the job is not a process group of its own:
+         * wait for each of its processes. */
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+            wait_for_job_process(frame->executor->jobs, proc);
+    }
+    else
+    {
+        /* Wait for any process in the job's process group */
+        int status;
+        pid_t result;
+        while ((result = waitpid(-job->pgid, &status, 0)) > 0 || (result == -1 && errno == EINTR))
         {
-            /* Update the process state */
-            if (WIFEXITED(status))
+            if (result > 0)
             {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
-                                            WEXITSTATUS(status));
+                if (WIFEXITED(status))
+                    job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
+                                                WEXITSTATUS(status));
+                else if (WIFSIGNALED(status))
+                    job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
+                                                128 + WTERMSIG(status));
             }
-            else if (WIFSIGNALED(status))
-            {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                            WTERMSIG(status));
-            }
+            if (job_is_completed(job))
+                break;
         }
-
-        /* Check if job is now complete */
-        if (job_is_completed(job))
-        {
-            break;
-        }
+        /* Processes outside the group (or already reaped) */
+        for (process_t *proc = job->processes; proc; proc = proc->next)
+            wait_for_job_process(frame->executor->jobs, proc);
     }
 
-    /* Return the exit status of the first process */
-    if (job->processes)
-    {
-        return job->processes->exit_status;
-    }
-    return 0;
+    int job_status = wait_job_status(job);
+    wait_forget_completed_jobs(frame, job_id);
+    return job_status;
 
 #elifdef MIGA_UCRT_API
     /* On Windows, wait for all processes in the job using their handles */
@@ -4326,6 +4411,7 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
         }
     }
 
+    wait_forget_completed_jobs(frame, job_id);
     return last_exit_status;
 
 #else
@@ -4342,8 +4428,31 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
 static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_str)
 {
 #ifdef MIGA_POSIX_API
+    /* A process of a known job: wait for it through the job table, which
+     * also has its status if the reaper collected it already. */
+    int pid_job_id = wait_job_id_for_pid(frame, pid);
+    if (pid_job_id != 0)
+    {
+        job_t *pid_job = job_store_find(frame->executor->jobs, pid_job_id);
+        int pid_status = 0;
+        for (process_t *proc = pid_job->processes; proc; proc = proc->next)
+        {
+            if ((intptr_t)proc->pid == pid)
+            {
+                wait_for_job_process(frame->executor->jobs, proc);
+                pid_status = proc->exit_status;
+                break;
+            }
+        }
+        wait_forget_completed_jobs(frame, pid_job_id);
+        return pid_status;
+    }
+
     int status;
-    pid_t result = waitpid((pid_t)pid, &status, 0);
+    pid_t result;
+    do
+        result = waitpid((pid_t)pid, &status, 0);
+    while (result == -1 && errno == EINTR);
 
     if (result == -1)
     {
@@ -4358,23 +4467,11 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
         return 127;
     }
 
-    /* Update job store if this process is tracked */
-    if (frame && frame->executor && frame->executor->jobs)
-    {
-        if (WIFEXITED(status))
-        {
-            job_store_set_process_state(frame->executor->jobs, (pid_t)pid, JOB_DONE,
-                                        WEXITSTATUS(status));
-            return WEXITSTATUS(status);
-        }
-        else if (WIFSIGNALED(status))
-        {
-            job_store_set_process_state(frame->executor->jobs, (pid_t)pid, JOB_TERMINATED,
-                                        WTERMSIG(status));
-            return 128 + WTERMSIG(status);
-        }
-    }
-
+    /* A child the job table does not know */
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status))
+        return 128 + WTERMSIG(status);
     return 0;
 
 #elifdef MIGA_UCRT_API
@@ -4392,18 +4489,22 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
                 {
                     DWORD wait_result = WaitForSingleObject((HANDLE)handle, INFINITE);
 
+                    int pid_job_id = job_store_iter_get_job_id(&iter);
+                    int pid_status;
                     if (wait_result == WAIT_OBJECT_0)
                     {
                         DWORD exit_code = 0;
                         GetExitCodeProcess((HANDLE)handle, &exit_code);
                         job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-                        return (int)exit_code;
+                        pid_status = (int)exit_code;
                     }
                     else
                     {
                         job_store_iter_set_state(&iter, JOB_TERMINATED, 1);
-                        return 1;
+                        pid_status = 1;
                     }
+                    wait_forget_completed_jobs(frame, pid_job_id);
+                    return pid_status;
                 }
             }
         }
@@ -4423,18 +4524,15 @@ static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_st
 
 /**
  * Wait for all background jobs.
- * Returns the exit status of the last job waited for, or 0 if none.
+ * Returns 0, as POSIX specifies for wait without operands.
  */
 static int wait_for_all(miga_frame_t *frame)
 {
-    /* Wait for every child, whether or not the job table knows about it:
-     * the table only exists for job control, "wait" must work regardless. */
+    /* Wait for every child, whether or not the job table knows about it */
     if (!frame || !frame->executor)
         return 0;
     job_store_t *jobs = frame->executor->jobs;
     (void)jobs; /* only the POSIX implementation records job states */
-
-    int last_exit_status = 0;
 
 #ifdef MIGA_POSIX_API
     int status;
@@ -4449,13 +4547,11 @@ static int wait_for_all(miga_frame_t *frame)
             {
                 if (jobs)
                     job_store_set_process_state(jobs, result, JOB_DONE, WEXITSTATUS(status));
-                last_exit_status = WEXITSTATUS(status);
             }
             else if (WIFSIGNALED(status))
             {
                 if (jobs)
-                    job_store_set_process_state(jobs, result, JOB_TERMINATED, WTERMSIG(status));
-                last_exit_status = 128 + WTERMSIG(status);
+                    job_store_set_process_state(jobs, result, JOB_TERMINATED, 128 + WTERMSIG(status));
             }
         }
     }
@@ -4490,18 +4586,18 @@ static int wait_for_all(miga_frame_t *frame)
             DWORD exit_code = 0;
             GetExitCodeProcess(handles[i], &exit_code);
             job_store_iter_set_state(&iters[i], JOB_DONE, (int)exit_code);
-            last_exit_status = (int)exit_code;
         }
         else
         {
             job_store_iter_set_state(&iters[i], JOB_TERMINATED, 1);
-            last_exit_status = 1;
         }
     }
 #undef MAX_WAIT_HANDLES
 #endif
 
-    return last_exit_status;
+    wait_forget_completed_jobs(frame, 0);
+    /* POSIX: with no operands, wait returns 0 once every child is done */
+    return 0;
 }
 
 int builtin_wait(miga_frame_t *frame, const strlist_t *args)
@@ -4608,7 +4704,7 @@ int builtin_fg(miga_frame_t *frame, const strlist_t *args)
     Expects_not_null(args);
 
 
-    if (!frame->executor || !frame->executor->jobs)
+    if (!frame->executor || !frame->executor->jobs || frame->executor->job_control_disabled)
     {
         fprintf(stderr, "fg: no job control\n");
         return 1;
@@ -4703,7 +4799,7 @@ int builtin_fg(miga_frame_t *frame, const strlist_t *args)
             else if (WIFSIGNALED(status))
             {
                 job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                            WTERMSIG(status));
+                                            128 + WTERMSIG(status));
                 exit_status = 128 + WTERMSIG(status);
             }
             else if (WIFSTOPPED(status))
@@ -4799,7 +4895,7 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
     Expects_not_null(args);
 
 
-    if (!frame->executor || !frame->executor->jobs)
+    if (!frame->executor || !frame->executor->jobs || frame->executor->job_control_disabled)
     {
         fprintf(stderr, "bg: no job control\n");
         return 1;

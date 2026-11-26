@@ -209,7 +209,13 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
     if (!store)
         return -1;
 
-    int job_id = store->next_job_id++;
+    /* Like other shells, number a new job one past the highest job ID still
+     * in use, so that numbers start again at 1 once every job is gone. */
+    int job_id = 1;
+    for (const job_t *job = store->jobs; job; job = job->next)
+        if (job->job_id >= job_id)
+            job_id = job->job_id + 1;
+    store->next_job_id = job_id + 1;
     job_t *new_job = job_create(job_id, command_line, is_background);
 
     // Add to front of list
@@ -472,7 +478,7 @@ void job_store_print_jobs(const job_store_t *store, FILE *output)
             if (proc->state == JOB_DONE)
                 fprintf(output, "exit status: %d  ", proc->exit_status);
             else if (proc->state == JOB_TERMINATED)
-                fprintf(output, "signal: %d  ", proc->exit_status);
+                fprintf(output, "signal: %d  ", proc->exit_status - 128);
             fprintf(output, "command: %s\n", proc->command ? string_cstr(proc->command) : "(no command)");
         }
     }
@@ -560,6 +566,22 @@ size_t job_store_remove_completed(job_store_t *store)
     }
 
     return removed;
+}
+
+size_t job_store_limit_completed(job_store_t *store, size_t max_completed)
+{
+    if (!store)
+        return 0;
+
+    /* The list starts with the newest job: keep the first max_completed
+     * completed jobs, and let job_store_remove_completed() drop the rest. */
+    size_t seen = 0;
+    for (job_t *job = store->jobs; job; job = job->next)
+    {
+        if (job_is_completed(job) && ++seen > max_completed)
+            job->is_notified = true;
+    }
+    return job_store_remove_completed(store);
 }
 
 // ============================================================================
