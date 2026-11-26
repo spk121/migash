@@ -12,8 +12,6 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-#ifdef MIGA_POSIX_API
-#endif 
 #ifdef _MSC_VER
 #endif
 
@@ -21,21 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef MIGA_POSIX_API
-#include <errno.h>
-#include <signal.h>
-#include <fnmatch.h>
-#include <limits.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#include <direct.h>
-#include <io.h>
-#include <stdlib.h>
-#endif
 
 #include "exec_frame.h"
 
@@ -110,23 +94,9 @@ static exec_frame_execute_result_t exec_frame_execute_background_job(miga_frame_
  * Helper Functions - System Queries
  * ============================================================================ */
 
-#ifdef MIGA_POSIX_API
-static mode_t get_umask_from_system(void)
-#else
 static int get_umask_from_system(void)
-#endif
 {
-#ifdef MIGA_POSIX_API
-    mode_t current_mask = umask(0);
-    umask(current_mask);
-    return current_mask;
-#elif defined(MIGA_UCRT_API)
-    int current_mask = _umask(0);
-    _umask(current_mask);
-    return current_mask;
-#else
     return 0; // ISO C has no umask
-#endif
 }
 
 /* ============================================================================
@@ -360,11 +330,7 @@ static void init_umask(miga_frame_t *frame)
     switch (policy->umask.scope)
     {
     case EXEC_SCOPE_OWN:
-#ifdef MIGA_POSIX_API
-        frame->umask = xmalloc(sizeof(mode_t));
-#else
         frame->umask = xmalloc(sizeof(int));
-#endif
         if (policy->umask.init_from_system)
         {
             *frame->umask = get_umask_from_system();
@@ -380,11 +346,7 @@ static void init_umask(miga_frame_t *frame)
         break;
     case EXEC_SCOPE_COPY:
         Expects_not_null(frame->parent);
-#ifdef MIGA_POSIX_API
-        frame->umask = xmalloc(sizeof(mode_t));
-#else
         frame->umask = xmalloc(sizeof(int));
-#endif
         *frame->umask = *frame->parent->umask;
         break;
     case EXEC_SCOPE_SHARE:
@@ -434,7 +396,6 @@ miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga
     init_umask(frame);
     init_functions(frame);
     init_aliases(frame);
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     if (frame->policy->stdio.inherits_redirected_stdio && parent && parent->stdin_fp)
     {
         frame->stdin_fp = parent->stdin_fp;
@@ -450,7 +411,6 @@ miga_frame_t *exec_frame_push(miga_frame_t *parent, exec_frame_type_t type, miga
         frame->stdout_fp = &frame->redirected_stdout;
         frame->stderr_fp = &frame->redirected_stderr;
     }
-#endif
 
     /* Initialize frame-local state */
     frame->loop_depth = parent ? parent->loop_depth : 0;
@@ -543,14 +503,6 @@ miga_frame_t *exec_frame_create_top_level(miga_exec_t *exec)
         exec->traps = NULL;
     }
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    if (exec->open_fds)
-    {
-        fd_table_destroy(&frame->open_fds);
-        frame->open_fds = exec->open_fds;
-        exec->open_fds = NULL;
-    }
-#endif
 
     if (exec->working_directory)
     {
@@ -667,7 +619,6 @@ static void cleanup_frame_resources(miga_frame_t *frame)
     {
         string_destroy(&frame->source_name);
     }
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     // Only a frame that owns its stream slots closes them. It is a coding
     // error if they are still open: the redirection that opened them should
     // have been restored.
@@ -689,7 +640,6 @@ static void cleanup_frame_resources(miga_frame_t *frame)
         fclose(*frame->stderr_fp);
         *frame->stderr_fp = NULL;
     }
-#endif
 }
 
 miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr)
@@ -743,31 +693,6 @@ miga_frame_t *exec_frame_pop(miga_frame_t **frame_ptr)
  */
 static void setup_process_group(miga_frame_t *frame, exec_params_t *params)
 {
-#ifdef MIGA_POSIX_API
-    switch (frame->policy->process.pgroup)
-    {
-    case EXEC_PGROUP_NONE:
-        /* No process group manipulation */
-        break;
-    case EXEC_PGROUP_START:
-        /* Create new process group with this process as leader */
-        setpgid(0, 0);
-        break;
-    case EXEC_PGROUP_PIPELINE:
-        /* Pipeline semantics: first starts, others join */
-        if (params && params->pipeline_pgid > 0)
-        {
-            /* Join existing pipeline group */
-            setpgid(0, params->pipeline_pgid);
-        }
-        else
-        {
-            /* First in pipeline: create new group */
-            setpgid(0, 0);
-        }
-        break;
-    }
-#endif
 }
 
 /**
@@ -1082,100 +1007,6 @@ exec_frame_execute_result_t exec_frame_execute_for_loop(miga_frame_t *frame, str
 }
 
 
-#ifdef MIGA_UCRT_API
-
-// Returns number of arguments parsed, or -1 on error
-// Allocates *argvp with malloc(); caller must free(*argvp) and each (*argvp)[i]
-int split_command_line(const char *cmdline, char ***argvp)
-{
-    if (!cmdline || !argvp)
-        return -1;
-
-    int argc = 0;
-    char **argv = NULL;
-    const char *p = cmdline;
-
-    while (*p)
-    {
-        while (isspace((unsigned char)*p))
-            p++; // skip leading whitespace
-
-        if (!*p)
-            break;
-
-        char *arg = xmalloc(strlen(p) + 1); // worst-case
-        if (!arg)
-            goto fail;
-        char *q = arg;
-
-        int in_quote = 0;
-        int backslash_count = 0;
-
-        while (*p)
-        {
-            if (*p == '\\')
-            {
-                backslash_count++;
-                p++;
-                continue;
-            }
-
-            if (*p == '"')
-            {
-                // Even backslashes → literal ", odd → escape "
-                if (backslash_count % 2 == 1)
-                {
-                    backslash_count--; // consume the escaping backslash
-                    *q++ = '"';
-                }
-                else
-                {
-                    in_quote = !in_quote;
-                }
-                backslash_count = 0;
-                p++;
-                continue;
-            }
-
-            if (!in_quote && isspace((unsigned char)*p))
-            {
-                break; // end of arg
-            }
-
-            // Dump accumulated backslashes
-            while (backslash_count--)
-                *q++ = '\\';
-            *q++ = *p++;
-            backslash_count = 0;
-        }
-
-        // Trailing backslashes outside quotes are literal
-        while (backslash_count--)
-            *q++ = '\\';
-
-        *q = '\0';
-
-        // realloc logic omitted for brevity — use a dynamic array in real code
-        char **new_argv = xrealloc(argv, (argc + 2) * sizeof(char *));
-        if (!new_argv)
-        {
-            xfree(arg);
-            goto fail;
-        }
-        argv = new_argv;
-        argv[argc++] = arg;
-        argv[argc] = NULL;
-    }
-
-    *argvp = argv;
-    return argc;
-
-fail:
-    // cleanup omitted for brevity
-    return -1;
-}
-
-#endif
 
 /**
  * Main entry point for frame execution.
@@ -1191,79 +1022,12 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
     /* Handle forking if required */
     if (policy->process.forks)
     {
-#ifdef MIGA_POSIX_API
-        fflush(stdout);
-        fflush(stderr);
-        pid_t pid = fork();
-        if (pid < 0)
-        {
-            /* Fork failed */
-            return (exec_frame_execute_result_t){.exit_status = 1,
-                                                 .has_exit_status = true,
-                                                 .flow = MIGA_FRAME_FLOW_NORMAL,
-                                                 .flow_depth = 0};
-        }
-        else if (pid > 0)
-        {
-            /* Parent process */
-            if (policy->classification.is_background)
-            {
-                /* Background job: record and return immediately */
-                parent->last_bg_pid = pid;
-                string_t *cmdline =
-                    params ? strlist_join(params->command_args, " ") : string_create_from_cstr("");
-                int job_id = job_store_add(exec->jobs, cmdline, true /* is_background */);
-                job_store_add_process(exec->jobs, job_id, pid, cmdline);
-                string_destroy(&cmdline);
-                /* The main loop reaps only between commands, so a loop that
-                 * starts background jobs would pile up finished children
-                 * (zombies, and job table entries) until it ends. Collect the
-                 * finished ones now; the new job is already in the table, so
-                 * its status is kept even if it has finished too. */
-                exec_reap_background_jobs(exec, false);
-                return (exec_frame_execute_result_t){.exit_status = 0,
-                                                     .has_exit_status = true,
-                                                     .flow = MIGA_FRAME_FLOW_NORMAL,
-                                                     .flow_depth = 0};
-            }
-            else
-            {
-                /* Foreground: wait for child (retrying when a signal, e.g. an
-                 * interactive SIGINT, interrupts the wait) */
-                int status = 0;
-                pid_t waited;
-                do
-                    waited = waitpid(pid, &status, 0);
-                while (waited < 0 && errno == EINTR);
-                int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-                return (exec_frame_execute_result_t){.exit_status = exit_status,
-                                                     .has_exit_status = true,
-                                                     .flow = MIGA_FRAME_FLOW_NORMAL,
-                                                     .flow_depth = 0};
-            }
-        }
-        /* Child process continues below */
-        exec_child_signals(exec, policy->classification.is_background);
-#elif defined(MIGA_UCRT_API)
-        /* While POSIX can fork and get a PID before executing a command,
-         * in UCRT, we can't get a handle until when the command is spawned.
-         * In POSIX, because of fork, you handle both background and foreground
-         * here based on PID, but, in UCRT, this block is all forground execution, and the
-         * background task is handled in the spawn call in exec_frame_execute_simple_command_impl.
-         *
-         * So, basically, we do nothing here. But when we create and initialize the frame,
-         * below, it will have the background policy flag set, which will be used later.
-         */
-
-        /* Parent process continues. */
-#else
         /* ISO C: no fork support, run in foreground with warning */
         if (policy->classification.is_background)
         {
             fprintf(stderr, "Warning: background execution not supported, running in foreground\n");
         }
         /* Continue without forking */
-#endif
     }
 
     /* Create and initialize the frame */
@@ -1284,15 +1048,7 @@ exec_frame_execute_result_t exec_in_frame(miga_frame_t *parent, exec_frame_type_
     /* Handle process termination for forked processes */
     if (policy->exit.terminates_process)
     {
-#ifdef MIGA_POSIX_API
-        /* Builtins write through stdio. Flush only the output streams: see
-         * the comment in expand_command_subst(). */
-        fflush(stdout);
-        fflush(stderr);
-        _exit(result.exit_status);
-#else
         /* For ISO C mode, just return */
-#endif
     }
 
     return result;
@@ -2321,21 +2077,6 @@ exec_frame_execute_result_t exec_frame_execute_iteration_loop(miga_frame_t *fram
  * Helper: EINTR-safe waitpid
  * ============================================================================ */
 
-#ifdef MIGA_POSIX_API
-/**
- * waitpid wrapper that retries on EINTR.
- * Returns the pid on success, -1 on real error (with errno set).
- */
-static pid_t waitpid_eintr(pid_t pid, int *status, int options)
-{
-    pid_t ret;
-    do
-    {
-        ret = waitpid(pid, status, options);
-    } while (ret == -1 && errno == EINTR);
-    return ret;
-}
-#endif
 
 /* ============================================================================
  * Pipeline Orchestration
@@ -2396,245 +2137,11 @@ exec_frame_execute_result_t exec_frame_execute_pipeline_orchestrate(miga_frame_t
         return cmd_result;
     }
 
-#ifdef MIGA_POSIX_API
-    /*
-     * Allocate pipes and PID array on the heap to avoid VLA stack overflow
-     * with pathological input. We need (ncmds - 1) pipes, each being 2 fds.
-     */
-    int num_pipes = ncmds - 1;
-    int *pipes = xcalloc(2 * num_pipes, sizeof(int));
-    pid_t *pids = xcalloc(ncmds, sizeof(pid_t));
-
-    /* Initialize all pipe fds to -1 so cleanup knows which were opened */
-    for (int i = 0; i < 2 * num_pipes; i++)
-    {
-        pipes[i] = -1;
-    }
-
-    /* Create all pipes up front */
-    for (int i = 0; i < num_pipes; i++)
-    {
-        if (pipe(pipes + 2 * i) == -1)
-        {
-            exec_set_error_printf(frame->executor, "pipe() failed: %s", strerror(errno));
-            result.status = MIGA_EXEC_STATUS_ERROR;
-            result.exit_status = 1;
-            goto cleanup;
-        }
-    }
-
-    /* Initialize all PIDs to -1 so cleanup knows which children were forked */
-    for (int i = 0; i < ncmds; i++)
-    {
-        pids[i] = -1;
-    }
-
-    pid_t pipeline_pgid = 0;
-
-    /* Fork and execute each command */
-    for (int i = 0; i < ncmds; i++)
-    {
-        ast_node_t *cmd = commands->nodes[i];
-
-        fflush(stdout);
-        fflush(stderr);
-        pid_t pid = fork();
-        if (pid == -1)
-        {
-            exec_set_error_printf(frame->executor, "fork() failed in pipeline: %s", strerror(errno));
-
-            /* Kill and reap all children we already forked */
-            for (int j = 0; j < i; j++)
-            {
-                kill(pids[j], SIGTERM);
-            }
-            for (int j = 0; j < i; j++)
-            {
-                int discard;
-                waitpid_eintr(pids[j], &discard, 0);
-            }
-
-            result.status = MIGA_EXEC_STATUS_ERROR;
-            result.exit_status = 1;
-            goto cleanup;
-        }
-        else if (pid == 0)
-        {
-            /* ---- Child process ---- */
-            exec_child_signals(frame->executor, false);
-
-            /*
-             * Set up process group (child side).
-             * For the first child (i == 0), pipeline_pgid is 0, so
-             * setpgid(0, 0) creates a new group with this child as leader.
-             * For subsequent children, pipeline_pgid was set by the parent
-             * before this fork, so we join the existing group.
-             *
-             * Errors are ignored: EACCES means the parent already called
-             * setpgid for us (or the child has already exec'd), and ESRCH
-             * is similarly benign in this context.
-             */
-            setpgid(0, pipeline_pgid);
-
-            /* Set up stdin from previous pipe */
-            if (i > 0)
-            {
-                dup2(pipes[2 * (i - 1)], STDIN_FILENO);
-            }
-
-            /* Set up stdout to next pipe */
-            if (i < ncmds - 1)
-            {
-                dup2(pipes[2 * i + 1], STDOUT_FILENO);
-            }
-
-            /* Close all pipe FDs in the child */
-            for (int j = 0; j < 2 * num_pipes; j++)
-            {
-                close(pipes[j]);
-            }
-
-            /* Execute the command */
-            exec_frame_execute_result_t cmd_result = exec_frame_execute_dispatch(frame, cmd);
-
-            /* Exit the child with the command's exit status. ("!" is applied
-             * once by the parent to the pipeline's status, not per command.) */
-            /* Flush only the output streams: see the comment in
-             * expand_command_subst(). */
-            fflush(stdout);
-            fflush(stderr);
-            _exit(cmd_result.has_exit_status ? cmd_result.exit_status : 0);
-        }
-
-        /* ---- Parent process ---- */
-        pids[i] = pid;
-
-        if (i == 0)
-        {
-            /* First child is the group leader */
-            pipeline_pgid = pid;
-        }
-
-        /*
-         * Set up process group (parent side).
-         * We call setpgid() here as well to eliminate the race condition
-         * where the parent proceeds to fork the next child (which needs
-         * pipeline_pgid) before the first child has called setpgid() on
-         * itself. One of the parent/child setpgid calls will succeed;
-         * the other will get EACCES (child already exec'd) which is fine.
-         */
-        setpgid(pid, pipeline_pgid);
-
-        /*
-         * Eagerly close pipe ends that the parent no longer needs.
-         * After forking child i:
-         *   - The write end of pipe i (pipes[2*i+1]) has been dup2'd into
-         *     child i's stdout. Parent doesn't need it.
-         *   - The read end of pipe i-1 (pipes[2*(i-1)]) has been dup2'd
-         *     into child i's stdin. Parent doesn't need it.
-         * Closing eagerly ensures that:
-         *   - Children see EOF on their stdin when the upstream writer exits
-         *   - We don't accumulate open fds across the fork loop
-         */
-        if (i < ncmds - 1)
-        {
-            close(pipes[2 * i + 1]);
-            pipes[2 * i + 1] = -1;
-        }
-        if (i > 0)
-        {
-            close(pipes[2 * (i - 1)]);
-            pipes[2 * (i - 1)] = -1;
-        }
-    }
-
-    /* Close any remaining pipe fds the parent still holds */
-    for (int i = 0; i < 2 * num_pipes; i++)
-    {
-        if (pipes[i] >= 0)
-        {
-            close(pipes[i]);
-            pipes[i] = -1;
-        }
-    }
-
-    /* Wait for all children. The pipeline's status is the last command's, or
-     * with "set -o pipefail" that of the rightmost command that failed
-     * (0 if none did). */
-    int last_status = 0;
-    int pipefail_status = 0;
-    for (int i = 0; i < ncmds; i++)
-    {
-        int status;
-        pid_t waited = waitpid_eintr(pids[i], &status, 0);
-        if (waited < 0)
-        {
-            /*
-             * ECHILD means the child was already reaped (e.g. by a signal
-             * handler). Treat as exit status 127. For any other error,
-             * report but continue waiting for remaining children.
-             */
-            if (errno != ECHILD)
-            {
-                exec_set_error_printf(frame->executor, "waitpid() failed for pid %d: %s", (int)pids[i],
-                               strerror(errno));
-            }
-            if (i == ncmds - 1)
-            {
-                last_status = 127;
-            }
-            pipefail_status = 127;
-            continue;
-        }
-
-        int child_status;
-        if (WIFEXITED(status))
-        {
-            child_status = WEXITSTATUS(status);
-        }
-        else if (WIFSIGNALED(status))
-        {
-            child_status = 128 + WTERMSIG(status);
-        }
-        else
-        {
-            child_status = 127;
-        }
-
-        if (child_status != 0)
-            pipefail_status = child_status;
-        if (i == ncmds - 1)
-        {
-            last_status = child_status;
-        }
-    }
-
-    if (frame->opt_flags && frame->opt_flags->pipefail)
-        last_status = pipefail_status;
-    result.exit_status = is_negated ? (last_status == 0 ? 1 : 0) : last_status;
-    frame->last_exit_status = result.exit_status;
-
-cleanup:
-    /* Free heap-allocated arrays */
-    for (int i = 0; i < 2 * num_pipes; i++)
-    {
-        if (pipes[i] >= 0)
-        {
-            close(pipes[i]);
-        }
-    }
-    xfree(pipes);
-    xfree(pids);
-
-    return result;
-
-#else
     /* For non-POSIX systems, multi-command pipelines are not supported */
     exec_set_error_cstr(frame->executor, "Pipelines not supported on this platform");
     result.status = MIGA_EXEC_STATUS_NOT_IMPL;
     result.exit_status = 1;
     return result;
-#endif
 }
 
 exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, ast_node_t *node)
@@ -2713,11 +2220,7 @@ exec_frame_execute_result_t exec_frame_execute_case_clause(miga_frame_t *frame, 
 
             /* Match pattern against word */
             bool pattern_matches = false;
-#ifdef MIGA_POSIX_API
-            pattern_matches = (fnmatch(string_cstr(pattern), string_cstr(word), 0) == 0);
-#else
             pattern_matches = glob_util_match(string_cstr(pattern), string_cstr(word), 0);
-#endif
 
             string_destroy(&pattern);
 
@@ -3121,12 +2624,6 @@ miga_exec_status_t exec_frame_stream_core(miga_frame_t *frame, FILE *fp, parse_s
     {
         if (line_buf)
             xfree(line_buf);
-#ifdef MIGA_POSIX_API
-        /* A read interrupted by a signal (SIGINT at an interactive prompt) is
-         * not end of file: clear the error so that the caller can go on. */
-        if (ferror(fp) && errno == EINTR)
-            clearerr(fp);
-#endif
         return MIGA_EXEC_STATUS_EMPTY; /* end of file (or read error) */
     }
 

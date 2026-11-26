@@ -49,13 +49,7 @@ static const char *get_basename(const char *file)
     const char *p = file;
     while (*p)
     {
-#ifdef MIGA_POSIX_API
-        if (*p == '/')
-#elif defined(MIGA_UCRT_API)
         if (*p == '/' || *p == '\\')
-#else
-        if (*p == '/' || *p == '\\')
-#endif
         {
             basename = p + 1;
         }

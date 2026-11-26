@@ -8,13 +8,7 @@
 
 #include "logging.h"
 
-#ifdef MIGA_POSIX_API
-#include <strings.h> // For strcasecmp
-#elif defined(MIGA_UCRT_API)
-#include <string.h> // For _stricmp
-#else
 #include "lib.h" // For ascii_strcasecmp
-#endif
 
 // Constants
 #define LOG_MESSAGE_BUFFER_SIZE 1024
@@ -106,14 +100,8 @@ static void log_message(LogLevel level, const char *level_str, const char *forma
 
 static int strcompare(const char *s1, const char *s2)
 {
-#ifdef MIGA_POSIX_API
-    return strcasecmp(s1, s2);
-#elif defined(MIGA_UCRT_API)
-    return _stricmp(s1, s2);
-#else
     // Fallback for MIGA_ISO_C: ASCII-only case-sensitive comparison
     return ascii_strcasecmp(s1, s2);
-#endif
 }
 
 // Initialization function checking environment variables

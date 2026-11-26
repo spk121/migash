@@ -11,11 +11,7 @@
 
 /* job_store_add_process() takes a process handle on Windows; the tests do not
  * have one, so this wrapper hides the difference. */
-#ifdef MIGA_UCRT_API
-#define add_process(store, job_id, pid, command) job_store_add_process(store, job_id, pid, 0, command)
-#else
 #define add_process(store, job_id, pid, command) job_store_add_process(store, job_id, pid, command)
-#endif
 
 // ------------------------------------------------------------
 // Creation and Destruction Tests

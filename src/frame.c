@@ -1,4 +1,4 @@
-﻿/**
+/**
  * frame.c - Public API implementation for miga_frame_t
  *
  * This file implements the public API defined in frame.h, providing a clean
@@ -26,28 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef MIGA_POSIX_API
-#include <errno.h>
-#include <fcntl.h>
-#include <fnmatch.h>
-#include <limits.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#if defined(_WIN64)
-#define _AMD64_
-#elif defined(_WIN32)
-#define _X86_
-#endif
-#include <direct.h>
-#include <io.h>
-#include <process.h>
-#include <search.h>
-#endif
 
 
 // FIXME: This module should not need internal headers.
@@ -487,34 +466,8 @@ miga_export_status_t frame_export_variable(miga_frame_t *frame, const string_t *
     }
 
     /* Export to system environment if supported */
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    /* Get the current value (which might be the value we just set, or the
-     * existing value) */
-    variable_view_t current_view;
-    if (!variable_store_get_variable(vars, name, &current_view))
-    {
-        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
-    }
-
-    const char *name_str = string_cstr(name);
-    const char *value_str = string_cstr(current_view.value);
-
-#ifdef MIGA_POSIX_API
-    if (setenv(name_str, value_str, 1) != 0)
-    {
-        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
-    }
-#elif defined(MIGA_UCRT_API)
-    if (_putenv_s(name_str, value_str) != 0)
-    {
-        return MIGA_EXPORT_STATUS_SYSTEM_ERROR;
-    }
-#endif
-
-#else
     /* Platform doesn't support environment export */
     return MIGA_EXPORT_STATUS_NOT_SUPPORTED;
-#endif
 
     return MIGA_EXPORT_STATUS_SUCCESS;
 }
@@ -563,16 +516,6 @@ miga_var_status_t frame_unset_variable(miga_frame_t *frame, const string_t *name
 
     variable_store_remove(vars, name);
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    if (view.exported)
-    {
-#ifdef MIGA_POSIX_API
-        unsetenv(string_cstr(name));
-#elif defined(MIGA_UCRT_API)
-        _putenv_s(string_cstr(name), "");
-#endif
-    }
-#endif
 
     return MIGA_VAR_STATUS_OK;
 }
@@ -824,16 +767,10 @@ bool frame_change_directory_cstr(miga_frame_t *frame, const char *path)
     Expects_not_null(frame);
     Expects_not_null(path);
 
-#if defined(MIGA_POSIX_API)
-    int (*const chdir_func)(const char *) = chdir;
-#elif defined(MIGA_UCRT_API)
-    int (*const chdir_func)(const char *) = _chdir;
-#else
     (void)frame;
     (void)path;
     int (*const chdir_func)(const char *) = chdir_stub;
     return false;
-#endif
 
     string_t *old_pwd = frame_get_variable_cstr(frame, "PWD");
 

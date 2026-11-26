@@ -101,18 +101,6 @@ void exec_redirect_commit_redirections(miga_frame_t *frame);
  * Callers should prefer the platform-agnostic wrappers above.
  */
 
-#ifdef MIGA_POSIX_API
-
-miga_exec_status_t exec_apply_redirections_posix(miga_frame_t *frame, const exec_redirections_t *redirs);
-void exec_restore_redirections_posix(miga_frame_t *frame);
-
-#elif defined(MIGA_UCRT_API)
-
-miga_exec_status_t exec_apply_redirections_ucrt_c(miga_frame_t *frame,
-                                             const exec_redirections_t *redirs);
-void exec_restore_redirections_ucrt_c(miga_frame_t *frame);
-
-#else
 
 /**
  * ISO C redirection support is limited.  For internal commands (builtins and
@@ -127,6 +115,5 @@ miga_exec_status_t exec_apply_redirections_iso_c(miga_frame_t *frame, const exec
  */
 void exec_restore_redirections_iso_c(miga_frame_t *frame);
 
-#endif
 
 #endif /* EXEC_REDIRECT_H */

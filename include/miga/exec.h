@@ -28,10 +28,6 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#ifdef MIGA_POSIX_API
-#include <sys/resource.h>
-#include <sys/types.h>
-#endif
 
 #include "miga/api.h"
 #include "miga/type_pub.h"
@@ -176,14 +172,6 @@ MIGA_API bool exec_set_umask(miga_exec_t *executor, int mask);
 MIGA_API string_t *exec_format_umask_symbolic(int mask);
 MIGA_API char *exec_format_umask_symbolic_cstr(int mask);
 
-#ifdef MIGA_POSIX_API
-MIGA_API mode_t exec_get_umask_posix(const miga_exec_t *executor);
-MIGA_API bool exec_set_umask_posix(miga_exec_t *executor, mode_t mask);
-
-MIGA_API bool exec_is_file_size_limit_set(const miga_exec_t *executor);
-MIGA_API rlim_t exec_get_file_size_limit(const miga_exec_t *executor);
-MIGA_API bool exec_set_file_size_limit(miga_exec_t *executor, rlim_t limit);
-#endif
 
 /* ── Process identity ────────────────────────────────────────────────────── */
 
@@ -759,7 +747,7 @@ typedef enum exec_job_state_t
 /**
  * Reap completed background jobs.
  * If @p notify is true, print their status.
- * Only functional in MIGA_POSIX_API mode; no-op otherwise.
+ * A no-op in this ISO C build, which cannot start background processes.
  */
 MIGA_API void exec_reap_background_jobs(miga_exec_t *executor, bool notify);
 
@@ -804,11 +792,7 @@ MIGA_API const char *exec_job_get_command_cstr(const miga_exec_t *executor,
 
 MIGA_API bool exec_job_is_background(const miga_exec_t *executor, int job_id);
 
-#ifdef MIGA_POSIX_API
-MIGA_API pid_t exec_job_get_pgid(const miga_exec_t *executor, int job_id);
-#else
 MIGA_API int exec_job_get_pgid(const miga_exec_t *executor, int job_id);
-#endif
 
 /* ── Per-process queries within a job ────────────────────────────────────── */
 
@@ -818,18 +802,8 @@ MIGA_API exec_job_state_t exec_job_get_process_state(const miga_exec_t *executor
 MIGA_API int exec_job_get_process_exit_status(const miga_exec_t *executor,
                                               int job_id, size_t index);
 
-#ifdef MIGA_POSIX_API
-MIGA_API pid_t exec_job_get_process_pid(const miga_exec_t *executor, int job_id,
-                                        size_t index);
-#elif defined(MIGA_UCRT_API)
-MIGA_API int exec_job_get_process_pid(const miga_exec_t *executor,
-                                      int job_id, size_t index);
-MIGA_API uintptr_t exec_job_get_process_handle(const miga_exec_t *executor,
-                                               int job_id, size_t index);
-#else
 MIGA_API int exec_job_get_process_pid(const miga_exec_t *executor, int job_id,
                                       size_t index);
-#endif
 
 /* ── Job actions ─────────────────────────────────────────────────────────── */
 

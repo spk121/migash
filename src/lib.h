@@ -138,16 +138,5 @@ const char *lib_default_path(char *buf, size_t size);
 const char *lib_default_ps1(void);
 
 /* POSIX-style file descriptor constants for UCRT (Windows) */
-#ifdef MIGA_UCRT_API
-#ifndef STDIN_FILENO
-#define STDIN_FILENO 0
-#endif
-#ifndef STDOUT_FILENO
-#define STDOUT_FILENO 1
-#endif
-#ifndef STDERR_FILENO
-#define STDERR_FILENO 2
-#endif
-#endif
 
 #endif

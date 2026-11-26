@@ -13,9 +13,6 @@
  */
 
 
-#ifdef MIGA_POSIX_API
-#include <sys/types.h>
-#endif
 
 #include <stdio.h>
 

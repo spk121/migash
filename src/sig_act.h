@@ -25,13 +25,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* Use sigaction only where it is actually available (non-Windows POSIX). */
-#if defined(MIGA_POSIX_API) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MSYS__) &&          \
-    !defined(_MSC_VER)
-/* Most Unix-likes + real POSIX environments */
-#define SIG_ACT_USE_SIGACTION 1
-#endif
-
 // Signal disposition tracking for restoration after traps
 // Stores the ORIGINAL signal handler before shell modifies it
 
@@ -41,11 +34,7 @@ typedef struct sig_act_t
     bool is_saved;   // Whether we have a saved handler for this signal
     bool was_ignored; // Whether the original handler was SIG_IGN
 
-#ifdef MIGA_POSIX_API
-    struct sigaction original_action; // Original sigaction structure
-#else
     void (*original_handler)(int); // Original signal handler (signal() style)
-#endif
 } sig_act_t;
 
 typedef struct sig_act_store_t
@@ -64,13 +53,8 @@ void sig_act_store_destroy(sig_act_store_t **store);
 // Set a new signal handler AND save the previous one (if not already saved)
 // This is the primary way handlers get saved in the store
 // Returns: the previous handler (for chaining), or SIG_ERR on error
-#ifdef MIGA_POSIX_API
-int sig_act_store_set_and_save(sig_act_store_t *store, int signo,
-                               const struct sigaction *new_action);
-#else
 void (*sig_act_store_set_and_save(sig_act_store_t *store, int signo,
                                   void (*new_handler)(int)))(int);
-#endif
 
 // Restore ALL saved signal dispositions to their original state
 // Only restores signals that were previously saved via set_and_save()

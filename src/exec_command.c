@@ -10,22 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef MIGA_POSIX_API
-#include <limits.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#if defined(_WIN64)
-#define _AMD64_
-#elif defined(_WIN32)
-#define _X86_
-#endif
-#include <handleapi.h>
-#include <process.h>
-#include <processthreadsapi.h>
-#endif
 
 #include "exec_command.h"
 #include "miga/frame.h"
@@ -60,7 +45,6 @@
  * Populate special shell variables into a variable store.
  * Populates $?, $!, $$, $_, $- from frame state.
  */
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
 /* Append one argument to a system(3) command line, quoted for the command
  * processor: single quotes for a POSIX sh (where ' is written '\''), double
  * quotes for cmd.exe. A word of safe characters is appended as it is. */
@@ -102,7 +86,6 @@ static void append_system_quoted(string_t *cmdline, const string_t *word)
     string_append_char(cmdline, '\'');
 #endif
 }
-#endif
 
 
 /* An expansion error (set -u, ${var:?word}) aborts the command: the message
@@ -763,256 +746,6 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         /* Environment: the shell's variables plus the prefix assignments */
         env_store = build_temp_store_for_siple_command(frame, node);
 
-#ifdef MIGA_POSIX_API
-        if (!cmd_name || *cmd_name == '\0')
-        {
-            exec_set_error_cstr(executor, "empty command name");
-            cmd_exit_status = 127;
-            goto done_execution;
-        }
-
-        int argc = strlist_size(expanded_words);
-        char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
-        for (int i = 0; i < argc; i++)
-        {
-            argv[i] = xstrdup(string_cstr(strlist_at(expanded_words, i)));
-        }
-        argv[argc] = NULL;
-
-        char *const *envp = variable_store_get_envp(env_store);
-        /* The search path for the child: the shell's PATH as the command sees
-         * it (a prefix assignment included), or the default path for
-         * "command -p". The exec functions consult the process environment. */
-        char default_path_buf[1024];
-        const char *search_path = NULL;
-        if (command_default_path)
-            search_path = lib_default_path(default_path_buf, sizeof default_path_buf);
-        else
-            for (char *const *ep = envp; ep && *ep; ++ep)
-                if (strncmp(*ep, "PATH=", 5) == 0)
-                {
-                    search_path = *ep + 5;
-                    break;
-                }
-
-        fflush(stdout);
-        fflush(stderr);
-        pid_t pid = fork();
-        if (pid == -1)
-        {
-            exec_set_error_printf(executor, "fork failed: %s", strerror(errno));
-            cmd_exit_status = 127;
-        }
-        else if (pid == 0) /* child */
-        {
-            exec_child_signals(executor, false);
-            /* Apply redirections in child */
-            miga_exec_status_t redir_st = exec_apply_redirections_posix(frame, runtime_redirs);
-            if (redir_st != MIGA_EXEC_STATUS_OK)
-            {
-                /* POSIX: redirection error on a command -> status 1 */
-                report_builtin_error(frame, 1);
-                _exit(1);
-            }
-
-            /* Close CLOEXEC FDs */
-            fd_table_t *fds = exec_frame_get_fds(frame);
-            size_t cloexec_count = 0;
-            int *cloexec_fds = fd_table_get_fds_with_flag(fds, FD_IS_CLOSE_ON_EXEC, &cloexec_count);
-            for (size_t j = 0; j < cloexec_count; j++)
-            {
-                close(cloexec_fds[j]);
-            }
-            xfree(cloexec_fds);
-
-            /* Exec */
-            if (search_path)
-                setenv("PATH", search_path, 1);
-#if defined(HAVE_EXECVPE)
-            execvpe(cmd_name, argv, envp);
-#else
-            /* Manual PATH search fallback if execvpe is not available */
-            const char *path_env = search_path;
-            if (path_env && strchr(cmd_name, '/') == NULL)
-            {
-                char *path = xstrdup(path_env);
-                char *saveptr = NULL;
-                char *dir = strtok_r(path, ":", &saveptr);
-                string_t *fullpath_str = string_create();
-                while (dir)
-                {
-                    string_set_cstr(fullpath_str, dir);
-                    string_append_cstr(fullpath_str, "/");
-                    string_append_cstr(fullpath_str, cmd_name);
-                    execve(string_cstr(fullpath_str), argv, envp);
-                    /* Only print if it looks like a real try (not ENOENT on every dir) */
-                    if (errno != ENOENT)
-                    {
-                        fprintf(stderr, "%s: %s\n", string_cstr(fullpath_str), strerror(errno));
-                        _exit(126); // 126 = found but cannot execute (permission, format, etc.)
-                    }
-                    dir = strtok_r(NULL, ":", &saveptr);
-                }
-                string_destroy(&fullpath_str);
-                xfree(path);
-            }
-            else
-            {
-                execve(cmd_name, argv, envp);
-            }
-#endif
-            /* If we get here: either absolute path failed, or PATH search exhausted */
-            if (errno == ENOENT || (strchr(cmd_name, '/') == NULL && path_env == NULL))
-            {
-                fprintf(stderr, "%s: command not found\n", cmd_name);
-                _exit(127);
-            }
-            else
-            {
-                fprintf(stderr, "%s: %s\n", cmd_name, strerror(errno));
-                _exit(127);
-                // FIXME: perhaps 126 for found but cannot execute. But we'd have to
-                // make sure the REPL also handles 126.
-            }
-        }
-        else /* parent */
-        {
-            int wstatus = 0;
-            pid_t waited;
-            do
-                waited = waitpid(pid, &wstatus, 0);
-            while (waited < 0 && errno == EINTR);
-            if (waited < 0)
-            {
-                cmd_exit_status = 127;
-            }
-            else if (WIFEXITED(wstatus))
-            {
-                cmd_exit_status = WEXITSTATUS(wstatus);
-            }
-            else if (WIFSIGNALED(wstatus))
-            {
-                cmd_exit_status = 128 + WTERMSIG(wstatus);
-            }
-            else
-            {
-                cmd_exit_status = 127;
-            }
-        }
-
-        for (int i = 0; argv[i]; i++)
-            xfree(argv[i]);
-        xfree(argv);
-        if (cmd_exit_status == 127 && !exec_get_error_cstr(executor))
-        {
-            exec_set_error_printf(executor, "%s: command not found", cmd_name);
-        }
-#elif defined(MIGA_UCRT_API)
-        int argc = strlist_size(expanded_words);
-        char **argv = xcalloc((size_t)argc + 1, sizeof(char *));
-        for (int i = 0; i < argc; i++)
-        {
-            argv[i] = xstrdup(string_cstr(strlist_at(expanded_words, i)));
-        }
-        argv[argc] = NULL;
-
-        if (!cmd_name || strlen(cmd_name) == 0)
-        {
-            exec_set_error_cstr(executor, "empty command name");
-            cmd_exit_status = 127;
-            for (int i = 0; argv[i]; i++)
-                xfree(argv[i]);
-            xfree(argv);
-            goto done_execution;
-        }
-
-        char *const *envp = variable_store_get_envp(env_store);
-
-        intptr_t spawn_result = 0;
-        if (frame->policy && frame->policy->classification.is_background)
-        {
-            if (runtime_redirs && runtime_redirs->count > 0)
-            {
-                log_warn("Redirections for background commands are not supported on UCRT; ignoring "
-                         "redirections.");
-            }
-            log_debug("Preparing to execute external background command: %s", cmd_name);
-            for (int i = 0; i < strlist_size(expanded_words); i++)
-            {
-                log_debug("\targv%d: %s", i, argv[i]);
-            }
-            spawn_result = _spawnvpe(_P_NOWAIT, cmd_name, (const char *const *)argv,
-                                     (const char *const *)envp);
-        }
-        else
-        {
-            if (runtime_redirs && runtime_redirs->count > 0)
-            {
-                miga_exec_status_t redir_st =
-                    (miga_exec_status_t)exec_redirect_apply_redirectons(frame, runtime_redirs);
-                if (redir_st != MIGA_EXEC_STATUS_OK)
-                {
-                    for (int i = 0; argv[i]; i++)
-                        xfree(argv[i]);
-                    xfree(argv);
-                    exec_redirect_restore_redirections(frame, runtime_redirs);
-                    report_builtin_error(frame, 1);
-                    cmd_exit_status = 1;
-                    goto done_execution;
-                }
-            }
-            log_debug("Preparing to execute external command: %s", cmd_name);
-            for (int i = 0; i < strlist_size(expanded_words); i++)
-            {
-                log_debug("\targv%d: %s", i, argv[i]);
-            }
-            spawn_result =
-                _spawnvpe(_P_WAIT, cmd_name, (const char *const *)argv, (const char *const *)envp);
-            if (runtime_redirs && runtime_redirs->count > 0)
-            {
-                exec_redirect_restore_redirections(frame, runtime_redirs);
-            }
-        }
-        if (spawn_result == -1)
-        {
-            int err = errno;
-            if (err == ENOENT)
-                exec_set_error_printf(executor, "%s: command not found", cmd_name);
-            else if (err == ENOEXEC)
-                exec_set_error_printf(executor, "%s: not executable", cmd_name);
-            else
-                exec_set_error_printf(executor, "%s: execution failed (errno=%d)", cmd_name, err);
-            cmd_exit_status = 127;
-        }
-        else
-        {
-            if (frame->policy && frame->policy->classification.is_background)
-            {
-                int pid = GetProcessId((HANDLE)spawn_result);
-                frame->last_bg_pid = pid;
-                if (frame->executor->jobs)
-                {
-                    string_t *cmdline = string_create_from_cstr_list(argv, " ");
-                    int job_id = job_store_add(frame->executor->jobs, cmdline, true);
-                    if (job_id >= 0 && pid > 0)
-                    {
-                        job_store_add_process(frame->executor->jobs, job_id, pid,
-                                              (unsigned long)spawn_result, cmdline);
-                    }
-                    string_destroy(&cmdline);
-                }
-            }
-            cmd_exit_status = (int)spawn_result;
-        }
-
-        for (int i = 0; argv[i]; i++)
-            xfree(argv[i]);
-        xfree(argv);
-        if (cmd_exit_status == 127 && !exec_get_error(executor))
-        {
-            exec_set_error_printf(executor, "%s: command not found", cmd_name);
-        }
-#else
         /* ISO C fallback using system() */
         if (!cmd_name || *cmd_name == '\0')
         {
@@ -1057,7 +790,6 @@ exec_frame_execute_result_t exec_frame_execute_simple_command_impl(miga_frame_t 
         {
             exec_set_error_printf(executor, "%s: command not found", cmd_name);
         }
-#endif
     } // end of has_words == true
 done_execution:
     frame->last_exit_status = cmd_exit_status;

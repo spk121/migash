@@ -1,11 +1,5 @@
-﻿#ifdef HAVE_CONFIG_H
+#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif
-#ifdef MIGA_UCRT_API
-#endif
-#ifdef MIGA_POSIX_API
-// #define _POSIX_C_SOURCE 202405L
-// Need the full power of _GNU_SOURCE for realpath()
 #endif
 
 #include <ctype.h>
@@ -17,29 +11,7 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef MIGA_POSIX_API
-#include <sys/stat.h>
-#include <sys/resource.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#if defined(_WIN64)
-#define _AMD64_
-#elif defined(_WIN32)
-#define _X86_
-#endif
-#include <direct.h>
-#include <handleapi.h> // CloseHandle
-#include <io.h>
-#include <process.h>
-#include <processthreadsapi.h> // TerminateProcess, OpenProcess, etc.
-#include <synchapi.h>          // WaitForSingleObject
-#include <sys/stat.h>
-#endif
 
 #include "builtin_store.h"
 #include "token.h"
@@ -59,29 +31,7 @@
 #include "variable_store.h"
 #include "miga/xalloc.h"
 
-#ifdef MIGA_POSIX_API
-#define CHDIR chdir
-#define GETCWD getcwd
-#define STAT stat
-#define STAT_T struct stat
-#endif
 
-#ifdef MIGA_UCRT_API
-/* Constants not always available without full Windows.h */
-#ifndef INFINITE
-#define INFINITE 0xFFFFFFFF
-#endif
-#ifndef WAIT_OBJECT_0
-#define WAIT_OBJECT_0 0
-#endif
-#define CHDIR _chdir
-#define GETCWD _getcwd
-#define STAT _stat
-#define STAT_T struct _stat
-#ifndef S_ISDIR
-#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
-#endif
-#endif // MIGA_UCRT_API
 
 /* ============================================================================
  * colon - do nothing builtin
@@ -276,13 +226,8 @@ static search_path_result_t dot_search_path(miga_frame_t *frame, const string_t 
         return (search_path_result_t){.full_path = NULL, .found = false};
     }
 
-#ifdef MIGA_UCRT_API
-    const char path_sep = ';';
-    const char *dir_sep = "\\";
-#else
     const char path_sep = ':';
     const char *dir_sep = "/";
-#endif
 
     strlist_t *entries = strlist_create_from_string_split_char(path_var, path_sep);
     string_destroy(&path_var);
@@ -359,24 +304,7 @@ int builtin_dot(miga_frame_t *frame, const strlist_t *args)
 
     if (!fp)
     {
-#if defined(MIGA_POSIX_API)
-        if (errno == EACCES)
-        {
-            frame_set_error_printf(frame, "dot: %s: permission denied", filename);
-            string_destroy(&resolved_path);
-            return 1;
-        }
-#endif
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-        char *cwd = GETCWD(NULL, 0);
-        if (filename[0] == '.' && cwd)
-            frame_set_error_printf(frame, "dot: %s: not found relative to '%s'", filename, cwd);
-        else
-            frame_set_error_printf(frame, "dot: %s: not found", filename);
-        free(cwd);
-#else
         frame_set_error_printf(frame, "dot: %s: not found", filename);
-#endif
         string_destroy(&resolved_path);
         return 1;
     }
@@ -519,40 +447,10 @@ int builtin_exec(miga_frame_t *frame, const strlist_t *args)
         return 0;
     }
 
-#ifdef MIGA_POSIX_API
-    // Build argv for execvp
-    char **argv = xmalloc((argc) * sizeof(char *));
-    for (int i = 1; i < argc; ++i)
-    {
-        argv[i - 1] = (char *)string_cstr(strlist_at(args, i));
-    }
-    argv[argc - 1] = NULL;
-
-    execvp(argv[0], argv);
-    // If execvp returns, it failed
-    fprintf(stderr, "exec: %s: %s\n", argv[0], strerror(errno));
-    xfree(argv);
-    return 127;
-#elif defined(MIGA_UCRT_API)
-    // Build argv for _execvp
-    char **argv = xmalloc((argc) * sizeof(char *));
-    for (int i = 1; i < argc; ++i)
-    {
-        argv[i - 1] = (char *)string_cstr(strlist_at(args, i));
-    }
-    argv[argc - 1] = NULL;
-
-    _execvp(argv[0], argv);
-    // If _execvp returns, it failed
-    fprintf(stderr, "exec: %s: %s\n", argv[0], strerror(errno));
-    xfree(argv);
-    return 127;
-#else
     (void)frame;
     (void)args;
     fprintf(stderr, "exec: not supported on this platform\n");
     return 127;
-#endif
 }
 
 /* ============================================================================
@@ -1332,20 +1230,6 @@ int builtin_trap(miga_frame_t *frame, const strlist_t *args)
 #define READ_BYTE_ERROR (-2)
 typedef int (*read_byte_fn)(void *ctx);
 
-#ifdef MIGA_POSIX_API
-static int read_byte_from_fd(void *ctx)
-{
-    int fd = *(int *)ctx;
-    unsigned char c;
-    ssize_t n;
-    do
-        n = read(fd, &c, 1);
-    while (n < 0 && errno == EINTR);
-    if (n == 1)
-        return c;
-    return n == 0 ? READ_BYTE_EOF : READ_BYTE_ERROR;
-}
-#else
 static int read_byte_from_stream(void *ctx)
 {
     FILE *fp = ctx;
@@ -1360,7 +1244,6 @@ static int read_byte_from_stream(void *ctx)
     clearerr(fp); /* a terminal may deliver more input after an end-of-file */
     return READ_BYTE_EOF;
 }
-#endif
 
 static bool read_char_is_ifs(char c, const char *ifs)
 {
@@ -1530,11 +1413,6 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args)
 
     fflush(stdout); /* a prompt written just before read must appear first */
 
-#ifdef MIGA_POSIX_API
-    int fd = STDIN_FILENO;
-    read_byte_fn get_byte = read_byte_from_fd;
-    void *ctx = &fd;
-#else
     FILE *in = builtin_stdin(frame);
     if (!in)
     {
@@ -1543,7 +1421,6 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args)
     }
     read_byte_fn get_byte = read_byte_from_stream;
     void *ctx = in;
-#endif
 
     string_t *line = string_create();
     string_t *literal = string_create(); /* '1' or '0' per byte of line */
@@ -1557,170 +1434,6 @@ int builtin_read(miga_frame_t *frame, const strlist_t *args)
     return read_status; /* 0, or 1 at end of file */
 }
 
-#ifdef MIGA_POSIX_API
-/* ============================================================================
- * umask - get or set the file mode creation mask (POSIX)
- *
- *   umask [-S] [mask]
- *
- * Without an operand the mask is written in octal, or with -S as the
- * permissions it allows ("u=rwx,g=rx,o=rx"). The operand is an octal number
- * or a symbolic mode of the chmod kind, applied to the permissions the
- * current mask allows: clauses separated by commas, each a who list (u, g,
- * o, a; empty means all) followed by one or more actions, where an action
- * is =, + or - and a list of r, w, x (X is accepted as x). The new mask is
- * the complement of the resulting permissions. Status 1 for a bad operand.
- * ============================================================================
- */
-static bool umask_parse_symbolic(const char *spec, mode_t current_mask, mode_t *out_mask)
-{
-    unsigned perms = (~(unsigned)current_mask) & 0777u;
-    const char *p = spec;
-    while (*p)
-    {
-        unsigned who = 0;
-        while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a')
-        {
-            if (*p == 'u') who |= 0700u;
-            else if (*p == 'g') who |= 0070u;
-            else if (*p == 'o') who |= 0007u;
-            else who |= 0777u;
-            p++;
-        }
-        if (who == 0)
-            who = 0777u;
-        if (*p != '=' && *p != '+' && *p != '-')
-            return false;
-        while (*p == '=' || *p == '+' || *p == '-')
-        {
-            char op = *p++;
-            unsigned bits = 0;
-            while (*p == 'r' || *p == 'w' || *p == 'x' || *p == 'X')
-            {
-                if (*p == 'r') bits |= 0444u;
-                else if (*p == 'w') bits |= 0222u;
-                else bits |= 0111u;
-                p++;
-            }
-            bits &= who;
-            if (op == '=')
-                perms = (perms & ~who) | bits;
-            else if (op == '+')
-                perms |= bits;
-            else
-                perms &= ~bits;
-        }
-        if (*p == ',')
-        {
-            p++;
-            if (*p == '\0')
-                return false;
-        }
-        else if (*p != '\0')
-            return false;
-    }
-    *out_mask = (mode_t)((~perms) & 0777u);
-    return true;
-}
-
-static void umask_print_symbolic(FILE *out, mode_t mask)
-{
-    unsigned perms = (~(unsigned)mask) & 0777u;
-    const char *names = "ugo";
-    for (int i = 0; i < 3; i++)
-    {
-        unsigned shift = (unsigned)(6 - 3 * i);
-        fprintf(out, "%s%c=", i ? "," : "", names[i]);
-        if (perms & (04u << shift)) fputc('r', out);
-        if (perms & (02u << shift)) fputc('w', out);
-        if (perms & (01u << shift)) fputc('x', out);
-    }
-    fputc('\n', out);
-}
-
-int builtin_umask(miga_frame_t *frame, const strlist_t *args)
-{
-    Expects_not_null(frame);
-    Expects_not_null(args);
-    FILE *out = builtin_stdout(frame);
-
-    int argc = strlist_size(args);
-    bool symbolic = false;
-    int first_operand = 1;
-    for (int i = 1; i < argc; i++)
-    {
-        const char *arg = string_cstr(strlist_at(args, i));
-        if (strcmp(arg, "--") == 0)
-        {
-            first_operand = i + 1;
-            break;
-        }
-        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
-        {
-            first_operand = i;
-            break;
-        }
-        for (const char *p = arg + 1; *p; p++)
-        {
-            if (*p == 'S')
-                symbolic = true;
-            else
-            {
-                fprintf(stderr, "umask: -%c: invalid option\n", *p);
-                fprintf(stderr, "umask: usage: umask [-S] [mask]\n");
-                return 2;
-            }
-        }
-        first_operand = i + 1;
-    }
-
-    /* The process mask is authoritative; the frame keeps a copy for $-style
-     * bookkeeping and for subshell policies. */
-    mode_t current = umask(0);
-    umask(current);
-
-    if (first_operand >= argc)
-    {
-        if (symbolic)
-            umask_print_symbolic(out, current);
-        else
-            fprintf(out, "%04o\n", (unsigned)current);
-        return 0;
-    }
-    if (first_operand + 1 < argc)
-    {
-        fprintf(stderr, "umask: too many arguments\n");
-        return 2;
-    }
-
-    const char *spec = string_cstr(strlist_at(args, first_operand));
-    mode_t new_mask;
-    bool all_octal = *spec != '\0';
-    for (const char *p = spec; *p; p++)
-        if (*p < '0' || *p > '7')
-            all_octal = false;
-    if (all_octal)
-    {
-        unsigned long v = strtoul(spec, NULL, 8);
-        if (v > 0777)
-        {
-            fprintf(stderr, "umask: %s: octal number out of range\n", spec);
-            return 1;
-        }
-        new_mask = (mode_t)v;
-    }
-    else if (!umask_parse_symbolic(spec, current, &new_mask))
-    {
-        fprintf(stderr, "umask: %s: invalid symbolic mode\n", spec);
-        return 1;
-    }
-
-    umask(new_mask);
-    if (frame->umask)
-        *frame->umask = new_mask;
-    return 0;
-}
-#endif /* MIGA_POSIX_API */
 
 /* ============================================================================
  * command / type - how a name would be interpreted
@@ -1748,17 +1461,12 @@ typedef enum
 
 static bool command_file_is_executable(const char *path)
 {
-#ifdef MIGA_POSIX_API
-    struct stat st;
-    return access(path, X_OK) == 0 && stat(path, &st) == 0 && S_ISREG(st.st_mode);
-#else
     /* No permission test in ISO C: an existing readable file counts */
     FILE *fp = fopen(path, "r");
     if (!fp)
         return false;
     fclose(fp);
     return true;
-#endif
 }
 
 static string_t *command_search_path(miga_frame_t *frame, const char *name, bool default_path)
@@ -2041,98 +1749,6 @@ int builtin_hash(miga_frame_t *frame, const strlist_t *args)
     return status;
 }
 
-#ifdef MIGA_POSIX_API
-/* ============================================================================
- * ulimit - file size limit (XCU ulimit)
- *
- *   ulimit [-f] [blocks]
- *
- * POSIX defines only -f, the maximum size of files the shell and its children
- * may write, in 512-byte blocks; it is the default. Without a value the limit
- * is printed ("unlimited" or the number of blocks); with a value (a number or
- * "unlimited") both the soft and the hard limit are set. Status 1 for a
- * value the system refuses, 2 for a usage error.
- * ============================================================================
- */
-int builtin_ulimit(miga_frame_t *frame, const strlist_t *args)
-{
-    Expects_not_null(frame);
-    Expects_not_null(args);
-    FILE *out = builtin_stdout(frame);
-
-    int argc = strlist_size(args);
-    int first = 1;
-    for (int i = 1; i < argc; i++)
-    {
-        const char *arg = string_cstr(strlist_at(args, i));
-        if (strcmp(arg, "--") == 0)
-        {
-            first = i + 1;
-            break;
-        }
-        if (arg[0] != '-' || arg[1] == '\0' || isdigit((unsigned char)arg[1]))
-        {
-            first = i;
-            break;
-        }
-        for (const char *p = arg + 1; *p; p++)
-        {
-            if (*p != 'f')
-            {
-                fprintf(stderr, "ulimit: -%c: invalid option\n", *p);
-                fprintf(stderr, "ulimit: usage: ulimit [-f] [blocks]\n");
-                return 2;
-            }
-        }
-        first = i + 1;
-    }
-    if (first + 1 < argc)
-    {
-        fprintf(stderr, "ulimit: too many arguments\n");
-        return 2;
-    }
-
-    struct rlimit rl;
-    if (first >= argc)
-    {
-        if (getrlimit(RLIMIT_FSIZE, &rl) != 0)
-        {
-            fprintf(stderr, "ulimit: %s\n", strerror(errno));
-            return 1;
-        }
-        if (rl.rlim_cur == RLIM_INFINITY)
-            fputs("unlimited\n", out);
-        else
-            fprintf(out, "%llu\n", (unsigned long long)(rl.rlim_cur / 512));
-        return 0;
-    }
-
-    const char *value = string_cstr(strlist_at(args, first));
-    rlim_t limit;
-    if (strcmp(value, "unlimited") == 0)
-        limit = RLIM_INFINITY;
-    else
-    {
-        char *end = NULL;
-        errno = 0;
-        unsigned long long blocks = strtoull(value, &end, 10);
-        if (*value == '\0' || *end != '\0' || errno != 0 || *value == '-')
-        {
-            fprintf(stderr, "ulimit: %s: invalid number\n", value);
-            return 2;
-        }
-        limit = (rlim_t)blocks * 512;
-    }
-    rl.rlim_cur = limit;
-    rl.rlim_max = limit;
-    if (setrlimit(RLIMIT_FSIZE, &rl) != 0)
-    {
-        fprintf(stderr, "ulimit: %s\n", strerror(errno));
-        return 1;
-    }
-    return 0;
-}
-#endif /* MIGA_POSIX_API */
 
 /* ============================================================================
  * times - Print accumulated user and system times
@@ -2170,90 +1786,6 @@ static void times_format_time(double seconds, char *buf, size_t buf_size)
     snprintf(buf, buf_size, "%dm%.3fs", minutes, secs);
 }
 
-#ifdef MIGA_POSIX_API
-#include <sys/times.h>
-
-int builtin_times(miga_frame_t *frame, const strlist_t *args)
-{
-    (void)frame;
-    (void)args;
-
-    struct tms time_buf;
-    char user_buf[32], sys_buf[32];
-
-    /* Get clock ticks per second for conversion */
-    long ticks_per_sec = sysconf(_SC_CLK_TCK);
-    if (ticks_per_sec <= 0)
-    {
-        ticks_per_sec = 100; /* Fallback to common default */
-    }
-
-    /* Get accumulated times */
-    if (times(&time_buf) == (clock_t)-1)
-    {
-        /* Error, but POSIX says times always returns 0 */
-        fprintf(stderr, "times: failed to get process times\n");
-        return 0;
-    }
-
-    /* Shell user and system time */
-    double shell_user = (double)time_buf.tms_utime / ticks_per_sec;
-    double shell_sys = (double)time_buf.tms_stime / ticks_per_sec;
-
-    /* Children user and system time */
-    double child_user = (double)time_buf.tms_cutime / ticks_per_sec;
-    double child_sys = (double)time_buf.tms_cstime / ticks_per_sec;
-
-    /* Print shell times */
-    times_format_time(shell_user, user_buf, sizeof(user_buf));
-    times_format_time(shell_sys, sys_buf, sizeof(sys_buf));
-    printf("%s %s\n", user_buf, sys_buf);
-
-    /* Print children times */
-    times_format_time(child_user, user_buf, sizeof(user_buf));
-    times_format_time(child_sys, sys_buf, sizeof(sys_buf));
-    printf("%s %s\n", user_buf, sys_buf);
-
-    return 0;
-}
-
-#elif defined(MIGA_UCRT_API)
-
-int builtin_times(miga_frame_t *frame, const strlist_t *args)
-{
-    (void)frame;
-    (void)args;
-
-    char time_buf[32];
-
-    /*
-     * UCRT doesn't provide POSIX times() or easy access to user/system time
-     * separation. We use clock() to get an approximation of CPU time used.
-     *
-     * Note: clock() returns processor time, which may not accurately reflect
-     * real user/system breakdown. Child process times are not available
-     * through standard UCRT.
-     */
-
-    clock_t cpu_time = clock();
-    double cpu_seconds = 0.0;
-
-    if (cpu_time != (clock_t)-1)
-    {
-        cpu_seconds = (double)cpu_time / CLOCKS_PER_SEC;
-    }
-
-    /* Print shell times (all attributed to user time, no system time available) */
-    times_format_time(cpu_seconds, time_buf, sizeof(time_buf));
-    printf("%s 0m0.000s\n", time_buf);
-
-    /* Print children times (not available via standard UCRT) */
-    printf("0m0.000s 0m0.000s\n");
-
-    return 0;
-}
-
-#else
 /* ISO C fallback - minimal implementation using clock() */
 
 int builtin_times(miga_frame_t *frame, const strlist_t *args)
@@ -2286,7 +1818,6 @@ int builtin_times(miga_frame_t *frame, const strlist_t *args)
     return 0;
 }
 
-#endif
 
 /* ============================================================================
  * set - Set or unset shell options and positional parameters
@@ -3040,11 +2571,7 @@ int builtin_getopts(miga_frame_t *frame, const strlist_t *args)
  * cd - Change the shell working directory
  * ============================================================================
  */
-#ifdef MIGA_UCRT_API
-#define SECOND_HOME_VAR "USERPROFILE"
-#else
 #define SECOND_HOME_VAR NULL
-#endif
 
 static string_t *resolve_home(miga_frame_t *frame)
 {
@@ -3064,142 +2591,6 @@ static string_t *resolve_home(miga_frame_t *frame)
     return NULL;
 }
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-
-/**
- * Canonicalize a path using string_t and strlist_t.
- * Removes dot components, resolves dot-dot, normalizes slashes.
- * Returns a new string_t* (caller must destroy).
- */
-#define SLASHES "/\\"
-string_t *cd_canonicalize_string(const string_t *path)
-{
-    if (!path || string_empty(path))
-        return string_create_from_cstr(".");
-
-    bool rooted = (string_front(path) == '/' || string_front(path) == '\\');
-
-    strlist_t *raw = strlist_create_from_string_split_cstr(path, SLASHES);
-    strlist_t *parts = strlist_create();
-
-    for (int i = 0; i < strlist_size(raw); i++)
-    {
-        const string_t *comp = strlist_at(raw, i);
-
-        if (string_empty(comp) || string_eq_cstr(comp, "."))
-        {
-            // skip
-        }
-        else if (string_eq_cstr(comp, ".."))
-        {
-            int size = strlist_size(parts);
-            if (size > 0 && !string_eq_cstr(strlist_at(parts, size - 1), ".."))
-                strlist_erase(parts, size - 1);
-            else if (!rooted)
-            {
-                string_t *dotdot = string_create_from_cstr("..");
-                strlist_move_push_back(parts, &dotdot);
-            }
-            // else: at rooted root, silently discard
-        }
-        else
-        {
-            string_t *copy = string_create_from(comp);
-            strlist_move_push_back(parts, &copy);
-        }
-    }
-
-    string_t *out = strlist_join(parts, "/");
-    if (rooted)
-        string_insert_cstr(out, 0, "/");
-    if (string_empty(out))
-        string_set_cstr(out, rooted ? "/" : ".");
-
-    strlist_destroy(&raw);
-    strlist_destroy(&parts);
-    return out;
-}
-
-/**
- * Perform the actual chdir + PWD/OLDPWD update.
- * target    - the resolved path to cd into
- * print_dir - if true, print the new directory to stdout (cd - case)
- * flag_P    - if true, set PWD via getcwd (physical), else use logical curpath
- * flag_e    - if true and -P and getcwd fails, return 1 instead of 0
- */
-static int cd_do_chdir(miga_frame_t *frame,
-                       const string_t *logical_path, // for -L PWD
-                       const string_t *chdir_target, // what we actually chdir()
-                       bool print_dir, bool flag_P, bool flag_e)
-{
-    char *old_cwd = GETCWD(NULL, 0);
-    if (!old_cwd)
-    {
-        fprintf(stderr, "cd: cannot determine current directory: %s\n", strerror(errno));
-        return 1;
-    }
-
-    if (CHDIR(string_cstr(chdir_target)) != 0)
-    {
-        int saved_errno = errno;
-        free(old_cwd);
-        switch (saved_errno)
-        {
-        case ENOENT:
-            fprintf(stderr, "cd: %s: No such file or directory\n", string_cstr(chdir_target));
-            break;
-        case EACCES:
-            fprintf(stderr, "cd: %s: Permission denied\n", string_cstr(chdir_target));
-            break;
-        case ENOTDIR:
-            fprintf(stderr, "cd: %s: Not a directory\n", string_cstr(chdir_target));
-            break;
-        default:
-            fprintf(stderr, "cd: %s: %s\n", string_cstr(chdir_target), strerror(saved_errno));
-            break;
-        }
-        return 1;
-    }
-
-    // Determine new PWD
-    char *new_cwd = NULL;
-    int exit_status = 0;
-
-    if (flag_P)
-    {
-        /* Keep every new_cwd path in arena memory (xstrdup) so one xfree fits */
-        char *sys_cwd = GETCWD(NULL, 0);
-        new_cwd = sys_cwd ? xstrdup(sys_cwd) : NULL;
-        free(sys_cwd);
-        if (!new_cwd)
-        {
-            fprintf(stderr, "cd: warning: cannot determine new directory: %s\n", strerror(errno));
-            if (flag_e)
-            {
-                free(old_cwd);
-                return 1;
-            }
-            exit_status = 0; // -P without -e: succeed anyway
-            new_cwd = xstrdup(string_cstr(chdir_target));
-        }
-    }
-    else
-    {
-        // -L (default): use the logical curpath (target as we computed it)
-        new_cwd = xstrdup(string_cstr(logical_path));
-    }
-
-    if (print_dir)
-        printf("%s\n", new_cwd);
-
-    frame_set_persistent_variable_cstr(frame, "OLDPWD", old_cwd);
-    frame_set_persistent_variable_cstr(frame, "PWD", new_cwd);
-    free(old_cwd); /* from getcwd(3) */
-    xfree(new_cwd);
-    return exit_status;
-}
-
-#endif // MIGA_POSIX_API || MIGA_UCRT_API
 
 int builtin_cd(miga_frame_t *frame, const strlist_t *args)
 {
@@ -3248,176 +2639,8 @@ int builtin_cd(miga_frame_t *frame, const strlist_t *args)
         return 2;
     }
 
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     fprintf(stderr, "cd: directory change not supported on this platform\n");
     return 1;
-#else
-
-    int remaining = strlist_size(args) - state.optind;
-    if (remaining > 1)
-    {
-        fprintf(stderr, "cd: too many arguments\n");
-        return 1;
-    }
-
-    string_t *curpath = NULL;
-    bool print_dir = false;
-
-    if (remaining == 0)
-    {
-        curpath = resolve_home(frame);
-        if (!curpath)
-        {
-            fprintf(stderr, "cd: HOME not set\n");
-            return 1;
-        }
-    }
-    else
-    {
-        const string_t *arg = strlist_at(args, state.optind);
-
-        if (string_empty(arg))
-        {
-            fprintf(stderr, "cd: empty directory argument\n");
-            return 1;
-        }
-
-        if (string_eq_cstr(arg, "-"))
-        {
-            if (!frame_has_variable_cstr(frame, "OLDPWD"))
-            {
-                fprintf(stderr, "cd: OLDPWD not set\n");
-                return 1;
-            }
-            curpath = frame_get_variable_cstr(frame, "OLDPWD");
-            if (string_empty(curpath))
-            {
-                string_destroy(&curpath);
-                fprintf(stderr, "cd: OLDPWD is empty\n");
-                return 1;
-            }
-            print_dir = true;
-        }
-        else if (string_starts_with_cstr(arg, "/")
-#ifdef MIGA_UCRT_API
-                 || string_starts_with_cstr(arg, "\\")
-#endif
-                 || string_starts_with_cstr(arg, ".") || string_contains_cstr(arg, "/"))
-        {
-            // Absolute, or explicitly relative (./ or ../), or contains /: skip CDPATH
-            curpath = string_create_from(arg);
-        }
-        else
-        {
-            // Search CDPATH
-            bool found = false;
-            if (frame_has_variable_cstr(frame, "CDPATH"))
-            {
-#ifdef MIGA_UCRT_API
-                const char sep = ';';
-#else
-                const char sep = ':';
-#endif
-                string_t *cdpath = frame_get_variable_cstr(frame, "CDPATH");
-                strlist_t *cdpath_entries =
-                    strlist_create_from_string_split_char(cdpath, sep);
-                string_destroy(&cdpath);
-
-                for (int i = 0; i < strlist_size(cdpath_entries); i++)
-                {
-                    const string_t *entry = strlist_at(cdpath_entries, i);
-                    string_t *candidate;
-                    if (string_empty(entry))
-                    {
-                        candidate = string_create_from_cstr("./");
-                        string_append(candidate, arg);
-                    }
-                    else
-                    {
-                        candidate = string_create_from(entry);
-                        string_append_cstr(candidate, "/");
-                        string_append(candidate, arg);
-                    }
-                    STAT_T st;
-                    if (STAT(string_cstr(candidate), &st) == 0 && S_ISDIR(st.st_mode))
-                    {
-                        found = true;
-                        curpath = candidate;
-                        print_dir = !string_empty(entry);
-                        break;
-                    }
-                    string_destroy(&candidate);
-                }
-                strlist_destroy(&cdpath_entries);
-            }
-
-            if (!found)
-                curpath = string_create_from(arg);
-        }
-    }
-
-    // Steps 7-8: prepend PWD if curpath is not absolute, to get a full
-    // logical path for canonicalization
-    if (!flag_P && !string_starts_with_cstr(curpath, "/")
-#ifdef MIGA_UCRT_API
-        && !string_starts_with_cstr(curpath, "\\")
-#endif
-    )
-    {
-        string_t *pwd;
-        if (frame_has_variable_cstr(frame, "PWD"))
-        {
-            pwd = frame_get_variable_cstr(frame, "PWD");
-            if (string_empty(pwd))
-                string_set_cstr(pwd, ".");
-        }
-        else
-        {
-            pwd = string_create_from_cstr(".");
-        }
-        string_t *abs = string_create_from(pwd);
-        string_destroy(&pwd);
-        string_append_cstr(abs, "/");
-        string_append(abs, curpath);
-        string_consume(curpath, &abs);
-    }
-
-    string_t *target;
-    int result;
-    if (flag_P)
-    {
-        char *physical = NULL;
-#ifdef MIGA_POSIX_API
-        physical = realpath(string_cstr(curpath), NULL);
-#elif defined(MIGA_UCRT_API)
-        physical = _fullpath(NULL, string_cstr(curpath), 0);
-#endif
-        if (!physical)
-        {
-            fprintf(stderr, "cd: cannot resolve path '%s': %s\n", string_cstr(curpath),
-                    strerror(errno));
-            string_destroy(&curpath);
-            return 1;
-        }
-        target = string_create_from_cstr(physical);
-        free(physical);
-        result = cd_do_chdir(frame, curpath, target, print_dir, flag_P, flag_e);
-    }
-    else
-    {
-        target = cd_canonicalize_string(curpath);
-        if (!target)
-        {
-            string_destroy(&curpath);
-            return 1;
-        }
-        result = cd_do_chdir(frame, target, target, print_dir, flag_P, flag_e);
-    }
-
-    string_destroy(&curpath);
-    string_destroy(&target);
-    return result;
-#endif // MIGA_POSIX_API || MIGA_UCRT_API
 }
 
 /* ============================================================================
@@ -3486,29 +2709,11 @@ int builtin_pwd(miga_frame_t *frame, const strlist_t *args)
         // PWD not set or empty: fall through
     }
 
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     // No getcwd available — if we get here, PWD was unset/empty or -P was requested
     fprintf(stderr, "pwd: cannot determine current directory: platform not supported\n");
     return 1;
-#else
-    char *cwd = GETCWD(NULL, 0);
-    if (!cwd)
-    {
-        fprintf(stderr, "pwd: cannot determine current directory: %s\n", strerror(errno));
-        return 1;
-    }
-    printf("%s\n", cwd);
-    free(cwd);
-    return 0;
-#endif
 }
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-#undef CHDIR
-#undef GETCWD
-#undef STAT
-#undef STAT_T
-#endif
 
 /* ============================================================================
  * jobs - Job control builtins
@@ -3856,81 +3061,12 @@ static void kill_list_signal_for_status(int status)
  */
 static int kill_send_signal(miga_frame_t *frame, int signum, intptr_t pid, const char *target_str)
 {
-#ifdef MIGA_POSIX_API
-    (void)frame;
-    if (kill((pid_t)pid, signum) != 0)
-    {
-        fprintf(stderr, "kill: (%ld) - %s\n", (long)pid, strerror(errno));
-        return 1;
-    }
-    return 0;
-#elif defined(MIGA_UCRT_API)
-    /* On Windows, we can only terminate processes, not send arbitrary signals */
-    if (signum == SIGTERM
-#ifdef SIGKILL
-        || signum == SIGKILL
-#endif
-#ifdef SIGINT
-        || signum == SIGINT
-#endif
-    )
-    {
-        /* Search for process handle in job store using iterator */
-        if (frame && frame->executor && frame->executor->jobs)
-        {
-            job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-            while (job_store_active_processes_next(&iter))
-            {
-                if (job_store_iter_get_pid(&iter) == pid)
-                {
-                    uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-                    if (handle != 0)
-                    {
-                        if (TerminateProcess((HANDLE)handle, 1))
-                        {
-                            /* Update job state */
-                            job_store_iter_set_state(&iter, JOB_TERMINATED, 128 + signum);
-                            return 0;
-                        }
-                        else
-                        {
-                            fprintf(stderr, "kill: (%ld) - failed to terminate process\n",
-                                    (long)pid);
-                            return 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        /* Process not found in job store - try to open it directly */
-        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid);
-        if (hProcess != NULL)
-        {
-            BOOL result = TerminateProcess(hProcess, 1);
-            CloseHandle(hProcess);
-            if (result)
-            {
-                return 0;
-            }
-        }
-
-        fprintf(stderr, "kill: (%ld) - No such process or access denied\n", (long)pid);
-        return 1;
-    }
-    else
-    {
-        fprintf(stderr, "kill: signal %d not supported on this platform\n", signum);
-        return 1;
-    }
-#else
     (void)frame;
     (void)signum;
     (void)pid;
     (void)target_str;
     fprintf(stderr, "kill: not supported on this platform\n");
     return 1;
-#endif
 }
 
 /**
@@ -3952,90 +3088,6 @@ static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const c
         return 1;
     }
 
-#ifdef MIGA_POSIX_API
-    if (frame->executor->job_control_disabled)
-    {
-        /* Without job control a job is not a process group of its own:
-         * signal each of its processes that is still running. */
-        int errors = 0;
-        for (process_t *proc = job->processes; proc; proc = proc->next)
-        {
-            if (proc->state == JOB_DONE || proc->state == JOB_TERMINATED)
-                continue;
-            if (kill(proc->pid, signum) != 0 && errno != ESRCH)
-            {
-                fprintf(stderr, "kill: %s - %s\n", target_str, strerror(errno));
-                errors++;
-            }
-        }
-        return errors ? 1 : 0;
-    }
-
-    /* Send signal to the process group */
-    if (kill(-job->pgid, signum) != 0)
-    {
-        fprintf(stderr, "kill: %s - %s\n", target_str, strerror(errno));
-        return 1;
-    }
-    return 0;
-#elif defined(MIGA_UCRT_API)
-    /* On Windows, iterate through processes in the job using the iterator */
-    if (signum != SIGTERM
-#ifdef SIGKILL
-        && signum != SIGKILL
-#endif
-#ifdef SIGINT
-        && signum != SIGINT
-#endif
-    )
-    {
-        fprintf(stderr, "kill: signal %d not supported on this platform\n", signum);
-        return 1;
-    }
-
-    int errors = 0;
-    int terminated = 0;
-
-    /* Use iterator to find processes belonging to this job */
-    job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-    while (job_store_active_processes_next(&iter))
-    {
-        if (job_store_iter_get_job_id(&iter) == job_id)
-        {
-            uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-            intptr_t pid = job_store_iter_get_pid(&iter);
-
-            if (handle != 0)
-            {
-                if (TerminateProcess((HANDLE)handle, 1))
-                {
-                    job_store_iter_set_state(&iter, JOB_TERMINATED, 128 + signum);
-                    terminated++;
-                }
-                else
-                {
-                    fprintf(stderr, "kill: %s (pid %ld) - failed to terminate process\n",
-                            target_str, (long)pid);
-                    errors++;
-                }
-            }
-            else
-            {
-                fprintf(stderr, "kill: %s (pid %ld) - no handle available\n", target_str,
-                        (long)pid);
-                errors++;
-            }
-        }
-    }
-
-    if (terminated == 0 && errors == 0)
-    {
-        fprintf(stderr, "kill: %s: no active processes in job\n", target_str);
-        return 1;
-    }
-
-    return errors > 0 ? 1 : 0;
-#else
     /* Send to each process in the job */
     int errors = 0;
     size_t proc_count = job_process_count(job);
@@ -4048,7 +3100,6 @@ static int kill_send_to_job(miga_frame_t *frame, int signum, int job_id, const c
         }
     }
     return errors > 0 ? 1 : 0;
-#endif
 }
 
 int builtin_kill(miga_frame_t *frame, const strlist_t *args)
@@ -4262,19 +3313,6 @@ static void wait_forget_completed_jobs(miga_frame_t *frame, int only_job_id)
     job_store_remove_completed(jobs);
 }
 
-#ifdef MIGA_POSIX_API
-/* The job a process belongs to, or 0 if the job table does not know it. */
-static int wait_job_id_for_pid(miga_frame_t *frame, intptr_t pid)
-{
-    if (!frame || !frame->executor || !frame->executor->jobs)
-        return 0;
-    for (job_t *job = frame->executor->jobs->jobs; job; job = job->next)
-        for (process_t *proc = job->processes; proc; proc = proc->next)
-            if ((intptr_t)proc->pid == pid)
-                return job->job_id;
-    return 0;
-}
-#endif
 
 /* A job's exit status: that of its last process (the last command of the
  * pipeline), as the job table records it (128 + signal when killed). */
@@ -4288,28 +3326,6 @@ static int wait_job_status(const job_t *job)
     return last->exit_status;
 }
 
-#ifdef MIGA_POSIX_API
-/* Wait for one process of a job and record how it ended. A process the
- * reaper collected already has its status recorded; one that is no longer
- * our child for another reason is recorded as status 127. */
-static void wait_for_job_process(job_store_t *jobs, process_t *proc)
-{
-    if (proc->state == JOB_DONE || proc->state == JOB_TERMINATED)
-        return;
-    int status;
-    pid_t result;
-    do
-        result = waitpid(proc->pid, &status, 0);
-    while (result == -1 && errno == EINTR);
-
-    if (result == proc->pid && WIFEXITED(status))
-        job_store_set_process_state(jobs, proc->pid, JOB_DONE, WEXITSTATUS(status));
-    else if (result == proc->pid && WIFSIGNALED(status))
-        job_store_set_process_state(jobs, proc->pid, JOB_TERMINATED, 128 + WTERMSIG(status));
-    else if (proc->state != JOB_DONE && proc->state != JOB_TERMINATED)
-        job_store_set_process_state(jobs, proc->pid, JOB_DONE, 127);
-}
-#endif
 
 static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
 {
@@ -4334,91 +3350,9 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
         return done_status;
     }
 
-#ifdef MIGA_POSIX_API
-    if (frame->executor->job_control_disabled)
-    {
-        /* Without job control the job is not a process group of its own:
-         * wait for each of its processes. */
-        for (process_t *proc = job->processes; proc; proc = proc->next)
-            wait_for_job_process(frame->executor->jobs, proc);
-    }
-    else
-    {
-        /* Wait for any process in the job's process group */
-        int status;
-        pid_t result;
-        while ((result = waitpid(-job->pgid, &status, 0)) > 0 || (result == -1 && errno == EINTR))
-        {
-            if (result > 0)
-            {
-                if (WIFEXITED(status))
-                    job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
-                                                WEXITSTATUS(status));
-                else if (WIFSIGNALED(status))
-                    job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                                128 + WTERMSIG(status));
-            }
-            if (job_is_completed(job))
-                break;
-        }
-        /* Processes outside the group (or already reaped) */
-        for (process_t *proc = job->processes; proc; proc = proc->next)
-            wait_for_job_process(frame->executor->jobs, proc);
-    }
-
-    int job_status = wait_job_status(job);
-    wait_forget_completed_jobs(frame, job_id);
-    return job_status;
-
-#elif defined(MIGA_UCRT_API)
-    /* On Windows, wait for all processes in the job using their handles */
-    int last_exit_status = 0;
-
-    /* Use iterator to find and wait for processes belonging to this job */
-    job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-    while (job_store_active_processes_next(&iter))
-    {
-        if (job_store_iter_get_job_id(&iter) == job_id)
-        {
-            uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-
-            if (handle != 0)
-            {
-                /* Wait for this process */
-                DWORD wait_result = WaitForSingleObject((HANDLE)handle, INFINITE);
-
-                if (wait_result == WAIT_OBJECT_0)
-                {
-                    /* Process completed, get exit code */
-                    DWORD exit_code = 0;
-                    if (GetExitCodeProcess((HANDLE)handle, &exit_code))
-                    {
-                        last_exit_status = (int)exit_code;
-                        job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-                    }
-                    else
-                    {
-                        job_store_iter_set_state(&iter, JOB_DONE, 0);
-                    }
-                }
-                else
-                {
-                    /* Wait failed */
-                    job_store_iter_set_state(&iter, JOB_TERMINATED, 1);
-                    last_exit_status = 1;
-                }
-            }
-        }
-    }
-
-    wait_forget_completed_jobs(frame, job_id);
-    return last_exit_status;
-
-#else
     (void)target_str;
     fprintf(stderr, "wait: not supported on this platform\n");
     return 127;
-#endif
 }
 
 /**
@@ -4427,99 +3361,11 @@ static int wait_for_job(miga_frame_t *frame, int job_id, const char *target_str)
  */
 static int wait_for_pid(miga_frame_t *frame, intptr_t pid, const char *target_str)
 {
-#ifdef MIGA_POSIX_API
-    /* A process of a known job: wait for it through the job table, which
-     * also has its status if the reaper collected it already. */
-    int pid_job_id = wait_job_id_for_pid(frame, pid);
-    if (pid_job_id != 0)
-    {
-        job_t *pid_job = job_store_find(frame->executor->jobs, pid_job_id);
-        int pid_status = 0;
-        for (process_t *proc = pid_job->processes; proc; proc = proc->next)
-        {
-            if ((intptr_t)proc->pid == pid)
-            {
-                wait_for_job_process(frame->executor->jobs, proc);
-                pid_status = proc->exit_status;
-                break;
-            }
-        }
-        wait_forget_completed_jobs(frame, pid_job_id);
-        return pid_status;
-    }
-
-    int status;
-    pid_t result;
-    do
-        result = waitpid((pid_t)pid, &status, 0);
-    while (result == -1 && errno == EINTR);
-
-    if (result == -1)
-    {
-        if (errno == ECHILD)
-        {
-            fprintf(stderr, "wait: pid %ld is not a child of this shell\n", (long)pid);
-        }
-        else
-        {
-            fprintf(stderr, "wait: %s: %s\n", target_str, strerror(errno));
-        }
-        return 127;
-    }
-
-    /* A child the job table does not know */
-    if (WIFEXITED(status))
-        return WEXITSTATUS(status);
-    if (WIFSIGNALED(status))
-        return 128 + WTERMSIG(status);
-    return 0;
-
-#elif defined(MIGA_UCRT_API)
-    /* Search for the PID in the job store to get its handle */
-    if (frame && frame->executor && frame->executor->jobs)
-    {
-        job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-        while (job_store_active_processes_next(&iter))
-        {
-            if (job_store_iter_get_pid(&iter) == pid)
-            {
-                uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-
-                if (handle != 0)
-                {
-                    DWORD wait_result = WaitForSingleObject((HANDLE)handle, INFINITE);
-
-                    int pid_job_id = job_store_iter_get_job_id(&iter);
-                    int pid_status;
-                    if (wait_result == WAIT_OBJECT_0)
-                    {
-                        DWORD exit_code = 0;
-                        GetExitCodeProcess((HANDLE)handle, &exit_code);
-                        job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-                        pid_status = (int)exit_code;
-                    }
-                    else
-                    {
-                        job_store_iter_set_state(&iter, JOB_TERMINATED, 1);
-                        pid_status = 1;
-                    }
-                    wait_forget_completed_jobs(frame, pid_job_id);
-                    return pid_status;
-                }
-            }
-        }
-    }
-
-    fprintf(stderr, "wait: pid %ld is not a child of this shell\n", (long)pid);
-    return 127;
-
-#else
     (void)frame;
     (void)pid;
     (void)target_str;
     fprintf(stderr, "wait: not supported on this platform\n");
     return 127;
-#endif
 }
 
 /**
@@ -4534,66 +3380,6 @@ static int wait_for_all(miga_frame_t *frame)
     job_store_t *jobs = frame->executor->jobs;
     (void)jobs; /* only the POSIX implementation records job states */
 
-#ifdef MIGA_POSIX_API
-    int status;
-    pid_t result;
-
-    /* Wait for all child processes */
-    while ((result = waitpid(-1, &status, 0)) > 0 || (result == -1 && errno == EINTR))
-    {
-        if (result > 0)
-        {
-            if (WIFEXITED(status))
-            {
-                if (jobs)
-                    job_store_set_process_state(jobs, result, JOB_DONE, WEXITSTATUS(status));
-            }
-            else if (WIFSIGNALED(status))
-            {
-                if (jobs)
-                    job_store_set_process_state(jobs, result, JOB_TERMINATED, 128 + WTERMSIG(status));
-            }
-        }
-    }
-
-#elif defined(MIGA_UCRT_API)
-/* Collect all active process handles and wait for them */
-#define MAX_WAIT_HANDLES 64
-    HANDLE handles[MAX_WAIT_HANDLES];
-    job_process_iterator_t iters[MAX_WAIT_HANDLES];
-    int handle_count = 0;
-
-    /* First pass: collect handles */
-    job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-    while (job_store_active_processes_next(&iter) && handle_count < MAX_WAIT_HANDLES)
-    {
-        uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-        if (handle != 0)
-        {
-            handles[handle_count] = (HANDLE)handle;
-            iters[handle_count] = iter;
-            handle_count++;
-        }
-    }
-
-    /* Wait for each process */
-    for (int i = 0; i < handle_count; i++)
-    {
-        DWORD wait_result = WaitForSingleObject(handles[i], INFINITE);
-
-        if (wait_result == WAIT_OBJECT_0)
-        {
-            DWORD exit_code = 0;
-            GetExitCodeProcess(handles[i], &exit_code);
-            job_store_iter_set_state(&iters[i], JOB_DONE, (int)exit_code);
-        }
-        else
-        {
-            job_store_iter_set_state(&iters[i], JOB_TERMINATED, 1);
-        }
-    }
-#undef MAX_WAIT_HANDLES
-#endif
 
     wait_forget_completed_jobs(frame, 0);
     /* POSIX: with no operands, wait returns 0 once every child is done */
@@ -4762,116 +3548,8 @@ int builtin_fg(miga_frame_t *frame, const strlist_t *args)
         printf("%s\n", string_cstr(job->command_line));
     }
 
-#ifdef MIGA_POSIX_API
-    /* Give the job's process group control of the terminal */
-    if (isatty(STDIN_FILENO))
-    {
-        tcsetpgrp(STDIN_FILENO, job->pgid);
-    }
-
-    /* Send SIGCONT if the job was stopped */
-    if (job->state == JOB_STOPPED)
-    {
-        if (kill(-job->pgid, SIGCONT) < 0)
-        {
-            fprintf(stderr, "fg: failed to continue job: %s\n", strerror(errno));
-            return 1;
-        }
-        job_store_set_state(frame->executor->jobs, job_id, JOB_RUNNING);
-    }
-
-    /* Wait for the job to complete or stop */
-    int status;
-    pid_t result;
-    int exit_status = 0;
-
-    while ((result = waitpid(-job->pgid, &status, WUNTRACED)) > 0 ||
-           (result == -1 && errno == EINTR))
-    {
-        if (result > 0)
-        {
-            if (WIFEXITED(status))
-            {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_DONE,
-                                            WEXITSTATUS(status));
-                exit_status = WEXITSTATUS(status);
-            }
-            else if (WIFSIGNALED(status))
-            {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_TERMINATED,
-                                            128 + WTERMSIG(status));
-                exit_status = 128 + WTERMSIG(status);
-            }
-            else if (WIFSTOPPED(status))
-            {
-                job_store_set_process_state(frame->executor->jobs, result, JOB_STOPPED,
-                                            WSTOPSIG(status));
-                /* Job was stopped, print notification */
-                fprintf(stderr, "\n[%d]+  Stopped                 %s\n", job_id,
-                        job->command_line ? string_cstr(job->command_line) : "");
-                exit_status = 128 + WSTOPSIG(status);
-                break;
-            }
-        }
-
-        /* Check if job is complete */
-        if (job_is_completed(job))
-        {
-            break;
-        }
-    }
-
-    /* Return terminal control to the shell */
-    if (isatty(STDIN_FILENO) && frame->executor->pgid_valid)
-    {
-        tcsetpgrp(STDIN_FILENO, frame->executor->pgid);
-    }
-
-    return exit_status;
-
-#elif defined(MIGA_UCRT_API)
-    /* Windows doesn't have true foreground/background job control */
-    /* We can wait for the job, but can't give it terminal control */
-
-    if (job->state == JOB_STOPPED)
-    {
-        fprintf(stderr, "fg: resuming stopped jobs not supported on this platform\n");
-        return 1;
-    }
-
-    /* Wait for the job to complete */
-    int last_exit_status = 0;
-    job_process_iterator_t iter = job_store_active_processes_begin(frame->executor->jobs);
-    while (job_store_active_processes_next(&iter))
-    {
-        if (job_store_iter_get_job_id(&iter) == job_id)
-        {
-            uintptr_t handle = (uintptr_t)job_store_iter_get_handle(&iter);
-            if (handle != 0)
-            {
-                DWORD wait_result = WaitForSingleObject((HANDLE)handle, INFINITE);
-                if (wait_result == WAIT_OBJECT_0)
-                {
-                    DWORD exit_code = 0;
-                    GetExitCodeProcess((HANDLE)handle, &exit_code);
-                    job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-                    last_exit_status = (int)exit_code;
-                }
-                else
-                {
-                    job_store_iter_set_state(&iter, JOB_TERMINATED, 1);
-                    last_exit_status = 1;
-                }
-            }
-        }
-    }
-
-    return last_exit_status;
-
-#else
     fprintf(stderr, "fg: job control not supported on this platform\n");
     return 1;
-#endif
 }
 
 /* ============================================================================
@@ -4927,25 +3605,8 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
             return 1;
         }
 
-#ifdef MIGA_POSIX_API
-        /* Send SIGCONT to resume the job */
-        if (kill(-current->pgid, SIGCONT) < 0)
-        {
-            fprintf(stderr, "bg: failed to continue job: %s\n", strerror(errno));
-            return 1;
-        }
-        job_store_set_state(frame->executor->jobs, current->job_id, JOB_RUNNING);
-
-        /* Print the job info */
-        printf("[%d]+ %s &\n", current->job_id,
-               current->command_line ? string_cstr(current->command_line) : "");
-#elif defined(MIGA_UCRT_API)
-        fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
-        return 1;
-#else
         fprintf(stderr, "bg: job control not supported on this platform\n");
         return 1;
-#endif
     }
     else
     {
@@ -4977,28 +3638,8 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
                 continue;
             }
 
-#ifdef MIGA_POSIX_API
-            /* Send SIGCONT to resume the job */
-            if (kill(-job->pgid, SIGCONT) < 0)
-            {
-                fprintf(stderr, "bg: %s: failed to continue job: %s\n", string_cstr(arg_str),
-                        strerror(errno));
-                exit_status = 1;
-                continue;
-            }
-            job_store_set_state(frame->executor->jobs, job_id, JOB_RUNNING);
-
-            /* Print the job info */
-            printf("[%d]%c %s &\n", job_id,
-                   (job == job_store_get_current(frame->executor->jobs)) ? '+' : '-',
-                   job->command_line ? string_cstr(job->command_line) : "");
-#elif defined(MIGA_UCRT_API)
-            fprintf(stderr, "bg: resuming stopped jobs not supported on this platform\n");
-            exit_status = 1;
-#else
             fprintf(stderr, "bg: job control not supported on this platform\n");
             exit_status = 1;
-#endif
         }
     }
 
@@ -5009,461 +3650,6 @@ int builtin_bg(miga_frame_t *frame, const strlist_t *args)
  * ls - list files
  * ===========================================================================
  */
-#ifdef MIGA_UCRT_API
-/**
- * builtin_ls - List directory contents (Windows UCRT implementation)
- *
- * Implements a basic 'ls' command for Windows since there's no standard
- * external 'ls' command available. Uses only UCRT functions, no Windows API.
- *
- * Options:
- *   -a    Include hidden files and directories (those starting with '.')
- *   -A    Like -a, but exclude '.' and '..'
- *   -l    Long listing format (size and name; limited metadata available)
- *   -1    One entry per line (default if output is not a terminal)
- *   -F    Append indicator (/ for directories, * for executables)
- *   -h    Human-readable sizes (with -l)
- *
- * @param ex   Execution context
- * @param args Command arguments (including "ls" as args[0])
- * @return 0 on success, 1 on minor errors, 2 on usage errors
- */
-
-/**
- * Entry structure for collecting and sorting
- */
-typedef struct ls_entry_t
-{
-    char *name;
-    unsigned attrib;
-    uint64_t size;
-    time_t mtime;
-} ls_entry_t;
-
-/**
- * Format a file size in human-readable form (K, M, G, T)
- */
-static void ls_format_size_human(uint64_t size, char *buf, size_t buf_size)
-{
-    const char *units[] = {"", "K", "M", "G", "T", "P"};
-    int unit_index = 0;
-    double display_size = (double)size;
-
-    while (display_size >= 1024.0 && unit_index < 5)
-    {
-        display_size /= 1024.0;
-        unit_index++;
-    }
-
-    if (unit_index == 0)
-    {
-        snprintf(buf, buf_size, "%7llu", (unsigned long long)size);
-    }
-    else
-    {
-        snprintf(buf, buf_size, "%6.1f%s", display_size, units[unit_index]);
-    }
-}
-
-/**
- * Format time_t to a readable date string
- */
-static void ls_format_time(time_t t, char *buf, size_t buf_size)
-{
-    static const char *month_names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-
-    struct tm *tm_info = localtime(&t);
-    if (!tm_info)
-    {
-        snprintf(buf, buf_size, "            ");
-        return;
-    }
-
-    time_t now = time(NULL);
-    struct tm *now_info = localtime(&now);
-
-    /* Show time if within the last 6 months, otherwise show year */
-    int months_diff = 12; /* Default to showing year */
-    if (now_info)
-    {
-        months_diff =
-            (now_info->tm_year - tm_info->tm_year) * 12 + (now_info->tm_mon - tm_info->tm_mon);
-    }
-
-    if (months_diff < 6 && months_diff >= 0)
-    {
-        snprintf(buf, buf_size, "%s %2d %02d:%02d", month_names[tm_info->tm_mon], tm_info->tm_mday,
-                 tm_info->tm_hour, tm_info->tm_min);
-    }
-    else
-    {
-        snprintf(buf, buf_size, "%s %2d  %4d", month_names[tm_info->tm_mon], tm_info->tm_mday,
-                 tm_info->tm_year + 1900);
-    }
-}
-
-/**
- * Check if a file should be shown based on flags
- */
-static bool ls_should_show_entry(const char *name, unsigned attrib, int flag_a, int flag_A)
-{
-    bool is_dot = (strcmp(name, ".") == 0 || strcmp(name, "..") == 0);
-    bool starts_with_dot = (name[0] == '.');
-    bool is_hidden = (attrib & _A_HIDDEN) != 0;
-
-    if (flag_a)
-    {
-        return true;
-    }
-
-    if (flag_A)
-    {
-        return !is_dot;
-    }
-
-    return !starts_with_dot && !is_hidden;
-}
-
-/**
- * Get type indicator character for -F option
- */
-static char ls_get_type_indicator(unsigned attrib, const char *name)
-{
-    if (attrib & _A_SUBDIR)
-    {
-        return '/';
-    }
-
-    /* Check for executable extensions */
-    const char *ext = strrchr(name, '.');
-    if (ext)
-    {
-        if (_stricmp(ext, ".exe") == 0 || _stricmp(ext, ".cmd") == 0 ||
-            _stricmp(ext, ".bat") == 0 || _stricmp(ext, ".com") == 0)
-        {
-            return '*';
-        }
-    }
-
-    return '\0';
-}
-
-/**
- * Comparison function for sorting entries by name
- */
-static int ls_compare_entries(const void *a, const void *b)
-{
-    const ls_entry_t *ea = (const ls_entry_t *)a;
-    const ls_entry_t *eb = (const ls_entry_t *)b;
-    return lib_strcoll(ea->name, eb->name);
-}
-
-/**
- * List a single directory's contents
- */
-static int ls_list_directory(const string_t *dir_path, int flag_a, int flag_A, int flag_l,
-                             int flag_1, int flag_F, int flag_h)
-{
-    struct _finddata_t find_data; // _finddata64i32_t
-    intptr_t find_handle;
-
-    // Build search pattern: "dir_path/*" or "dir_path\*"
-    string_t *pattern = string_create_from(dir_path);
-    int len = string_length(pattern);
-    if (len > 0)
-    {
-        char last = string_cstr(pattern)[len - 1];
-        if (last != '/' && last != '\\')
-        {
-            string_append_cstr(pattern, "/");
-        }
-    }
-    string_append_cstr(pattern, "*");
-
-    find_handle = _findfirst(string_cstr(pattern), &find_data);
-    string_destroy(&pattern);
-
-    if (find_handle == -1)
-    {
-        if (errno == ENOENT)
-        {
-            fprintf(stderr, "ls: cannot access '%s': No such file or directory\n",
-                    string_cstr(dir_path));
-        }
-        else if (errno == EACCES)
-        {
-            fprintf(stderr, "ls: cannot open '%s': Permission denied\n", string_cstr(dir_path));
-        }
-        else
-        {
-            fprintf(stderr, "ls: cannot access '%s': %s\n", string_cstr(dir_path), strerror(errno));
-        }
-        return 1;
-    }
-
-    /* Collect entries */
-    int capacity = 64;
-    int count = 0;
-    ls_entry_t *entries = xmalloc(capacity * sizeof(ls_entry_t));
-
-    do
-    {
-        if (!ls_should_show_entry(find_data.name, find_data.attrib, flag_a, flag_A))
-        {
-            continue;
-        }
-
-        if (count >= capacity)
-        {
-            capacity *= 2;
-            entries = xrealloc(entries, capacity * sizeof(ls_entry_t));
-        }
-
-        entries[count].name = xstrdup(find_data.name);
-        entries[count].attrib = find_data.attrib;
-        entries[count].size = (uint64_t)find_data.size;
-        entries[count].mtime = find_data.time_write;
-        count++;
-
-    } while (_findnext(find_handle, &find_data) == 0);
-
-    _findclose(find_handle);
-
-    /* Sort entries by name */
-    if (count > 1)
-    {
-        qsort(entries, count, sizeof(ls_entry_t), ls_compare_entries);
-    }
-
-    /* Calculate column width for non-long format */
-    int max_name_len = 0;
-    if (!flag_1 && !flag_l)
-    {
-        for (int i = 0; i < count; i++)
-        {
-            int name_len = (int)strlen(entries[i].name);
-            if (flag_F && ls_get_type_indicator(entries[i].attrib, entries[i].name))
-            {
-                name_len++;
-            }
-            if (name_len > max_name_len)
-            {
-                max_name_len = name_len;
-            }
-        }
-    }
-
-    /* Output entries */
-    int col = 0;
-    int term_width = 80; /* Default; no portable way to detect without Windows API */
-    int col_width = max_name_len + 2;
-    int cols_per_row = (col_width > 0) ? (term_width / col_width) : 1;
-    if (cols_per_row < 1)
-    {
-        cols_per_row = 1;
-    }
-
-    for (int i = 0; i < count; i++)
-    {
-        ls_entry_t *entry = &entries[i];
-        bool is_dir = (entry->attrib & _A_SUBDIR) != 0;
-        char indicator = flag_F ? ls_get_type_indicator(entry->attrib, entry->name) : '\0';
-
-        if (flag_l)
-        {
-            char size_buf[16];
-            char date_buf[16];
-
-            ls_format_time(entry->mtime, date_buf, sizeof(date_buf));
-
-            if (is_dir)
-            {
-                snprintf(size_buf, sizeof(size_buf), "      -");
-            }
-            else if (flag_h)
-            {
-                ls_format_size_human(entry->size, size_buf, sizeof(size_buf));
-            }
-            else
-            {
-                snprintf(size_buf, sizeof(size_buf), "%7llu", (unsigned long long)entry->size);
-            }
-
-            printf("%s %s %s", size_buf, date_buf, entry->name);
-            if (indicator)
-            {
-                putchar(indicator);
-            }
-            putchar('\n');
-        }
-        else if (flag_1)
-        {
-            printf("%s", entry->name);
-            if (indicator)
-            {
-                putchar(indicator);
-            }
-            putchar('\n');
-        }
-        else
-        {
-            /* Columnar output */
-            int printed;
-            if (indicator)
-            {
-                printed = printf("%s%c", entry->name, indicator);
-            }
-            else
-            {
-                printed = printf("%s", entry->name);
-            }
-            /* Pad to column width */
-            for (int p = printed; p < col_width; p++)
-            {
-                putchar(' ');
-            }
-
-            col++;
-            if (col >= cols_per_row)
-            {
-                putchar('\n');
-                col = 0;
-            }
-        }
-    }
-
-    /* Final newline for columnar output if needed */
-    if (!flag_1 && !flag_l && col > 0)
-    {
-        putchar('\n');
-    }
-
-    /* Cleanup */
-    for (int i = 0; i < count; i++)
-    {
-        xfree(entries[i].name);
-    }
-    xfree(entries);
-
-    return 0;
-}
-
-int builtin_ls(miga_frame_t *frame, const strlist_t *args)
-{
-    Expects_not_null(frame);
-    Expects_not_null(args);
-
-    (void)frame; /* Unused, but kept for consistent builtin signature */
-
-
-    int flag_a = 0;
-    int flag_A = 0;
-    int flag_l = 0;
-    int flag_1 = 0;
-    int flag_F = 0;
-    int flag_h = 0;
-    int flag_err = 0;
-    int err_count = 0;
-    int c;
-
-    string_t *opts = string_create_from_cstr("aAlFh1");
-    struct getopt_state state;
-    getopt_state_init(&state);
-
-    while ((c = getopt_r_string(args, opts, &state)) != -1)
-    {
-        switch (c)
-        {
-        case 'a':
-            flag_a = 1;
-            break;
-        case 'A':
-            flag_A = 1;
-            break;
-        case 'l':
-            flag_l = 1;
-            break;
-        case '1':
-            flag_1 = 1;
-            break;
-        case 'F':
-            flag_F = 1;
-            break;
-        case 'h':
-            flag_h = 1;
-            break;
-        case '?':
-            fprintf(stderr, "ls: unrecognized option: '-%c'\n", state.optopt);
-            flag_err++;
-            break;
-        }
-    }
-    string_destroy(&opts);
-
-    if (flag_err)
-    {
-        fprintf(stderr, "usage: ls [-aAlFh1] [directory...]\n");
-        return 2;
-    }
-
-    /* Default to one-per-line if not a terminal or if -l is set */
-    int is_tty = _isatty(_fileno(stdout));
-    if (!is_tty || flag_l)
-    {
-        flag_1 = 1;
-    }
-
-    /* Collect directories to list */
-    int dir_count = strlist_size(args) - state.optind;
-    int start_index = state.optind;
-
-    /* Default to current directory if none specified */
-    string_t *default_dir = NULL;
-    if (dir_count == 0)
-    {
-        default_dir = string_create_from_cstr(".");
-        dir_count = 1;
-    }
-
-    /* Process each directory */
-    for (int i = 0; i < dir_count; i++)
-    {
-        const string_t *dir_path;
-        if (default_dir)
-        {
-            dir_path = default_dir;
-        }
-        else
-        {
-            dir_path = strlist_at(args, start_index + i);
-        }
-
-        /* Print directory name if listing multiple directories */
-        if (dir_count > 1)
-        {
-            if (i > 0)
-            {
-                printf("\n");
-            }
-            printf("%s:\n", string_cstr(dir_path));
-        }
-
-        int result = ls_list_directory(dir_path, flag_a, flag_A, flag_l, flag_1, flag_F, flag_h);
-        if (result != 0)
-        {
-            err_count++;
-        }
-    }
-
-    if (default_dir)
-    {
-        string_destroy(&default_dir);
-    }
-
-    return err_count > 0 ? 1 : 0;
-}
-#else
 int builtin_ls(miga_frame_t *frame, const strlist_t *args)
 {
     (void)frame;
@@ -5471,7 +3657,6 @@ int builtin_ls(miga_frame_t *frame, const strlist_t *args)
     fprintf(stderr, "ls: not supported on this platform\n");
     return -2;
 }
-#endif
 
 /* ============================================================================
  * echo - Display a line of text
@@ -6217,9 +4402,6 @@ static bool test_parse_int(const char *s, long *out)
 
 static bool test_unary(test_parser_t *p, const char *op, const char *arg)
 {
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    struct stat st;
-#endif
     switch (op[1])
     {
     case 'z':
@@ -6230,62 +4412,8 @@ static bool test_unary(test_parser_t *p, const char *op, const char *arg)
         long fd;
         if (!test_parse_int(arg, &fd) || fd < 0)
             return false;
-#ifdef MIGA_POSIX_API
-        return isatty((int)fd) != 0;
-#elif defined(MIGA_UCRT_API)
-        return _isatty((int)fd) != 0;
-#else
         return false;
-#endif
     }
-#ifdef MIGA_POSIX_API
-    case 'e':
-        return stat(arg, &st) == 0;
-    case 'f':
-        return stat(arg, &st) == 0 && S_ISREG(st.st_mode);
-    case 'd':
-        return stat(arg, &st) == 0 && S_ISDIR(st.st_mode);
-    case 'b':
-        return stat(arg, &st) == 0 && S_ISBLK(st.st_mode);
-    case 'c':
-        return stat(arg, &st) == 0 && S_ISCHR(st.st_mode);
-    case 'p':
-        return stat(arg, &st) == 0 && S_ISFIFO(st.st_mode);
-    case 'S':
-        return stat(arg, &st) == 0 && S_ISSOCK(st.st_mode);
-    case 'h':
-    case 'L':
-        return lstat(arg, &st) == 0 && S_ISLNK(st.st_mode);
-    case 'g':
-        return stat(arg, &st) == 0 && (st.st_mode & S_ISGID);
-    case 'u':
-        return stat(arg, &st) == 0 && (st.st_mode & S_ISUID);
-    case 's':
-        return stat(arg, &st) == 0 && st.st_size > 0;
-    case 'r':
-        return access(arg, R_OK) == 0;
-    case 'w':
-        return access(arg, W_OK) == 0;
-    case 'x':
-        return access(arg, X_OK) == 0;
-#elif defined(MIGA_UCRT_API)
-    case 'e':
-        return stat(arg, &st) == 0;
-    case 'f':
-        return stat(arg, &st) == 0 && (st.st_mode & _S_IFREG);
-    case 'd':
-        return stat(arg, &st) == 0 && (st.st_mode & _S_IFDIR);
-    case 's':
-        return stat(arg, &st) == 0 && st.st_size > 0;
-    case 'r':
-        return _access(arg, 4) == 0;
-    case 'w':
-        return _access(arg, 2) == 0;
-    case 'x':
-        return _access(arg, 0) == 0;
-    case 'b': case 'c': case 'p': case 'S': case 'h': case 'L': case 'g': case 'u':
-        return false;
-#else
     case 'e': case 'f': case 'r': {
         FILE *f = fopen(arg, "r");
         if (f) { fclose(f); return true; }
@@ -6294,7 +4422,6 @@ static bool test_unary(test_parser_t *p, const char *op, const char *arg)
     case 'd': case 'b': case 'c': case 'p': case 'S': case 'h': case 'L':
     case 'g': case 'u': case 's': case 'w': case 'x':
         return false;
-#endif
     default:
         p->error = true;
         p->error_msg = "unknown unary operator";

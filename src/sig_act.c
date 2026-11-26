@@ -15,71 +15,6 @@
 // Platform-specific signal count and definitions
 // We track signals that shells commonly need to handle
 
-#ifdef MIGA_POSIX_API
-// POSIX signals that shells typically manage (only when full sigaction is available)
-static const int shell_signals[] = {
-    SIGINT,
-#ifdef SIGQUIT
-    SIGQUIT,
-#endif
-    SIGTERM,
-#ifdef SIGHUP
-    SIGHUP,
-#endif
-#ifdef SIGALRM
-    SIGALRM,
-#endif
-#ifdef SIGCHLD
-    SIGCHLD,
-#endif
-#ifdef SIGCONT
-    SIGCONT,
-#endif
-#ifdef SIGTSTP
-    SIGTSTP,
-#endif
-#ifdef SIGTTIN
-    SIGTTIN,
-#endif
-#ifdef SIGTTOU
-    SIGTTOU,
-#endif
-#ifdef SIGUSR1
-    SIGUSR1,
-#endif
-#ifdef SIGUSR2
-    SIGUSR2,
-#endif
-#ifdef SIGPIPE
-    SIGPIPE,
-#endif
-#ifdef SIGWINCH
-    SIGWINCH,
-#endif
-};
-#define NUM_SHELL_SIGNALS (sizeof(shell_signals) / sizeof(shell_signals[0]))
-
-static inline int get_max_signal_number_fallback(void)
-{
-    int max = SIGTERM;
-    for (size_t i = 0; i < NUM_SHELL_SIGNALS; i++)
-    {
-        if (shell_signals[i] > max)
-            max = shell_signals[i];
-    }
-    return max;
-}
-
-#elif defined(MIGA_UCRT_API)
-// UCRT signals: ABRT, FPE, ILL, INT, SEGV, TERM
-#define NUM_SHELL_SIGNALS 3
-
-static inline int get_max_signal_number_fallback(void)
-{
-    return SIGTERM > SIGABRT ? SIGTERM : SIGABRT;
-}
-
-#else
 // ISO C signals: ABRT, FPE, ILL, INT, SEGV, TERM
 #define NUM_SHELL_SIGNALS 3
 
@@ -87,7 +22,6 @@ static inline int get_max_signal_number_fallback(void)
 {
     return SIGTERM > SIGABRT ? SIGTERM : SIGABRT;
 }
-#endif
 
 static inline int get_max_signal_number(void)
 {
@@ -121,11 +55,7 @@ sig_act_store_t *sig_act_store_create(void)
         store->actions[i].signal_number = (int)i;
         store->actions[i].is_saved = false;
         store->actions[i].was_ignored = false;
-#ifdef MIGA_POSIX_API
-        memset(&store->actions[i].original_action, 0, sizeof(struct sigaction));
-#else
         store->actions[i].original_handler = SIG_DFL;
-#endif
     }
 
     return store;
@@ -146,62 +76,6 @@ void sig_act_store_destroy(sig_act_store_t **store_ptr)
 // Set and Save Function
 // ============================================================================
 
-#ifdef MIGA_POSIX_API
-int sig_act_store_set_and_save(sig_act_store_t *store, int signo,
-                                 const struct sigaction *new_action)
-{
-    if (!store || !new_action)
-        return -1;
-
-    // Special case: trap on EXIT (signal 0) is not a real signal
-    if (signo == 0)
-    {
-        sig_act_t *entry = &store->actions[0];
-        entry->signal_number = 0;
-        entry->was_ignored = false;
-        entry->is_saved = true;
-        return 0;
-    }
-
-    // Validate signal number
-    if (signo < 0 || (size_t)signo >= store->capacity)
-        return -1;
-
-    // SIGKILL and SIGSTOP cannot be caught (if they exist)
-#ifdef SIGKILL
-    if (signo == SIGKILL)
-        return -1;
-#endif
-#ifdef SIGSTOP
-    if (signo == SIGSTOP)
-        return -1;
-#endif
-
-    sig_act_t *entry = &store->actions[signo];
-
-    // If not already saved, save the current handler before setting new one
-    if (!entry->is_saved)
-    {
-        struct sigaction old_action;
-        if (sigaction(signo, new_action, &old_action) == -1)
-            return -1;
-
-        // Save the old handler
-        entry->original_action = old_action;
-        entry->was_ignored = (old_action.sa_handler == SIG_IGN);
-        entry->is_saved = true;
-    }
-    else
-    {
-        // Already saved, just set the new handler
-        if (sigaction(signo, new_action, NULL) == -1)
-            return -1;
-    }
-
-    return 0;
-}
-
-#else  // MIGA_UCRT_API or MIGA_ISO_C
 
 void (*sig_act_store_set_and_save(sig_act_store_t *store, int signo,
                                     void (*new_handler)(int)))(int)
@@ -240,7 +114,6 @@ void (*sig_act_store_set_and_save(sig_act_store_t *store, int signo,
 
     return old_handler;
 }
-#endif
 
 // ============================================================================
 // Restore Functions
@@ -276,24 +149,8 @@ bool sig_act_store_restore_one(const sig_act_store_t *store, int signo)
     if (!entry->is_saved)
         return false;
 
-#ifdef MIGA_POSIX_API
-    // Skip SIGKILL and SIGSTOP as they cannot be caught or ignored
-        if (
-    #ifdef SIGKILL
-        signo == SIGKILL ||
-    #endif
-    #ifdef SIGSTOP
-        signo == SIGSTOP ||
-    #endif
-        0)
-    return false;
-
-    // Restore using sigaction
-    return (sigaction(signo, &entry->original_action, NULL) == 0);
-#else
     // Restore using signal()
     return (signal(signo, entry->original_handler) != SIG_ERR);
-#endif
 }
 
 // ============================================================================
@@ -337,16 +194,6 @@ bool sig_act_store_is_supported(const sig_act_store_t *store, int signo)
     if (signo < 0 || (size_t)signo >= store->capacity)
         return false;
 
-#ifdef MIGA_POSIX_API
-#ifdef SIGKILL
-    if (signo == SIGKILL)
-        return false;
-#endif
-#ifdef SIGSTOP
-    if (signo == SIGSTOP)
-        return false;
-#endif
-#endif
 
     return true;
 }

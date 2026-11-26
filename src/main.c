@@ -12,14 +12,6 @@
 #include "libmigash.h"
 
 /* These must come after libmigash.h where MIGA_*_API is defined.*/
-#ifdef MIGA_POSIX_API
-#include <unistd.h>
-#include <sys/types.h>
-#endif
-#ifdef MIGA_UCRT_API
-#include <io.h>
-#include <process.h>
-#endif
 
 /* Only use non-library headers */
 #include "shell.h"
@@ -80,29 +72,6 @@ static void add_o_option(strlist_t *o_opts, const char *value, int is_plus)
 
 static int check_command_file_readable(const char *command_file)
 {
-#ifdef MIGA_POSIX_API
-    // Check if file exists
-    if (access(command_file, F_OK) != 0)
-    {
-        return SH_EXIT_COMMAND_FILE_NOT_FOUND;
-    }
-    // Check if file is readable
-    if (access(command_file, R_OK) != 0)
-    {
-        return SH_EXIT_COMMAND_FILE_READ_ERROR;
-    }
-#elif defined(MIGA_UCRT_API)
-    // Check if file exists
-    if (_access(command_file, 0) != 0)
-    {
-        return SH_EXIT_COMMAND_FILE_NOT_FOUND;
-    }
-    // Check if file is readable
-    if ((_access(command_file, 4) != 0))
-    {
-        return SH_EXIT_COMMAND_FILE_READ_ERROR;
-    }
-#else
     // Check readability of command file
     FILE *cf = fopen(command_file, "r");
     if (cf == NULL)
@@ -111,7 +80,6 @@ static int check_command_file_readable(const char *command_file)
     }
     fclose(cf);
     return SH_EXIT_SUCCESS;
-#endif
     return SH_EXIT_SUCCESS;
 }
 
@@ -123,10 +91,6 @@ static shell_mode_t compute_shell_mode(int c_flag, int s_flag, int i_flag, const
         mode = SHELL_MODE_COMMAND_STRING;
     else if (i_flag)
     {
-#ifdef MIGA_POSIX_API
-        if (getuid() != geteuid() || getgid() != getegid())
-            return SHELL_MODE_INVALID_UID_GID;
-#endif
         mode = SHELL_MODE_INTERACTIVE;
     }
     else if (s_flag || !command_file)
@@ -139,13 +103,6 @@ static shell_mode_t compute_shell_mode(int c_flag, int s_flag, int i_flag, const
     {
         /* POSIX sh: interactive when standard input and standard error are
          * terminals (standard output may be redirected). */
-#ifdef MIGA_POSIX_API
-        if (isatty(STDIN_FILENO) && isatty(STDERR_FILENO))
-            mode = SHELL_MODE_INTERACTIVE;
-#elif defined(MIGA_UCRT_API)
-        if (_isatty(_fileno(stdin)) && _isatty(_fileno(stderr)))
-            mode = SHELL_MODE_INTERACTIVE;
-#endif
         /* Else: in pure ISO C, remain SHELL_MODE_STDIN (conservative) */
     }
 
@@ -178,28 +135,20 @@ static void print_usage(const string_t *prog)
 
 // In gcc on POSIX and with cl on UCRT, you can have an envp in main().
 // In ISO C, there is no guarantee of an envp.
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-int main(int argc, char **argv, char **envp)
-#else
 int main(int argc, char **argv)
-#endif
 {
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     char **envp = NULL;
-#endif
 
     miga_arena_init();
     // FIXME: do I need to add a function to the library to set up
     // the logger?
     // log_init();
     setlocale(LC_ALL, "");
-#ifndef MIGA_POSIX_API
     /* Without file descriptors the shell reads its input through stdio. An
      * unbuffered stdin keeps the shell (and the read builtin) from consuming
      * input beyond the current line, so that a later command still sees it.
      * ISO C requires setvbuf() before any other operation on the stream. */
     setvbuf(stdin, NULL, _IONBF, 0);
-#endif
 
     /* Convert argv to strlist_t for the new getopt API */
     strlist_t *argv_list = strlist_create_from_cstr_array((const char **)argv, argc);

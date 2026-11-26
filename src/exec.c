@@ -54,28 +54,7 @@
 #include "variable_store.h"
 #include "miga/xalloc.h"
 
-#ifdef MIGA_POSIX_API
-#include <fcntl.h>
-#include <fnmatch.h>
-#include <limits.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#if defined(_WIN64)
-#define _AMD64_
-#elif defined(_WIN32)
-#define _X86_
-#endif
-#include <handleapi.h>
-#include <io.h>
-#include <process.h>
-#include <processthreadsapi.h> // GetProcessId, OpenProcess, GetExitCodeProcess, etc.
-#include <synchapi.h>          // WaitForSingleObject
-#endif
 
 /* ============================================================================
  * Constants
@@ -102,10 +81,6 @@ static miga_exec_status_t source_rc_files(struct miga_exec_t *e)
      * ignored: it must not keep the shell from starting. */
     if (!e->is_interactive || !e->top_frame)
         return MIGA_EXEC_STATUS_OK;
-#ifdef MIGA_POSIX_API
-    if (getuid() != geteuid() || getgid() != getegid())
-        return MIGA_EXEC_STATUS_OK;
-#endif
     miga_frame_t *frame = e->top_frame;
     string_t *name = string_create_from_cstr("ENV");
     const string_t *raw = exec_frame_get_variable(frame, name);
@@ -192,10 +167,6 @@ void exec_destroy(miga_exec_t **executor_ptr)
         builtin_store_destroy(&e->builtins);
     strlist_destroy(&e->env_vars);
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    if (e->open_fds)
-        fd_table_destroy(&e->open_fds);
-#endif
 
     if (e->pipe_statuses)
         xfree(e->pipe_statuses);
@@ -328,9 +299,6 @@ bool exec_set_shell_name_cstr(miga_exec_t *executor, const char *shell_name)
 /* Before the top-level frame exists (command-line parsing) the flags live in
  * executor->opt; exec_frame_push() copies them into the top frame, which is
  * their owner from then on (frames share or copy them by policy). */
-#ifdef MIGA_POSIX_API
-static void exec_install_interactive_signals(miga_exec_t *e);
-#endif
 
 static exec_opt_flags_t *exec_opts(const miga_exec_t *executor)
 {
@@ -584,43 +552,6 @@ bool exec_set_umask(miga_exec_t *executor, int mask)
     return true;
 }
 
-#ifdef MIGA_POSIX_API
-mode_t exec_get_umask_posix(const miga_exec_t *executor)
-{
-    Expects_not_null(executor);
-    return executor->umask;
-}
-
-bool exec_set_umask_posix(miga_exec_t *executor, mode_t mask)
-{
-    Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->umask = mask;
-    return true;
-}
-
-bool exec_is_file_size_limit_set(const miga_exec_t *executor)
-{
-    Expects_not_null(executor);
-    return executor->file_size_limit != 0;
-}
-
-rlim_t exec_get_file_size_limit(const miga_exec_t *executor)
-{
-    Expects_not_null(executor);
-    return executor->file_size_limit;
-}
-
-bool exec_set_file_size_limit(miga_exec_t *executor, rlim_t limit)
-{
-    Expects_not_null(executor);
-    if (exec_is_top_frame_initialized(executor))
-        return false;
-    executor->file_size_limit = limit;
-    return true;
-}
-#endif
 
 /* ── Process identity ────────────────────────────────────────────────────── */
 
@@ -952,22 +883,10 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
 
     // Finish initializing the top-level parameters that weren't explicitly set by the caller.
     // Override all the frame parameters with the executor's pre-configured values.
-#ifdef MIGA_POSIX_API
-    pid_t default_pid = getpid();
-    pid_t default_ppid = getppid();
-    bool default_pid_valid = true;
-    bool default_ppid_valid = true;
-#elif defined(MIGA_UCRT_API)
-    int default_pid = _getpid();
-    int default_ppid = 0; /* No getppid in UCRT */
-    bool default_pid_valid = true;
-    bool default_ppid_valid = false;
-#else
     int default_pid = 0;
     int default_ppid = 0;
     bool default_pid_valid = false;
     bool default_ppid_valid = false;
-#endif
 
     if (!e->shell_pid_valid && default_pid_valid)
     {
@@ -1023,23 +942,8 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     if (!e->job_control_disabled && !e->is_interactive)
         e->job_control_disabled = true;
 
-#ifdef MIGA_POSIX_API
-    if (!e->pgid_valid)
-    {
-        pid_t pgid = getpgrp();
-        if (pgid != -1)
-        {
-            e->pgid = pgid;
-            e->pgid_valid = true;
-        }
-    }
-#elif defined(MIGA_UCRT_API)
-    e->pgid_valid = false; /* No getpgrp in UCRT, and we don't want to assume pgid == pid */
-    e->pgid = -1;
-#else
     e->pgid_valid = false;
     e->pgid = -1;
-#endif
 
     /* Pipeline status (pipefail / PIPESTATUS) */
     e->pipe_statuses = NULL;
@@ -1080,8 +984,7 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     if (e->envp)
         e->env_vars = strlist_create_from_cstr_array((const char **)e->envp, -1);
     else
-        // In MIGA_POSIX_API and MIGA_UCRT_API, this gets the env from the `environ` global.
-        // In ISO C, there is no `environ`, so this will be initialized as an empty list.
+        // ISO C has no `environ`, so this is initialized as an empty list.
         e->env_vars = strlist_create_from_system_env();
 
     if (!e->top_frame)
@@ -1144,10 +1047,6 @@ static miga_exec_status_t exec_setup_core(miga_exec_t *e, bool interactive)
     trap_store_set_pending_flags(e->trap_pending, NSIG);
     if (e->top_frame && e->top_frame->traps)
         trap_store_record_ignored_on_entry(e->top_frame->traps);
-#ifdef MIGA_POSIX_API
-    if (e->is_interactive)
-        exec_install_interactive_signals(e);
-#endif
 
     /* Source RC files */
     if (!e->inhibit_rc_files && (interactive || e->is_login_shell))
@@ -1195,13 +1094,7 @@ static miga_exec_status_t exec_setup_lazy(miga_exec_t *executor, FILE *fp)
     log_warn("Executor setup was not explicitly called. Attempting to guess interactive mode based "
              "on file pointer.");
     bool is_interactive;
-#ifdef MIGA_POSIX_API
-    is_interactive = isatty(fileno(fp));
-#elif defined(MIGA_UCRT_API)
-    is_interactive = _isatty(_fileno(fp));
-#else
     is_interactive = false;
-#endif
     if (is_interactive)
     {
         log_debug("Guessed interactive mode based on file pointer.");
@@ -1231,22 +1124,10 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
      * Shell Identity — PID / PPID
      * -------------------------------------------------------------------------
      */
-#ifdef MIGA_POSIX_API
-    pid_t default_pid = getpid();
-    pid_t default_ppid = getppid();
-    bool default_pid_valid = true;
-    bool default_ppid_valid = true;
-#elif defined(MIGA_UCRT_API)
-    int default_pid = _getpid();
-    int default_ppid = 0; /* No getppid in UCRT */
-    bool default_pid_valid = true;
-    bool default_ppid_valid = false;
-#else
     int default_pid = 0;
     int default_ppid = 0;
     bool default_pid_valid = false;
     bool default_ppid_valid = false;
-#endif
 
     e->shell_pid = cfg->shell_pid_set ? cfg->shell_pid : default_pid;
     e->shell_ppid = cfg->shell_ppid_set ? cfg->shell_ppid : default_ppid;
@@ -1308,8 +1189,7 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
     }
     else
     {
-        // In MIGA_POSIX_API and MIGA_UCRT_API, this gets the env from the `environ` global.
-        // In ISO C, there is no `environ`, so this will be initialized as an empty list.
+        // ISO C has no `environ`, so this is initialized as an empty list.
         e->env_vars = strlist_create_from_system_env();
     }
 
@@ -1331,13 +1211,7 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
      * Interactive / Login Shell Detection
      * -------------------------------------------------------------------------
      */
-#ifdef MIGA_POSIX_API
-    bool default_is_interactive = isatty(STDIN_FILENO) && isatty(STDERR_FILENO);
-#elif defined(MIGA_UCRT_API)
-    bool default_is_interactive = _isatty(_fileno(stdin)) && _isatty(_fileno(stderr));
-#else
     bool default_is_interactive = false;
-#endif
 
     bool default_is_login_shell = (e->argc > 0 && e->argv && e->argv[0] && e->argv[0][0] == '-');
 
@@ -1352,28 +1226,8 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
     e->job_control_disabled =  !(
         cfg->job_control_enabled_set ? cfg->job_control_enabled : e->is_interactive);
 
-#ifdef MIGA_POSIX_API
-    if (cfg->pgid_set)
-    {
-        e->pgid = cfg->pgid;
-        e->pgid_valid = cfg->pgid_valid_set ? cfg->pgid_valid : true;
-    }
-    else
-    {
-        e->pgid = getpgrp();
-
-        if (e->is_interactive)
-        {
-            e->pgid = getpid();
-            setpgid(0, e->pgid); /* Ignore errors */
-            tcsetpgrp(STDIN_FILENO, e->pgid);
-        }
-        e->pgid_valid = cfg->pgid_valid_set ? cfg->pgid_valid : true;
-    }
-#else
     e->pgid = cfg->pgid_set ? cfg->pgid : 0;
     e->pgid_valid = cfg->pgid_valid_set ? cfg->pgid_valid : false;
-#endif
 
     /* -------------------------------------------------------------------------
      * Signals and Traps
@@ -1408,10 +1262,6 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
     e->aliases = alias_store_create();
     e->traps = NULL;
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    e->open_fds = NULL;
-    e->next_fd = 0;
-#endif
 
     if (cfg->working_directory_set && cfg->working_directory)
     {
@@ -1422,12 +1272,7 @@ struct miga_exec_t *exec_create(const struct exec_cfg_t *cfg)
         e->working_directory = NULL;
     }
 
-#ifdef MIGA_POSIX_API
     e->umask = cfg->umask_set ? cfg->umask : 0;
-    e->file_size_limit = cfg->file_size_limit_set ? cfg->file_size_limit : 0;
-#else
-    e->umask = cfg->umask_set ? cfg->umask : 0;
-#endif
 
     /* -------------------------------------------------------------------------
      * Special Parameters ($?, $!, $_)
@@ -2992,70 +2837,11 @@ void exec_run_exit_trap(miga_exec_t *executor, miga_frame_t *frame)
  * that the processes of a background job ignore SIGINT and SIGQUIT, and
  * signals that were ignored when the shell started stay ignored.
  */
-#ifdef MIGA_POSIX_API
-static miga_exec_t *g_interactive_executor = NULL;
-
-static void interactive_sigint_handler(int signo)
-{
-    (void)signo;
-    if (g_interactive_executor)
-        g_interactive_executor->sigint_received = 1;
-}
-
-static bool signal_is_ignored(int signo)
-{
-    struct sigaction sa;
-    return sigaction(signo, NULL, &sa) == 0 && sa.sa_handler == SIG_IGN;
-}
-
-static void exec_install_interactive_signals(miga_exec_t *e)
-{
-    e->sigint_ignored_on_entry = signal_is_ignored(SIGINT);
-    e->sigquit_ignored_on_entry = signal_is_ignored(SIGQUIT);
-    e->sigterm_ignored_on_entry = signal_is_ignored(SIGTERM);
-
-    g_interactive_executor = e;
-    if (!e->sigint_ignored_on_entry)
-    {
-        struct sigaction sa;
-        memset(&sa, 0, sizeof(sa));
-        sa.sa_handler = interactive_sigint_handler;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0; /* no SA_RESTART: interrupt the read at the prompt */
-        sigaction(SIGINT, &sa, NULL);
-    }
-    signal(SIGQUIT, SIG_IGN);
-    signal(SIGTERM, SIG_IGN);
-    e->interactive_signals = true;
-}
-#endif
 
 void exec_child_signals(miga_exec_t *executor, bool background)
 {
     Expects_not_null(executor);
-#ifdef MIGA_POSIX_API
-    if (background)
-        executor->in_background_job = true;
-    bool bg = executor->in_background_job;
-    if (executor->interactive_signals)
-    {
-        if (!executor->sigint_ignored_on_entry)
-            signal(SIGINT, bg ? SIG_IGN : SIG_DFL);
-        if (!executor->sigquit_ignored_on_entry)
-            signal(SIGQUIT, bg ? SIG_IGN : SIG_DFL);
-        if (!executor->sigterm_ignored_on_entry)
-            signal(SIGTERM, SIG_DFL);
-    }
-    else if (bg && executor->job_control_disabled)
-    {
-        /* XCU 2.11: commands of an asynchronous list ignore SIGINT and
-         * SIGQUIT when job control is not active */
-        signal(SIGINT, SIG_IGN);
-        signal(SIGQUIT, SIG_IGN);
-    }
-#else
     (void)background;
-#endif
 }
 
 void exec_request_exit(miga_exec_t *executor, int status)
@@ -3222,21 +3008,12 @@ bool exec_job_is_background(const miga_exec_t *executor, int job_id)
     return job ? job->is_background : false;
 }
 
-#ifdef MIGA_POSIX_API
-pid_t exec_job_get_pgid(const miga_exec_t *executor, int job_id)
-{
-    Expects_not_null(executor);
-    job_t *job = job_store_find(executor->jobs, job_id);
-    return job ? job->pgid : -1;
-}
-#else
 int exec_job_get_pgid(const miga_exec_t *executor, int job_id)
 {
     Expects_not_null(executor);
     job_t *job = job_store_find(executor->jobs, job_id);
     return job ? job->pgid : -1;
 }
-#endif
 
 /* ── Per-process queries within a job ────────────────────────────────────── */
 
@@ -3286,18 +3063,6 @@ int exec_job_get_process_exit_status(const miga_exec_t *executor, int job_id, si
     return job_get_process_exit_status(job, index);
 }
 
-#ifdef MIGA_POSIX_API
-pid_t exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
-{
-    Expects_not_null(executor);
-    job_t *job = job_store_find(executor->jobs, job_id);
-    if (!job)
-        return -1;
-    if (index >= job_process_count(job))
-        return -1;
-    return job_get_process_pid(job, index);
-}
-#elif defined(MIGA_UCRT_API)
 int exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
 {
     Expects_not_null(executor);
@@ -3308,33 +3073,6 @@ int exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t ind
         return -1;
     return (int)job_get_process_pid(job, index);
 }
-
-uintptr_t exec_job_get_process_handle(const miga_exec_t *executor, int job_id, size_t index)
-{
-    Expects_not_null(executor);
-    job_t *job = job_store_find(executor->jobs, job_id);
-    if (!job)
-        return (uintptr_t)-1;
-    if (index >= job_process_count(job))
-        return (uintptr_t)-1;
-#ifdef MIGA_UCRT_API
-    return job_get_process_handle(job, index);
-#else
-    return (intptr_t)-1;
-#endif
-}
-#else
-int exec_job_get_process_pid(const miga_exec_t *executor, int job_id, size_t index)
-{
-    Expects_not_null(executor);
-    job_t *job = job_store_find(executor->jobs, job_id);
-    if (!job)
-        return -1;
-    if (index >= job_process_count(job))
-        return -1;
-    return (int)job_get_process_pid(job, index);
-}
-#endif
 
 /* ── Job actions ─────────────────────────────────────────────────────────── */
 
@@ -3351,37 +3089,12 @@ bool exec_job_foreground_cstr(miga_exec_t *executor, int job_id, char **out_cmd)
 
     if (job->state == JOB_STOPPED)
     {
-#ifdef MIGA_POSIX_API
-        if (kill(-job->pgid, SIGCONT) < 0)
-        {
-            exec_set_error_printf(executor, "fg: cannot resume job: %s", strerror(errno));
-            return false;
-        }
-        job_store_set_state(executor->jobs, job_id, JOB_RUNNING);
-#else
         exec_set_error_cstr(executor, "fg: cannot resume suspended jobs on this platform");
         return false;
-#endif
     }
 
-#ifdef MIGA_POSIX_API
-    if (tcsetpgrp(STDIN_FILENO, job->pgid) < 0)
-    {
-        exec_set_error_printf(executor, "fg: cannot set foreground process group: %s",
-                              strerror(errno));
-        return false;
-    }
-
-    job->is_background = false;
-    if (out_cmd)
-        *out_cmd = xstrdup(string_cstr(job->command_line));
-
-    job_store_remove(executor->jobs, job_id);
-    return true;
-#else
     exec_set_error_cstr(executor, "fg: foreground job control not supported on this platform");
     return false;
-#endif
 }
 
 bool exec_job_background(miga_exec_t *executor, int job_id)
@@ -3397,17 +3110,8 @@ bool exec_job_background(miga_exec_t *executor, int job_id)
 
     if (job->state == JOB_STOPPED)
     {
-#ifdef MIGA_POSIX_API
-        if (kill(-job->pgid, SIGCONT) < 0)
-        {
-            exec_set_error_printf(executor, "bg: cannot resume job: %s", strerror(errno));
-            return false;
-        }
-        job_store_set_state(executor->jobs, job_id, JOB_RUNNING);
-#else
         exec_set_error_cstr(executor, "bg: cannot resume suspended jobs on this platform");
         return false;
-#endif
     }
 
     job->is_background = true;
@@ -3429,15 +3133,6 @@ bool exec_job_kill(miga_exec_t *executor, int job_id, int sig)
     if (sig == 0)
     {
         // On POSIX: kill(-pgid, 0) succeeds if we can signal the group
-#ifdef MIGA_POSIX_API
-        if (kill(-job->pgid, 0) < 0)
-        {
-            exec_set_error_printf(executor, "kill: job %d: no such process group: %s", job_id,
-                                  strerror(errno));
-            return false;
-        }
-        return true;
-#else
         // On Windows: we can only check if handle is still valid/open
         // If you store HANDLE hProcess in job_t from _spawnvpe:
         // if (!job->hProcess || WaitForSingleObject(job->hProcess, 0) == WAIT_OBJECT_0) {
@@ -3446,64 +3141,10 @@ bool exec_job_kill(miga_exec_t *executor, int job_id, int sig)
         // }
         // For simplicity: assume existence if still in table
         return true;
-#endif
     }
 
     // Normal case: send real signal
-#ifdef MIGA_POSIX_API
-    // Send to the entire process group (negative pgid)
-    if (kill(-job->pgid, sig) < 0)
-    {
-        // Common errors: ESRCH (no such process), EPERM (permission denied)
-        exec_set_error_printf(executor, "kill: cannot send signal %d to job %d: %s", sig, job_id,
-                              strerror(errno));
-        return false;
-    }
-
-    return true;
-
-#elif defined(MIGA_UCRT_API)
-    // Very limited: only attempt forceful termination for common "kill" signals
-    if (sig == SIGTERM
-#ifdef SIGKILL
-        || sig == SIGKILL
-#endif
-        || sig == 15 || sig == 9)
-    {
-        // Each job has a list of process_t, but, in UCRT, there will
-        // only ever be one entry. We can get the handle from the process.
-        if (job->processes)
-        {
-            unsigned long long handle;
-            // Using the shortcut that we know there can only be one process
-            // in a UCRT job.
-            handle = job->processes->handle;
-            if (handle && TerminateProcess((HANDLE)handle, 1))
-            {
-                CloseHandle((HANDLE)handle);
-                job->processes->handle = 0;
-            }
-            else
-            {
-                exec_set_error_printf(executor, "kill: failed to terminate job %d on Windows",
-                                      job_id);
-                return false;
-            }
-        }
-        // Have to update job store here, since we won't catch a signal or status change from the
-        // process itself.
-        job_store_set_state(executor->jobs, job_id, JOB_TERMINATED);
-    }
-    else
-    {
-        exec_set_error_cstr(
-            executor, "kill: only SIGTERM/SIGKILL supported on Windows (job control limited)");
-        return false;
-    }
-
-#else
     exec_set_error_cstr(executor, "kill: job control not supported on this platform");
-#endif
     return false;
 }
 
@@ -3693,63 +3334,4 @@ void exec_reap_background_jobs(miga_exec_t *executor, bool notify)
 {
     Expects_not_null(executor);
 
-#ifdef MIGA_POSIX_API
-    int status;
-    pid_t pid;
-    bool any_reaped = false;
-
-    /* -1 and WNOHANG mean we return the PID of any completed child process or -1
-     * if no child process has recently completed */
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-    {
-        // Determine if the job is done, or if it was terminated by a signal
-        bool terminated = WIFSIGNALED(status);
-        int exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-        if (terminated)
-            job_store_set_process_state(executor->jobs, pid, JOB_TERMINATED, exit_status);
-        else
-            job_store_set_process_state(executor->jobs, pid, JOB_DONE, exit_status);
-        any_reaped = true;
-    }
-    if (any_reaped && notify)
-    {
-        job_store_print_completed_jobs(executor->jobs, stdout);
-    }
-    if (any_reaped)
-        exec_forget_finished_jobs(executor);
-#elif defined(MIGA_UCRT_API)
-    bool any_completed = false;
-    job_store_t *store = executor->jobs;
-    job_process_iterator_t iter = job_store_active_processes_begin(store);
-
-    while (job_store_active_processes_next(&iter))
-    {
-        uintptr_t h = job_store_iter_get_handle(&iter);
-        if (!h)
-        {
-            // Unreachable?
-            job_store_iter_set_state(&iter, JOB_DONE, 0); // Return 0 as exit code?
-
-            // Check if job is now complete
-            job_state_t state = job_store_iter_get_job_state(&iter);
-            if (state == JOB_DONE || state == JOB_TERMINATED)
-                any_completed = true;
-        }
-        else if (!WaitForSingleObject((HANDLE)h, (DWORD)0))
-        {
-            DWORD exit_code;
-            GetExitCodeProcess((HANDLE)h, &exit_code);
-            job_store_iter_set_state(&iter, JOB_DONE, (int)exit_code);
-
-            // Check if job is now complete
-            job_state_t state = job_store_iter_get_job_state(&iter);
-            if (state == JOB_DONE || state == JOB_TERMINATED)
-                any_completed = true;
-        }
-    }
-    if (any_completed && notify)
-        job_store_print_completed_jobs(executor->jobs, stdout);
-    if (any_completed)
-        exec_forget_finished_jobs(executor);
-#endif
 }

@@ -11,9 +11,6 @@
 
 #include "miga/string_t.h"
 
-#ifdef MIGA_POSIX_API
-#include <sys/types.h> // For pid_t
-#endif
 
 // ============================================================================
 // Job State
@@ -35,14 +32,7 @@ typedef struct process_t
 {
     struct process_t *next; // Next process in pipeline
     string_t *command;      // Command string for this process
-#ifdef MIGA_POSIX_API
-    pid_t pid; // Process ID
-#elif defined(MIGA_UCRT_API)
-    int pid; // Process ID (or 0 if not available)
-    unsigned long long handle; // Process handle (or 0 if not available)
-#else
     int pid;           // Process ID (or 0 if not available)
-#endif
     int exit_status;   // Exit status (if done) or 128 + signal number (if terminated)
     job_state_t state; // Current state of this process
 } process_t;
@@ -54,11 +44,7 @@ typedef struct process_t
 typedef struct job_t
 {
     int job_id; // Job number (for %1, %2, etc.)
-#ifdef MIGA_POSIX_API
-    pid_t pgid; // Process group ID
-#else
     int pgid; // Process group ID (or 0 if not available)
-#endif
     process_t *processes;   // Linked list of processes in this job
     string_t *command_line; // Full command line as typed by user
     job_state_t state;      // Overall state of the job
@@ -133,14 +119,7 @@ int job_store_add(job_store_t *store, const string_t *command_line, bool is_back
  * @param command The command string for this process
  * @return true on success, false on failure
  */
-#ifdef MIGA_POSIX_API
-bool job_store_add_process(job_store_t *store, int job_id, pid_t pid, const string_t *command);
-#elif defined(MIGA_UCRT_API)
-bool job_store_add_process(job_store_t *store, int job_id, int pid, uintptr_t handle,
-                            const string_t *command);
-#else
 bool job_store_add_process(job_store_t *store, int job_id, int pid, const string_t *command);
-#endif
 
 // ============================================================================
 // Job Lookup
@@ -200,11 +179,7 @@ job_t *job_store_find_by_substring(const job_store_t *store, const char *substri
  * @param pgid The process group ID
  * @return Pointer to the job, or NULL if not found
  */
-#ifdef MIGA_POSIX_API
-job_t *job_store_find_by_pgid(const job_store_t *store, pid_t pgid);
-#else
 job_t *job_store_find_by_pgid(const job_store_t *store, int pgid);
-#endif
 
 // ============================================================================
 // Job State Management
@@ -229,13 +204,8 @@ bool job_store_set_state(job_store_t *store, int job_id, job_state_t new_state);
  * @param exit_status The exit status (if applicable)
  * @return true on success, false if process not found
  */
-#ifdef MIGA_POSIX_API
-bool job_store_set_process_state(job_store_t *store, pid_t pid, job_state_t new_state,
-                                 int exit_status);
-#else
 bool job_store_set_process_state(job_store_t *store, int pid, job_state_t new_state,
                                  int exit_status);
-#endif
 
 /**
  * Mark a job as notified.
@@ -379,14 +349,7 @@ int job_store_get_job_ids(const job_store_t *store, int *job_ids, size_t max_job
 
 size_t job_process_count(const job_t *job);
 
-#ifdef MIGA_POSIX_API
-pid_t job_get_process_pid(const job_t *job, size_t index);
-#elif defined(MIGA_UCRT_API)
 int job_get_process_pid(const job_t *job, size_t index);
-intptr_t job_get_process_handle(const job_t *job, size_t index);
-#else
-int job_get_process_pid(const job_t *job, size_t index);
-#endif
 
 job_state_t job_get_process_state(const job_t *job, size_t index);
 

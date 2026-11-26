@@ -240,22 +240,6 @@ CTEST(test_leak_function_with_redirections)
                    "defining a function with redirections does not leak");
 }
 
-#ifdef MIGA_POSIX_API
-/* ============================================================================
- * Background jobs
- * ============================================================================ */
-
-/* A job that wait (by pid or job ID) or jobs has reported is forgotten, so
- * the job table does not grow (it kept every job until exit). */
-CTEST(test_leak_background_jobs)
-{
-    ASSERT_NO_LEAK(ctest, "true & wait $!", "a background job collected by wait $! is forgotten");
-    ASSERT_NO_LEAK(ctest, "(exit 3) & wait %1", "a background job collected by wait %N is forgotten");
-    ASSERT_NO_LEAK(ctest, "true & wait", "background jobs collected by wait are forgotten");
-    ASSERT_NO_LEAK(ctest, "i=0; while [ $i -lt 5 ]; do true & wait; i=$((i + 1)); done",
-                   "background jobs started and collected in a loop are forgotten");
-}
-#endif
 
 int main(void)
 {
@@ -273,9 +257,6 @@ int main(void)
         CTEST_ENTRY(test_leak_fd_close),
         CTEST_ENTRY(test_leak_function),
         CTEST_ENTRY(test_leak_function_with_redirections),
-#ifdef MIGA_POSIX_API
-        CTEST_ENTRY(test_leak_background_jobs),
-#endif
         NULL
     };
 

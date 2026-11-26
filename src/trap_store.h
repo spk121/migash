@@ -10,9 +10,6 @@
 #include "miga/string_t.h"
 
 /* Enable full POSIX signal set only where available (non-Windows POSIX builds). */
-#if defined(MIGA_POSIX_API) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MSYS__)
-#define TRAP_USE_POSIX_SIGNALS 1
-#endif
 
 // Signals KILL and STOP are not catchable or ignorable.
 // POSIX <signal.h> requires ABRT, ALRM, BUS, CHLD, CONT, FPE, HUP,
@@ -32,19 +29,12 @@ typedef struct trap_action_t
      * (its own interactive handler, SIG_IGN, SIG_DFL): "trap - SIG" and
      * a cleared trap go back to it, not blindly to SIG_DFL. */
     bool has_saved;
-#ifdef TRAP_USE_POSIX_SIGNALS
-    struct sigaction saved_action;
-#else
     void (*saved_handler)(int);
-#endif
 } trap_action_t;
 
 typedef struct trap_store_t
 {
     trap_action_t *traps;  // Array of trap actions, indexed by signal number
-#ifdef TRAP_USE_UCRT_SIGNALS
-    trap_action_t fpe_trap; // Single FPE trap for all exception types (shell uses integer arithmetic)
-#endif
     string_t *exit_action; // Action for EXIT trap
     size_t capacity;       // Size of array (typically NSIG or _NSIG)
     bool exit_trap_set;    // Special case: trap on EXIT (signal 0)
@@ -91,9 +81,6 @@ const trap_action_t *trap_store_get(const trap_store_t *store, int signal_number
 // so FPE exceptions should be rare or impossible. This function returns a single
 // trap action for all FPE exception types (FPE_INTDIV, FPE_FLTDIV, etc.)
 // The fpe_code parameter is accepted but currently ignored for future extensibility.
-#ifdef TRAP_USE_UCRT_SIGNALS
-const trap_action_t *trap_store_get_fpe(const trap_store_t *store, int fpe_code);
-#endif
 
 // Get EXIT trap action (returns NULL if no EXIT trap set)
 const string_t *trap_store_get_exit(const trap_store_t *store);

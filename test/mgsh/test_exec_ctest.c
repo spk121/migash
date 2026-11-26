@@ -27,11 +27,7 @@ CTEST(test_exec_create_destroy)
 
     // Verify new special variable fields are initialized
     CTEST_ASSERT_EQ(ctest, exec_get_last_background_pid(executor), 0, "last_background_pid should be 0");
-#ifdef MIGA_POSIX_API
-    CTEST_ASSERT(ctest, exec_get_shell_pid(executor) > 0, "shell_pid should be set to getpid() on POSIX");
-#else
     CTEST_ASSERT_EQ(ctest, exec_get_shell_pid(executor), 0, "shell_pid should be 0 on non-POSIX");
-#endif
     CTEST_ASSERT_NOT_NULL(ctest, exec_get_last_argument(executor), "last_argument should be initialized");
     CTEST_ASSERT_EQ(ctest, string_length(exec_get_last_argument(executor)), 0, "last_argument should be empty");
     // CTEST_ASSERT_EQ(ctest, executor->opt_flags_set, true, "shell_flags should be initialized");

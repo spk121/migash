@@ -35,14 +35,7 @@
 #include "trap_store.h"
 #include "variable_store.h"
 
-#ifdef MIGA_POSIX_API
-#include <sys/resource.h>
-#include <sys/types.h>
-#endif
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-#include "fd_table.h"
-#endif
 
 /* ============================================================================
  * Platform Constants
@@ -56,17 +49,8 @@
 #endif
 #endif
 
-#ifdef MIGA_POSIX_API
-#define EXEC_SYSTEM_RC_PATH "/etc/migarc"
-#define EXEC_USER_RC_NAME ".migarc"
-#define EXEC_RC_IN_XDG_CONFIG_HOME
-#elif defined(MIGA_UCRT_API)
-#define EXEC_USER_RC_NAME "migarc"
-#define EXEC_RC_IN_LOCAL_APP_DATA
-#else
 #define EXEC_USER_RC_NAME "MIGA.RC"
 #define EXEC_RC_IN_CURRENT_DIRECTORY
-#endif
 
 #define EXEC_CFG_FALLBACK_ARGV0 "miga"
 
@@ -116,13 +100,8 @@ struct miga_exec_t
 
     bool shell_pid_valid;
     bool shell_ppid_valid;
-#ifdef MIGA_POSIX_API
-    pid_t shell_pid;
-    pid_t shell_ppid;
-#else
     int shell_pid;
     int shell_ppid;
-#endif
 
     bool is_interactive;
     bool is_login_shell;
@@ -137,11 +116,7 @@ struct miga_exec_t
     bool job_control_disabled;
 
     bool pgid_valid;
-#ifdef MIGA_POSIX_API
-    pid_t pgid;
-#else
     int pgid;
-#endif
 
     /* Pipeline status (pipefail / PIPESTATUS) */
     int *pipe_statuses;
@@ -187,10 +162,6 @@ struct miga_exec_t
     /* Parse session (persistent across interactive commands) */
     parse_session_t *session;
 
-#if defined(MIGA_POSIX_API) || defined(MIGA_UCRT_API)
-    fd_table_t *open_fds;
-    int next_fd;
-#endif
 
     /* Interactive signal handling (POSIX): the shell catches SIGINT and
      * ignores SIGQUIT and SIGTERM; children get the defaults back, except
@@ -217,12 +188,7 @@ struct miga_exec_t
     struct redir_save_set_t *redir_saves;
 
     string_t *working_directory;
-#ifdef MIGA_POSIX_API
-    mode_t umask;
-    rlim_t file_size_limit;
-#else
     int umask;
-#endif
 
     int last_exit_status;
     bool last_exit_status_set;
@@ -377,17 +343,12 @@ struct miga_frame_t
     trap_store_t *traps;
     exec_opt_flags_t *opt_flags;
     string_t *working_directory;
-#ifdef MIGA_POSIX_API
-    mode_t *umask;
-#else
     int *umask;
-#endif
 
     /* -------------------------------------------------------------------------
      * Frame-local state (always owned by this frame)
      * -------------------------------------------------------------------------
      */
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     /* For ISO C redirection support in builtins/functions, we need to track
      * FILE pointers. Each pointer refers to a slot: the frame's own slot
      * below (when the frame has its own redirected streams) or the parent's
@@ -398,7 +359,6 @@ struct miga_frame_t
     FILE *redirected_stdin;  /* NULL: not redirected (use stdin) */
     FILE *redirected_stdout; /* NULL: not redirected (use stdout) */
     FILE *redirected_stderr; /* NULL: not redirected (use stderr) */
-#endif
     int loop_depth;       /* 0 if not in loop, else depth of nested loops */
     int last_exit_status; /* $? */
     int last_bg_pid;      /* $! */
@@ -450,11 +410,7 @@ typedef struct exec_params_t
     bool pipeline_negated;              /* true for ! pipeline */
 
     /* For pipeline commands (EXEC_FRAME_PIPELINE_CMD) */
-#ifdef MIGA_POSIX_API
-    pid_t pipeline_pgid; /* Process group to join (0 = create new) */
-#else
     int pipeline_pgid;
-#endif
 
     /* For background jobs / debugging */
     strlist_t *command_args; /* Original command text for job display */

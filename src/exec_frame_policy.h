@@ -303,14 +303,12 @@ typedef struct exec_frame_policy_t
         bool is_background;
     } classification;
 
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
     /* For ISO C redirection support in builtins/functions, we need to track FILE pointers */
     struct
     {
         bool inherits_redirected_stdio; // Whether this frame should use the redirected stdin,
                                         // stdout, stderr FILE* fields of its parents
     } stdio;
-#endif
 
 } exec_frame_policy_t;
 
@@ -404,12 +402,10 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = true /* top-level builtins see redirections */
              }
-#endif
         },
 
     /* =========================================================================
@@ -495,12 +491,10 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = true,
                  .is_background = false,
              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = false /* subshell isolation + no real fork */
              }
-#endif
         },
 
     /* =========================================================================
@@ -586,12 +580,10 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio = true /* redirs on { ... } affect everything inside */
              }
-#endif
         },
 
     /* =========================================================================
@@ -677,13 +669,11 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                  .is_subshell = false,
                  .is_background = false,
              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
          .stdio =
              {
                  .inherits_redirected_stdio =
                      true /* core requirement: functions/builtins see redirs */
              }
-#endif
         },
 
     /* =========================================================================
@@ -768,9 +758,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
-#endif
 
     },
 
@@ -857,9 +845,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
-#endif
     },
 
     /* =========================================================================
@@ -946,10 +932,8 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = true,
                 },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio =
                           false} /* system() cannot be redirected in ISO C */
-#endif
 
         },
     /* =========================================================================
@@ -1037,9 +1021,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = false,
                     .is_background = false,
                 },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio = false} /* too complicated */
-#endif
 
         },
 
@@ -1127,9 +1109,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                     .is_subshell = true,
                     .is_background = false,
                 },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
             .stdio = {.inherits_redirected_stdio = false} /* too complicated */
-#endif
 
         },
 
@@ -1217,9 +1197,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                        .is_subshell = false,
                                        .is_background = false,
                                    },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                                .stdio = {.inherits_redirected_stdio = true}
-#endif
 
     },
 
@@ -1306,9 +1284,7 @@ static const exec_frame_policy_t EXEC_FRAME_POLICIES[EXEC_FRAME_TYPE_COUNT] = {
                                  .is_subshell = false,
                                  .is_background = false,
                              },
-#if !defined(MIGA_POSIX_API) && !defined(MIGA_UCRT_API)
                          .stdio = {.inherits_redirected_stdio = true}
-#endif
 
     },
 };

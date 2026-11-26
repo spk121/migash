@@ -30,16 +30,7 @@
 #include "variable_store.h"
 #include "miga/xalloc.h"
 
-#ifdef MIGA_POSIX_API
-#include <pwd.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
-#ifdef MIGA_UCRT_API
-#include <errno.h>
-#include <io.h>
-#endif
 
 /* ============================================================================
  * Helper Functions
@@ -85,23 +76,7 @@ static void record_subst_status(miga_frame_t *frame, int raw_status)
     if (!frame)
         return;
 
-#ifdef MIGA_POSIX_API
-    int status;
-    if (WIFEXITED(raw_status))
-    {
-        status = WEXITSTATUS(raw_status);
-    }
-    else if (WIFSIGNALED(raw_status))
-    {
-        status = 128 + WTERMSIG(raw_status);
-    }
-    else
-    {
-        status = raw_status;
-    }
-#else
     int status = raw_status;
-#endif
 
     frame->last_exit_status = status;
     frame->subst_status_valid = true;
@@ -132,95 +107,6 @@ static void strip_trailing_newlines(string_t *str)
 
 string_t *expand_tilde(miga_frame_t *frame, const string_t *username)
 {
-#ifdef MIGA_POSIX_API
-    struct passwd *pw;
-
-    if (username == NULL || string_length(username) == 0)
-    {
-        /* Expand ~ to current user's home */
-        pw = getpwuid(getuid());
-    }
-    else
-    {
-        const char *uname = string_cstr(username);
-
-        /* Check for special ~+ and ~- forms */
-        if (strcmp(uname, "+") == 0)
-        {
-            /* ~+ expands to PWD */
-            const char *pwd = frame ? variable_store_get_value_cstr(
-                exec_frame_get_variables(frame), "PWD") : NULL;
-            if (!pwd)
-                pwd = getenv("PWD");
-            if (pwd)
-                return string_create_from_cstr(pwd);
-            return NULL;
-        }
-        else if (strcmp(uname, "-") == 0)
-        {
-            /* ~- expands to OLDPWD */
-            const char *oldpwd = frame ? variable_store_get_value_cstr(
-                exec_frame_get_variables(frame), "OLDPWD") : NULL;
-            if (!oldpwd)
-                oldpwd = getenv("OLDPWD");
-            if (oldpwd)
-                return string_create_from_cstr(oldpwd);
-            return NULL;
-        }
-
-        /* Expand ~username to specified user's home */
-        pw = getpwnam(uname);
-    }
-
-    if (pw == NULL || pw->pw_dir == NULL)
-    {
-        return NULL;
-    }
-
-    return string_create_from_cstr(pw->pw_dir);
-
-#elif defined(MIGA_UCRT_API)
-    if (username == NULL || string_length(username) == 0)
-    {
-        /* Expand ~ to current user's home */
-        const char *home = getenv("USERPROFILE");
-        if (home == NULL)
-        {
-            home = getenv("HOME");
-        }
-        if (home != NULL)
-        {
-            return string_create_from_cstr(home);
-        }
-    }
-    else
-    {
-        const char *uname = string_cstr(username);
-
-        /* Check for special ~+ and ~- forms */
-        if (strcmp(uname, "+") == 0)
-        {
-            const char *pwd = frame ? variable_store_get_value_cstr(
-                exec_frame_get_variables(frame), "PWD") : NULL;
-            if (!pwd)
-                pwd = getenv("PWD");
-            if (pwd)
-                return string_create_from_cstr(pwd);
-        }
-        else if (strcmp(uname, "-") == 0)
-        {
-            const char *oldpwd = frame ? variable_store_get_value_cstr(
-                exec_frame_get_variables(frame), "OLDPWD") : NULL;
-            if (!oldpwd)
-                oldpwd = getenv("OLDPWD");
-            if (oldpwd)
-                return string_create_from_cstr(oldpwd);
-        }
-    }
-    /* ~username not supported on Windows */
-    return NULL;
-
-#else
     if (username == NULL || string_length(username) == 0)
     {
         /* ISO C: try HOME environment variable */
@@ -249,7 +135,6 @@ string_t *expand_tilde(miga_frame_t *frame, const string_t *username)
         }
     }
     return NULL;
-#endif
 }
 
 /* ============================================================================
@@ -706,144 +591,10 @@ bool is_special_param(const string_t *name)
 
 string_t *expand_command_subst(miga_frame_t *frame, const string_t *command)
 {
-#ifdef MIGA_POSIX_API
-    const char *cmd = string_cstr(command);
-    if (cmd == NULL || *cmd == '\0')
-    {
-        record_subst_status(frame, 0);
-        return string_create();
-    }
-
-    /* POSIX 2.6.3: the command is executed in a subshell environment. Fork,
-     * run it through this shell's own executor in the child with stdout
-     * connected to a pipe, and collect the output in the parent. Running it
-     * in-process (rather than popen(3), which uses /bin/sh) keeps shell
-     * functions, aliases, unexported variables and builtins visible. */
-    int fds[2];
-    if (pipe(fds) == -1)
-    {
-        log_error("expand_command_subst: pipe failed: %s", strerror(errno));
-        record_subst_status(frame, 1 << 8);
-        return string_create();
-    }
-
-    fflush(stdout);
-    fflush(stderr);
-
-    fflush(stdout);
-    fflush(stderr);
-    pid_t pid = fork();
-    if (pid < 0)
-    {
-        log_error("expand_command_subst: fork failed: %s", strerror(errno));
-        close(fds[0]);
-        close(fds[1]);
-        record_subst_status(frame, 1 << 8);
-        return string_create();
-    }
-
-    if (pid == 0)
-    {
-        /* Child: stdout goes to the pipe. */
-        exec_child_signals(frame->executor, false);
-        close(fds[0]);
-        if (fds[1] != STDOUT_FILENO)
-        {
-            dup2(fds[1], STDOUT_FILENO);
-            close(fds[1]);
-        }
-
-        miga_exec_t *executor = frame->executor;
-        parse_session_t *session = exec_create_parse_session(executor);
-        miga_exec_status_t st = MIGA_EXEC_STATUS_ERROR;
-        if (session)
-            st = exec_frame_string_core(frame, cmd, session);
-
-        int code = executor->last_exit_status & 0xff;
-        if (st == MIGA_EXEC_STATUS_INCOMPLETE)
-            code = 2; /* syntax error: unterminated input */
-        else if (st != MIGA_EXEC_STATUS_OK && st != MIGA_EXEC_STATUS_EXIT &&
-                 st != MIGA_EXEC_STATUS_EMPTY && code == 0)
-            code = 1;
-
-        /* Flush only the output streams. fflush(NULL) would also flush the
-         * stream the parent is reading the script from, and on a C library
-         * that implements POSIX fflush() for input streams (newer glibc) that
-         * moves the file offset the parent shares with this child back to the
-         * child's read position, so the parent re-reads script text. */
-        fflush(stdout);
-        fflush(stderr);
-        _exit(code);
-    }
-
-    /* Parent: read everything the child writes. */
-    close(fds[1]);
-    string_t *output = string_create();
-    char buffer[4096];
-    for (;;)
-    {
-        ssize_t n = read(fds[0], buffer, sizeof(buffer));
-        if (n > 0)
-        {
-            string_append_data(output, buffer, (int)n);
-            continue;
-        }
-        if (n < 0 && errno == EINTR)
-            continue;
-        break;
-    }
-    close(fds[0]);
-
-    int wstatus = 0;
-    pid_t waited;
-    do
-    {
-        waited = waitpid(pid, &wstatus, 0);
-    } while (waited < 0 && errno == EINTR);
-    record_subst_status(frame, waited < 0 ? (1 << 8) : wstatus);
-
-    /* Strip trailing newlines per POSIX */
-    strip_trailing_newlines(output);
-
-    return output;
-
-#elif defined(MIGA_UCRT_API)
-    const char *cmd = string_cstr(command);
-    if (cmd == NULL || *cmd == '\0')
-    {
-        record_subst_status(frame, 0);
-        return string_create();
-    }
-
-    FILE *pipe = _popen(cmd, "r");
-    if (pipe == NULL)
-    {
-        log_error("expand_command_subst: _popen failed for '%s'", cmd);
-        record_subst_status(frame, 1);
-        return string_create();
-    }
-
-    string_t *output = string_create();
-    char buffer[256];
-
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL)
-    {
-        string_append_cstr(output, buffer);
-    }
-
-    int exit_code = _pclose(pipe);
-    record_subst_status(frame, exit_code);
-
-    strip_trailing_newlines(output);
-
-    return output;
-
-#else
     /* ISO C: no portable way to capture command output */
     (void)command;
     record_subst_status(frame, 0);
     return string_create();
-#endif
 }
 
 /* ============================================================================

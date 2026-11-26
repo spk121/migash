@@ -115,16 +115,8 @@ strlist_t *strlist_create_from_system_env(void)
 {
     strlist_t *lst = strlist_create();
     char * const *env;
-#ifdef MIGA_POSIX_API
-    extern char **environ;
-    env = (char * const *)environ;
-#elif defined(MIGA_UCRT_API)
-    extern char **_environ;
-    env = (char * const *)_environ;
-#else
     // There is no `environ` in ISO C.  There is only getenv().
     env = NULL;
-#endif
 
     if (!env)
         return lst;

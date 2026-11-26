@@ -7,12 +7,6 @@
 #include <locale.h>
 #include <stdint.h>
 #include <string.h>
-#ifdef MIGA_POSIX_API
-#include <unistd.h>
-#endif
-#ifdef MIGA_UCRT_API
-#include <direct.h> /* _getcwd */
-#endif
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -297,14 +291,8 @@ string_t *lib_getcwd(void)
     char *result = NULL;
     while (true)
     {
-#ifdef MIGA_POSIX_API
-        result = getcwd(string_data(cwd), string_capacity(cwd));
-#elif defined(MIGA_UCRT_API)
-        result = _getcwd(string_data(cwd), string_capacity(cwd));
-#else /* ISO C fallback */
         string_set_cstr(cwd, ".");
         result = string_data(cwd);
-#endif
         if (!result && errno == ERANGE && string_capacity(cwd) < TOO_BIG_BUFFER_SIZE)
         {
             string_reserve(cwd, string_capacity(cwd) * 2);
@@ -330,45 +318,16 @@ FILE *lib_fopen_script(const char *path)
 {
     if (!path)
         return NULL;
-#ifdef MIGA_POSIX_API
-    int fd = open(path, O_RDONLY);
-    if (fd < 0)
-        return NULL;
-    int hi = fcntl(fd, F_DUPFD_CLOEXEC, 10);
-    if (hi >= 0)
-    {
-        close(fd);
-        fd = hi;
-    }
-    FILE *fp = fdopen(fd, "r");
-    if (!fp)
-    {
-        int saved = errno;
-        close(fd);
-        errno = saved;
-    }
-    return fp;
-#else
     return fopen(path, "r");
-#endif
 }
 
 const char *lib_default_ps1(void)
 {
-#ifdef MIGA_POSIX_API
-    if (geteuid() == 0)
-        return "# ";
-#endif
     return "$ ";
 }
 
 const char *lib_default_path(char *buf, size_t size)
 {
-#ifdef MIGA_POSIX_API
-    size_t n = confstr(_CS_PATH, buf, size);
-    if (n > 0 && n <= size)
-        return buf;
-#endif
     snprintf(buf, size, "%s", "/bin:/usr/bin");
     return buf;
 }
