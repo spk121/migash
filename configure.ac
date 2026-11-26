@@ -29,60 +29,8 @@ dnl ----------------------------------------------------------------------------
 dnl - library configuration options - for migaconf.h and config.h
 dnl ------------------------------------------------------------------------------
 
-dnl Tell autoheader about API-selection symbols used in config.h
-AH_TEMPLATE([MIGA_POSIX_API], [Define to 1 when building with POSIX API mode])
-AH_TEMPLATE([MIGA_UCRT_API],  [Define to 1 when building with UCRT API mode])
-AH_TEMPLATE([MIGA_ISO_C_API], [Define to 1 when building with ISO C API mode])
-
-AC_ARG_ENABLE([configuration],
-  [AS_HELP_STRING([--enable-configuration={posix,ucrt,iso_c}],
-                  [Select API configuration])],
-  [configuration="$enableval"],
-  [configuration=""])
-
-if test -z "$configuration"; then
-  AC_MSG_CHECKING([configuration based on host system])
-  case $host_os in
-    mingw* | msys* | win*)
-      configuration="ucrt"
-      result="'ucrt' ($host)"
-      ;;
-    linux* | darwin* | *bsd* | solaris* | cygwin* | gnu*)
-      configuration="posix"
-      result="'posix' ($host)"
-      ;;
-    *)
-      configuration="iso_c"
-      result="'iso_c' (unrecognized host '$host')"
-      ;;
-  esac
-
-  AC_MSG_RESULT([$result])
-fi
-
-case "$configuration" in
-  posix)
-    CONFIG_DEFINE="#define MIGA_POSIX_API 1"
-    AC_DEFINE([MIGA_POSIX_API], [1], [Build with POSIX API])
-    dnl Request the POSIX.1-2024 interfaces from the C library. config.h is the
-    dnl first include of every source file, so this precedes all system headers.
-    AC_DEFINE([_POSIX_C_SOURCE], [202405L], [Request POSIX.1-2024 interfaces])
-    AC_DEFINE([_XOPEN_SOURCE], [700], [Request the XSI extensions (realpath, ...)])
-    ;;
-  ucrt)
-    CONFIG_DEFINE="#define MIGA_UCRT_API 1"
-    AC_DEFINE([MIGA_UCRT_API], [1], [Build with UCRT API])
-    ;;
-  iso_c)
-    CONFIG_DEFINE="#define MIGA_ISO_C_API 1"
-    AC_DEFINE([MIGA_ISO_C_API], [1], [Build with ISO C API])
-    ;;
-  *)
-    AC_MSG_ERROR([Invalid value for --enable-configuration: $configuration])
-    ;;
-esac
-
-AC_SUBST([CONFIG_DEFINE])
+dnl The misra-c branch builds for strict ISO C only: there is no platform API
+dnl to select (see docs/misra-roadmap.md).
 
 dnl Arena memory-usage statistics. MIGA_ARENA_STATS changes the layout of the
 dnl public miga_arena_t, so it goes in migaconf.h, not config.h.
@@ -97,9 +45,6 @@ AS_IF([test "x$arena_stats" = xyes],
   [ARENA_STATS_DEFINE="/* #undef MIGA_ARENA_STATS */"])
 AC_MSG_RESULT([$arena_stats])
 AC_SUBST([ARENA_STATS_DEFINE])
-dnl The shell conformance suite needs a shell that can fork and redirect
-dnl descriptors, i.e. the POSIX configuration.
-AM_CONDITIONAL([POSIX_API], [test "x$configuration" = xposix])
 
 dnl ------------------------------------------------------------------------------
 dnl - platform feature checks

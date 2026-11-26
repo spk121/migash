@@ -8,9 +8,7 @@ pkgconfig_DATA = migash.pc
 
 EXTRA_DIST = migash.pc.in packaging/migash.spec.in \
     test/sh/run_tests.sh test/sh/test_helpers.sh test/sh/README.md \
-    test/sh/expected_failures.txt test/interactive/ptyshell.py \
-    test/interactive/sigint_pty.py test/interactive/prompt_pty.py \
-    test/interactive/jobs_pty.py \
+    test/sh/expected_failures.txt \
     $(wildcard $(srcdir)/test/sh/[0-9]*.sh)
 
 # ---------------------------------------------------------------------------
@@ -169,11 +167,7 @@ test_xalloc_ctest_CPPFLAGS = $(TEST_CPPFLAGS)
 test_xalloc_ctest_LDADD = $(TEST_LDADD)
 
 # The unit tests print TAP ("ok" / "not ok") and exit non-zero on failure.
-# The POSIX conformance scripts run under the freshly built shell.
 TESTS = $(check_PROGRAMS)
-if POSIX_API
-TESTS += test/sh/run_tests.sh
-endif
 AM_TESTS_ENVIRONMENT = MIGASH='$(abs_top_builddir)/src/migash'; export MIGASH;
 # Run the shell runner through $(SHELL) so it need not be executable.
 TEST_EXTENSIONS = .sh

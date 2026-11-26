@@ -2,8 +2,6 @@
 #ifndef MIGA_CONFIG_H
 #define MIGA_CONFIG_H
 
-@CONFIG_DEFINE@
-
 /* Arena memory-usage statistics (changes the layout of miga_arena_t) */
 @ARENA_STATS_DEFINE@
 

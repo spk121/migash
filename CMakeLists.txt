@@ -8,24 +8,10 @@ project(migash VERSION 0.0.1 LANGUAGES C)
 # Build Configuration Strategy
 # ============================================================================
 #
-# API Selection (API_TYPE):
-#   POSIX:  POSIX API + visibility attributes (Linux/macOS development)
-#   UCRT:   Windows UCRT API + __declspec (Windows development)
-#   ISO_C:  Strict ISO C only (portability verification)
+# This is the misra-c branch: the shell is built for strict ISO C only, with
+# no POSIX or Windows API. See docs/misra-roadmap.md.
 #
-# Library Strategy:
-#   Debug (POSIX + Linux):    Shared libs with --no-undefined (catches layering violations)
-#   Debug (other):            Static libs (no layering validation available)
-#   Release (all):            Static libs (lean binary, no exposed symbols)
-#
-# Symbol Visibility:
-#   POSIX/UCRT: Controlled via attributes (hidden by default)
-#   ISO_C:      Default visibility (no attributes allowed)
-#
-# Recommended workflow:
-#   1. Development: API_TYPE=POSIX, CMAKE_BUILD_TYPE=Debug (on Linux for best validation)
-#   2. Testing:     API_TYPE=ISO_C to verify portability
-#   3. Release:     API_TYPE=POSIX/UCRT, CMAKE_BUILD_TYPE=Release
+# Library Strategy: libmigash is always a static library.
 # ============================================================================
 
 # The goal is C23, but on MSVC the best we can do it call its "/std:clatest" option.
@@ -47,48 +33,7 @@ endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-# ============================================================================
-# API selection option
-# ============================================================================
-
-set(API_TYPE "UCRT" CACHE STRING "Choose the API type: POSIX, UCRT, or ISO_C")
-set_property(CACHE API_TYPE PROPERTY STRINGS "POSIX" "UCRT" "ISO_C")
-
-# Define the appropriate API macro based on selection
-if(API_TYPE STREQUAL "POSIX")
-    message(STATUS "Building with POSIX API")
-elseif(API_TYPE STREQUAL "UCRT")
-    message(STATUS "Building with UCRT API")
-elseif(API_TYPE STREQUAL "ISO_C")
-    message(STATUS "Building with ISO C (no platform-specific API)")
-else()
-    message(FATAL_ERROR "Invalid API_TYPE: ${API_TYPE}. Must be POSIX, UCRT, or ISO_C")
-endif()
-
-# Feature-test macro for the C library. The sources build with a strict C
-# standard, so POSIX declarations must be requested explicitly. Autotools puts
-# the same definition in config.h.
-if(API_TYPE STREQUAL "POSIX" AND NOT MSVC)
-    # POSIX.1-2024 plus the XSI extensions (realpath, ...)
-    add_compile_definitions(_POSIX_C_SOURCE=202405L _XOPEN_SOURCE=700)
-endif()
-
-# ============================================================================
-# Symbol visibility configuration
-# ============================================================================
-
-if(API_TYPE STREQUAL "ISO_C")
-    # ISO C mode: cannot use compiler-specific visibility attributes
-    # On Windows DLLs, we'll use default exports (but we build static anyway)
-    message(STATUS "ISO C mode: using default symbol visibility")
-
-    # Don't set CMAKE_C_VISIBILITY_PRESET in ISO_C mode
-else()
-    # POSIX or UCRT: use hidden visibility by default
-    set(CMAKE_C_VISIBILITY_PRESET hidden)
-    set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
-    message(STATUS "Using hidden symbol visibility by default")
-endif()
+message(STATUS "Building with ISO C (no platform-specific API)")
 
 # Define build type macros
 add_compile_definitions(
@@ -228,19 +173,10 @@ endif()
 # Generated configuration header (include/miga/migaconf.h)
 # ============================================================================
 #
-# The sources select their platform API with MIGA_POSIX_API, MIGA_UCRT_API or
-# MIGA_ISO_C_API, which come from the generated header include/miga/migaconf.h.
-# Autotools generates it with configure; here we do the same with configure_file
-# so both build systems agree.
+# Compile-time options that affect the public API. Autotools generates the
+# header with configure; here we do the same with configure_file so both build
+# systems agree.
 
-if(API_TYPE STREQUAL "POSIX")
-    set(MIGA_API_MACRO MIGA_POSIX_API)
-elseif(API_TYPE STREQUAL "UCRT")
-    set(MIGA_API_MACRO MIGA_UCRT_API)
-else()
-    set(MIGA_API_MACRO MIGA_ISO_C_API)
-endif()
-set(CONFIG_DEFINE "#define ${MIGA_API_MACRO} 1")
 # MIGA_ARENA_STATS changes the layout of the public miga_arena_t, so it goes in
 # migaconf.h where the library and its users both see it.
 if(ENABLE_ARENA_STATS)
@@ -249,35 +185,13 @@ if(ENABLE_ARENA_STATS)
 else()
     set(ARENA_STATS_DEFINE "/* #undef MIGA_ARENA_STATS */")
 endif()
-# The sources test the API macro before including any project header (to pick
-# system headers), so it must also be defined on the command line, the way the
-# autotools build defines it in config.h.
-add_compile_definitions(${MIGA_API_MACRO}=1)
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/include/miga/migaconf.h.in
     ${CMAKE_BINARY_DIR}/include/miga/migaconf.h
     @ONLY
 )
 
-# ============================================================================
-# Library type configuration
-# ============================================================================
-
-# Debug on Linux/POSIX: build the shared library so that --no-undefined and
-# hidden visibility catch symbol leaks between the library and the shell
-# executable. Everywhere else: static.
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR ENABLE_COVERAGE OR ENABLE_SANITIZERS)
-    if(UNIX AND NOT APPLE AND API_TYPE STREQUAL "POSIX")
-        set(MIGA_LIBRARY_TYPE SHARED)
-        message(STATUS "Building libmigash as a shared library with strict linking")
-    else()
-        set(MIGA_LIBRARY_TYPE STATIC)
-        message(STATUS "Building libmigash as a static library")
-    endif()
-else()
-    set(MIGA_LIBRARY_TYPE STATIC)
-    message(STATUS "Building libmigash as a static library (release)")
-endif()
+set(MIGA_LIBRARY_TYPE STATIC)
 
 # ============================================================================
 # libmigash sources
@@ -401,10 +315,6 @@ target_include_directories(migash_objs PUBLIC
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-if(MIGA_LIBRARY_TYPE STREQUAL SHARED)
-    set_target_properties(migash_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_compile_definitions(migash_objs PUBLIC MIGA_BUILD_SHARED)
-endif()
 
 add_library(migash_lib ${MIGA_LIBRARY_TYPE} $<TARGET_OBJECTS:migash_objs>)
 set_target_properties(migash_lib PROPERTIES OUTPUT_NAME migash)
@@ -413,19 +323,13 @@ target_include_directories(migash_lib PUBLIC
     ${CMAKE_BINARY_DIR}/include
 )
 target_link_libraries(migash_lib PUBLIC $<$<BOOL:${UNIX}>:m>)
-if(MIGA_LIBRARY_TYPE STREQUAL SHARED)
-    # Programs that link the shared library import its symbols (see api.h)
-    target_compile_definitions(migash_lib INTERFACE MIGA_USE_SHARED)
-    target_link_options(migash_lib PRIVATE -Wl,--no-undefined)
-    message(STATUS "  libmigash: strict linking enabled")
-endif()
 
 # ============================================================================
 # Executable: migash
 # ============================================================================
 #
 # main.c and shell.c are the shell program. They may use only the public API in
-# include/, which the shared-library build enforces through hidden visibility.
+# include/.
 
 add_executable(migash src/main.c src/shell.c src/shell.h)
 target_link_libraries(migash PRIVATE migash_lib)
@@ -515,36 +419,6 @@ foreach(test_src ${MIGASH_UNIT_TEST_SOURCES})
         TIMEOUT 60
     )
 endforeach()
-
-# End-to-end shell tests: run the POSIX conformance scripts under the built shell.
-# These need a POSIX sh to drive the runner and a shell that can fork, so they
-# are registered for the POSIX configuration on UNIX only.
-if(UNIX AND API_TYPE STREQUAL "POSIX")
-    add_test(NAME shell_tests
-        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/test/sh/run_tests.sh $<TARGET_FILE:migash>
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/sh
-    )
-    set_tests_properties(shell_tests PROPERTIES TIMEOUT 300)
-    # Interactive SIGINT behaviour, driven through a pseudo-terminal.
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND)
-        add_test(NAME interactive_sigint
-            COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/test/interactive/sigint_pty.py
-                    $<TARGET_FILE:migash>
-        )
-        set_tests_properties(interactive_sigint PROPERTIES TIMEOUT 120)
-        add_test(NAME interactive_prompts
-            COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/test/interactive/prompt_pty.py
-                    $<TARGET_FILE:migash>
-        )
-        set_tests_properties(interactive_prompts PROPERTIES TIMEOUT 180)
-        add_test(NAME interactive_jobs
-            COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/test/interactive/jobs_pty.py
-                    $<TARGET_FILE:migash>
-        )
-        set_tests_properties(interactive_jobs PROPERTIES TIMEOUT 120)
-    endif()
-endif()
 
 # ============================================================================
 # Code coverage target
