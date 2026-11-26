@@ -4,64 +4,58 @@ on:
   push:
     branches:
       - master
+      - misra-c
   pull_request:
   workflow_dispatch:
 
+# The misra-c branch builds for strict ISO C only (see docs/misra-roadmap.md).
 jobs:
   build-ubuntu:
-    name: Ubuntu - ${{ matrix.api_type }}
+    name: Ubuntu - ISO_C
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        api_type: [POSIX, ISO_C]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential
-      
+
       - name: Configure CMake
         run: |
-          cmake -B build -DAPI_TYPE=${{ matrix.api_type }}
-      
+          cmake -B build
+
       - name: Build
         run: |
           cmake --build build
-      
+
       - name: Run tests
         run: |
           cd build
           ctest --output-on-failure
 
   build-windows:
-    name: Windows - ${{ matrix.api_type }}
+    name: Windows - ISO_C
     runs-on: windows-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false  
-      matrix:
-        api_type: [UCRT, ISO_C]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Configure CMake
         run: |
-          cmake -B build -DAPI_TYPE=${{ matrix.api_type }}
-      
+          cmake -B build
+
       - name: Build
         run: |
           cmake --build build --config Release
-      
+
       - name: Run tests
         run: |
           cd build

@@ -1,5 +1,11 @@
 # POSIX Shell Quoting Test Suite
 
+> **misra-c branch:** these scripts need a shell that can fork, run pipelines
+> and command substitutions, which the ISO C build cannot. They are not run
+> by `ctest` or `make check` here, and the interactive pty tests they refer to
+> were removed with the POSIX build. They are kept as the reference for a
+> future ISO C end-to-end suite (see `docs/misra-roadmap.md`).
+
 A comprehensive test suite for verifying POSIX shell quoting implementation compliance with POSIX.1-2024 Section 2.2.
 
 ## Overview
